@@ -1,4 +1,4 @@
-Sname: MarketLens Daily Pipeline
+name: MarketLens Daily Pipeline
 
 # Rulează automat în fiecare zi, la 07:00 UTC, și poate fi pornit
 # și manual din tab-ul "Actions" al repository-ului (buton "Run workflow").
