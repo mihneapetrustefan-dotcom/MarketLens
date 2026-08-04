@@ -1,3 +1,1 @@
-feedparser
-pandas
-yfinance
+
