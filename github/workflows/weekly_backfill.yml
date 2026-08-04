@@ -1,0 +1,37 @@
+name: MarketLens Weekly Historical Backfill
+
+# Rulează automat în fiecare duminică, la 06:00 UTC (înaintea rulării
+# zilnice normale), și poate fi pornit și manual din tab-ul "Actions".
+on:
+  schedule:
+    - cron: '0 6 * * 0'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  run-backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run weekly backfill + daily pipeline
+        run: python run_weekly_backfill.py
+
+      - name: Commit and push updated data + report
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/ docs/
+          git diff --staged --quiet || git commit -m "Actualizare săptămânală (backfill istoric) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
