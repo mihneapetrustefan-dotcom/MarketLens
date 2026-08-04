@@ -1,0 +1,39 @@
+Sname: MarketLens Daily Pipeline
+
+# Rulează automat în fiecare zi, la 07:00 UTC, și poate fi pornit
+# și manual din tab-ul "Actions" al repository-ului (buton "Run workflow").
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+# "contents: write" e necesar ca job-ul să poată face commit + push
+# înapoi în repository (baza de date actualizată + raportul nou).
+permissions:
+  contents: write
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily pipeline
+        run: python run_daily.py
+
+      - name: Commit and push updated data + report
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/ docs/
+          git diff --staged --quiet || git commit -m "Actualizare automată zilnică $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
