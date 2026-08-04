@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<title>MarketLens — Raport de Investiții</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#0a0b0f; color:#eef0f3; margin:0; padding:0; }
+  .hero-band { background: linear-gradient(135deg, #1a1d2e 0%, #0f1420 100%); padding:32px; border-bottom:1px solid #1f2333; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px; }
+  .hero-eyebrow { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#6d7a99; margin-bottom:8px; }
+  .hero-sub { font-size:13px; color:#9aa3b8; margin-top:8px; max-width:560px; line-height:1.5; }
+  .kpi-strip { display:flex; gap:10px; flex-wrap:wrap; }
+  .kpi { background:#151a28; border-radius:10px; padding:10px 16px; text-align:center; min-width:70px; }
+  .kpi .n { font-size:18px; font-weight:800; }
+  .kpi .l { font-size:9px; color:#8a8f98; text-transform:uppercase; }
+  .content { padding:24px 32px; }
+  .search-box { width:100%; max-width:320px; padding:10px 14px; border-radius:8px; border:1px solid #1f2333; background:#151a28; color:#eef0f3; font-size:13px; margin-bottom:16px; }
+  .jump-nav { position:sticky; top:0; z-index:10; background:#0a0b0f; padding:12px 0; display:flex; gap:8px; flex-wrap:wrap; border-bottom:1px solid #1f2333; margin-bottom:20px; }
+  .jump-pill { font-size:11px; padding:6px 14px; border-radius:16px; background:#151a28; color:#9aa3b8; text-decoration:none; }
+  .jump-pill:hover { background:#1f2740; color:#fff; }
+  .section-title { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:#6d7a99; font-weight:700; margin:28px 0 12px 0; }
+
+  details.sector-block { margin-bottom:20px; }
+  .sector-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-radius:10px; cursor:pointer; list-style:none; }
+  .sector-header::-webkit-details-marker { display:none; }
+  .sector-left { display:flex; align-items:center; gap:10px; }
+  .sector-name { font-size:14px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; }
+  .sector-meta { font-size:11px; opacity:0.75; }
+  .sentiment-tag { font-size:10px; font-weight:700; padding:3px 10px; border-radius:12px; background:rgba(255,255,255,0.12); white-space:nowrap; }
+
+  .rec-cards { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-top:12px; }
+  .rec-card { background:#151a28; border-radius:12px; padding:14px 16px; }
+  .rc-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .rc-name { font-size:14px; font-weight:700; }
+  .rc-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+  .rc-verdict { font-size:11px; font-weight:800; padding:3px 10px; border-radius:6px; white-space:nowrap; }
+  .badge-pill { font-size:9px; background:#1f2333; color:#8a8f98; padding:2px 7px; border-radius:8px; }
+  .verified-badge { font-size:9px; padding:2px 7px; border-radius:8px; }
+  .verified-ok { background:#12261a; color:#3ecf7e; }
+  .verified-bad { background:#2a1518; color:#f0645f; }
+
+  .conf-bar-track { height:5px; border-radius:3px; background:#1f2333; margin-top:10px; overflow:hidden; }
+  .conf-bar-fill { height:100%; }
+  .conf-bar-label { font-size:10px; color:#6d7a99; margin-top:3px; }
+
+  details.argument { margin-top:10px; }
+  details.argument summary { cursor:pointer; list-style:none; font-size:11px; color:#7a8bb0; display:flex; align-items:center; gap:5px; user-select:none; }
+  details.argument summary::-webkit-details-marker { display:none; }
+  details.argument summary .icon { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#1f2740; color:#9db4e8; font-size:10px; font-weight:800; }
+  details.argument[open] summary .icon { background:#4a90d9; color:#fff; }
+  .argument-body { background:#0e1220; border-radius:8px; padding:10px 12px; margin-top:8px; font-size:11.5px; line-height:1.5; color:#c2c8d6; }
+  .argument-body .src { color:#7a8bb0; font-style:italic; margin-top:6px; display:block; }
+
+  .breakdown-row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:10.5px; }
+  .breakdown-label { width:120px; color:#8a8f98; flex-shrink:0; }
+  .breakdown-track { flex:1; height:5px; border-radius:3px; background:#1c2029; overflow:hidden; }
+  .breakdown-fill { height:100%; background:#4a90d9; }
+  .breakdown-val { width:34px; text-align:right; color:#c2c6cc; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:#9aa0a6; font-weight:600; padding:8px 10px; border-bottom:1px solid #2a2e37; }
+  td { padding:8px 10px; border-bottom:1px solid #20232b; }
+  .bar-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:13px; }
+  .bar-label { width:170px; color:#c2c6cc; }
+  .bar-track { flex:1; background:#20232b; border-radius:6px; height:14px; overflow:hidden; }
+  .bar-fill { background:#4a90d9; height:100%; }
+  .bar-count { width:30px; text-align:right; color:#9aa0a6; }
+  .empty-state { color:#9aa0a6; font-size:13px; font-style:italic; }
+  .footer { margin-top:32px; padding:0 32px 24px 32px; font-size:11px; color:#5f6570; }
+</style>
+</head>
+<body>
+  <div class="hero-band">
+    <div>
+      <div class="hero-eyebrow">MarketLens · 2026-08-04 11:58 UTC</div>
+      <div class="hero-sub"><b>Today: 8 BUY and 0 SELL recommendation(s) across 31 tracked entities. Most-covered sector: Cryptocurrency (35 articles, positive sentiment).</b></div>
+    </div>
+    <div class="kpi-strip">
+      <div class="kpi"><div class="n" style="color:#3ecf7e">8</div><div class="l">Buy</div></div>
+      <div class="kpi"><div class="n" style="color:#f0645f">0</div><div class="l">Sell</div></div>
+      <div class="kpi"><div class="n">23</div><div class="l">Hold</div></div>
+      <div class="kpi"><div class="n">198</div><div class="l">Articole</div></div>
+      <div class="kpi"><div class="n">9</div><div class="l">Surse</div></div>
+    </div>
+  </div>
+
+  <div class="content">
+    <input class="search-box" type="text" id="marketlens-search" placeholder="Caută o companie (ex: Tesla)..." onkeyup="marketlensFilter()">
+
+    <div class="jump-nav"><a class="jump-pill" href="#sector-cryptocurrency">Cryptocurrency (35)</a><a class="jump-pill" href="#sector-technology">Technology (11)</a><a class="jump-pill" href="#sector-financial-services">Financial Services (9)</a><a class="jump-pill" href="#sector-healthcare">Healthcare (8)</a><a class="jump-pill" href="#sector-industrials">Industrials (7)</a><a class="jump-pill" href="#sector-retail---e-commerce">Retail &amp; E-commerce (6)</a><a class="jump-pill" href="#sector-consumer-goods">Consumer Goods (3)</a><a class="jump-pill" href="#sector-energy">Energy (3)</a><a class="jump-pill" href="#sector-utilities">Utilities (1)</a><a class="jump-pill" href="#sector-automotive">Automotive (1)</a><a class="jump-pill" href="#sector-media---entertainment">Media &amp; Entertainment (1)</a></div>
+
+    
+        <details class="sector-block" id="sector-cryptocurrency" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Cryptocurrency</span>
+              <span class="sector-meta">35 articole · 3 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 60%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="bitcoin">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Bitcoin</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:72%; background:#3ecf7e;"></div>
+        </div>
+        <div class="conf-bar-label">0.72</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for Bitcoin, based on 24 article(s) from 3 distinct source(s). Dominant sentiment: positive (72% agreement among directional articles). Average market impact: 0.324. Overall confidence: 0.72/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:75%"></div></div>
+              <span class="breakdown-val">0.75</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:72%"></div></div>
+              <span class="breakdown-val">0.725</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:32%"></div></div>
+              <span class="breakdown-val">0.324</span>
+            </div>
+            
+              <span class="src">"Bitcoin rises toward $64,000 as Coldcard exploit, Strategy sales recede. ADA advances" — CoinDesk</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="ethereum">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Ethereum</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:41%; background:#e0a83e;"></div>
+        </div>
+        <div class="conf-bar-label">0.412</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Ethereum, based on 3 article(s) from 3 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.4. Overall confidence: 0.412/1.0. Reason: confidence score is below the 0.5 threshold required for a directional call — the signal is too weak or inconsistent to act on.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:58%"></div></div>
+              <span class="breakdown-val">0.578</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:75%"></div></div>
+              <span class="breakdown-val">0.75</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:40%"></div></div>
+              <span class="breakdown-val">0.4</span>
+            </div>
+            
+              <span class="src">"Bitcoin and ethereum prices today, Monday, August 3, 2026: Prices pulling back this morning despite de-escalation with Iran" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="cardano">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Cardano</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Cardano, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.46. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.199</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:46%"></div></div>
+              <span class="breakdown-val">0.46</span>
+            </div>
+            
+              <span class="src">"Bitcoin rises toward $64,000 as Coldcard exploit, Strategy sales recede. ADA advances" — CoinDesk</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="ripple">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Ripple</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:28%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.284</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Ripple, based on 2 article(s) from 2 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.337. Overall confidence: 0.284/1.0. Reason: confidence score is below the 0.5 threshold required for a directional call — the signal is too weak or inconsistent to act on.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:37%"></div></div>
+              <span class="breakdown-val">0.367</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:34%"></div></div>
+              <span class="breakdown-val">0.337</span>
+            </div>
+            
+              <span class="src">"XRP holders can now borrow RLUSD on Ethereum through $280 million lending pool" — CoinDesk</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="solana">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Solana</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:19%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.191</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Solana, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.4. Overall confidence: 0.191/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:19%"></div></div>
+              <span class="breakdown-val">0.193</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:40%"></div></div>
+              <span class="breakdown-val">0.4</span>
+            </div>
+            
+              <span class="src">"A new Solana proposal aims to ramp up daily SOL Burns from $47,000 to $650,000" — CoinDesk</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="avalanche">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Avalanche</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:16%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.161</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Avalanche, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.267. Overall confidence: 0.161/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:18%"></div></div>
+              <span class="breakdown-val">0.179</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:27%"></div></div>
+              <span class="breakdown-val">0.267</span>
+            </div>
+            
+              <span class="src">"Kenya moves 30 million academic credentials onto Avalanche blockchain" — CoinTelegraph</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-technology" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Technology</span>
+              <span class="sector-meta">11 articole · 6 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 100%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="palantir technologies">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Palantir Technologies</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:74%; background:#3ecf7e;"></div>
+        </div>
+        <div class="conf-bar-label">0.745</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for Palantir Technologies, based on 5 article(s) from 2 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.368. Overall confidence: 0.745/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:98%"></div></div>
+              <span class="breakdown-val">0.983</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:37%"></div></div>
+              <span class="breakdown-val">0.368</span>
+            </div>
+            
+              <span class="src">"Stock market today: Dow, S&amp;P 500, Nasdaq futures rise as earnings roll in, Palantir and Caterpillar stocks jump" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="apple">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Apple</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:40%; background:#e0a83e;"></div>
+        </div>
+        <div class="conf-bar-label">0.398</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Apple, based on 3 article(s) from 3 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.312. Overall confidence: 0.398/1.0. Reason: confidence score is below the 0.5 threshold required for a directional call — the signal is too weak or inconsistent to act on.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:60%"></div></div>
+              <span class="breakdown-val">0.595</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:75%"></div></div>
+              <span class="breakdown-val">0.75</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:31%"></div></div>
+              <span class="breakdown-val">0.312</span>
+            </div>
+            
+              <span class="src">"Google sincronizează informațiile de sănătate cu Apple Health" — Profit.ro</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="microsoft">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Microsoft</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Microsoft, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.46. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.195</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:46%"></div></div>
+              <span class="breakdown-val">0.46</span>
+            </div>
+            
+              <span class="src">"Can Palantir pull off a Microsoft-style comeback? Here&#x27;s what options say" — CNBC Top News</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="meta platforms">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Meta Platforms</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Meta Platforms, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.327. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.2</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:33%"></div></div>
+              <span class="breakdown-val">0.327</span>
+            </div>
+            
+              <span class="src">"Mark Zuckerberg tells investors why Meta is selling compute and still buying more — as capex guidance rises to $130B" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="alphabet">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Alphabet</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:19%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.192</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Alphabet, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.4. Overall confidence: 0.192/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.2</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:40%"></div></div>
+              <span class="breakdown-val">0.4</span>
+            </div>
+            
+              <span class="src">"Google sincronizează informațiile de sănătate cu Apple Health" — Profit.ro</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-financial-services" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Financial Services</span>
+              <span class="sector-meta">9 articole · 4 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 67%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="blackrock">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">BlackRock</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:75%; background:#3ecf7e;"></div>
+        </div>
+        <div class="conf-bar-label">0.751</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for BlackRock, based on 4 article(s) from 3 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.379. Overall confidence: 0.751/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:75%"></div></div>
+              <span class="breakdown-val">0.752</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:75%"></div></div>
+              <span class="breakdown-val">0.75</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:38%"></div></div>
+              <span class="breakdown-val">0.379</span>
+            </div>
+            
+              <span class="src">"BlackRock expands tokenized cash with new blockchain-based money market offerings" — CoinDesk</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="mastercard">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Mastercard</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:60%; background:#e0a83e;"></div>
+        </div>
+        <div class="conf-bar-label">0.595</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for Mastercard, based on 2 article(s) from 2 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.364. Overall confidence: 0.595/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:39%"></div></div>
+              <span class="breakdown-val">0.389</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:36%"></div></div>
+              <span class="breakdown-val">0.364</span>
+            </div>
+            
+              <span class="src">"Mastercard completes $1.8B BVNK acquisition in stablecoin push" — CoinTelegraph</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="morgan stanley">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Morgan Stanley</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Morgan Stanley, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: negative (100% agreement among directional articles). Average market impact: 0.52. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:18%"></div></div>
+              <span class="breakdown-val">0.176</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:52%"></div></div>
+              <span class="breakdown-val">0.52</span>
+            </div>
+            
+              <span class="src">"Circle slides after Morgan Stanley downgrade, cut in price target" — CoinDesk</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="jpmorgan chase">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">JPMorgan Chase</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:29%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.286</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for JPMorgan Chase, based on 2 article(s) from 2 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.339. Overall confidence: 0.286/1.0. Reason: confidence score is below the 0.5 threshold required for a directional call — the signal is too weak or inconsistent to act on.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:37%"></div></div>
+              <span class="breakdown-val">0.371</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:34%"></div></div>
+              <span class="breakdown-val">0.339</span>
+            </div>
+            
+              <span class="src">"BlackRock Tokenizes $311B of European Money Market Funds With JP Morgan&#x27;s Kinexys" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="visa">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Visa</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:19%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.192</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Visa, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.4. Overall confidence: 0.192/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.199</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:40%"></div></div>
+              <span class="breakdown-val">0.4</span>
+            </div>
+            
+              <span class="src">"CEC Bank lansează un serviciu care permite alimentarea cu numerar a cardurilor Visa şi Mastercard emise de orice bancă din România" — Ziarul Financiar</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="bursa de valori bucuresti">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Bursa de Valori Bucuresti</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:19%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.192</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Bursa de Valori Bucuresti, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.4. Overall confidence: 0.192/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.199</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:40%"></div></div>
+              <span class="breakdown-val">0.4</span>
+            </div>
+            
+              <span class="src">"Urmăriţi ZF Deschiderea de astăzi, 4 august. Radu Hanga, BVB, despre cum s-a umplut sala la bursă - de la 53.000 la peste 325.000 de conturi -, despre ce înseamnă asta pentru companiile care se uită spre listare şi despre ce urmează după maximele istorice" — Ziarul Financiar</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-healthcare" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Healthcare</span>
+              <span class="sector-meta">8 articole · 3 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 75%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="pfizer">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Pfizer</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:55%; background:#e0a83e;"></div>
+        </div>
+        <div class="conf-bar-label">0.552</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for Pfizer, based on 3 article(s) from 2 distinct source(s). Dominant sentiment: positive (67% agreement among directional articles). Average market impact: 0.387. Overall confidence: 0.552/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:60%"></div></div>
+              <span class="breakdown-val">0.6</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:67%"></div></div>
+              <span class="breakdown-val">0.667</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:39%"></div></div>
+              <span class="breakdown-val">0.387</span>
+            </div>
+            
+              <span class="src">"Pfizer beats quarterly profit estimates on strong demand for blood thinner Eliquis" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="merck &amp; co">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Merck &amp; Co</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:33%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.328</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Merck &amp; Co, based on 3 article(s) from 2 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.267. Overall confidence: 0.328/1.0. Reason: confidence score is below the 0.5 threshold required for a directional call — the signal is too weak or inconsistent to act on.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:60%"></div></div>
+              <span class="breakdown-val">0.599</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:27%"></div></div>
+              <span class="breakdown-val">0.267</span>
+            </div>
+            
+              <span class="src">"Merck hikes revenue outlook as new drug sales grow, but cuts profit guidance due to deal charges" — CNBC Top News</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="eli lilly">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Eli Lilly</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Eli Lilly, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.327. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.2</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:33%"></div></div>
+              <span class="breakdown-val">0.327</span>
+            </div>
+            
+              <span class="src">"Eli Lilly Is Up 7% in 2026 and Has Major Catalysts on the Way. Is the Rally Just Getting Started?" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-industrials" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Industrials</span>
+              <span class="sector-meta">7 articole · 4 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 80%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="caterpillar">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Caterpillar</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:76%; background:#3ecf7e;"></div>
+        </div>
+        <div class="conf-bar-label">0.763</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for Caterpillar, based on 5 article(s) from 2 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.45. Overall confidence: 0.763/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:99%"></div></div>
+              <span class="breakdown-val">0.993</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:45%"></div></div>
+              <span class="breakdown-val">0.45</span>
+            </div>
+            
+              <span class="src">"Caterpillar lifts 2026 sales growth target after quarterly profit beat" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="3m">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">3M</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for 3M, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: negative (100% agreement among directional articles). Average market impact: 0.52. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:19%"></div></div>
+              <span class="breakdown-val">0.189</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:52%"></div></div>
+              <span class="breakdown-val">0.52</span>
+            </div>
+            
+              <span class="src">"Malaysia Blockchain Week’s OnlyFans scandal, lonely heart scammed for $3.3M: Asia Express" — CoinTelegraph</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="boeing">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Boeing</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:21%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.214</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Boeing, based on 2 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.267. Overall confidence: 0.214/1.0. Reason: confidence score is below the 0.5 threshold required for a directional call — the signal is too weak or inconsistent to act on.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:39%"></div></div>
+              <span class="breakdown-val">0.391</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:27%"></div></div>
+              <span class="breakdown-val">0.267</span>
+            </div>
+            
+              <span class="src">"A trio of positive developments has Boeing shares soaring" — CNBC Top News</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-retail---e-commerce" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Retail &amp; E-commerce</span>
+              <span class="sector-meta">6 articole · 4 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 67%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="target">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Target</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:64%; background:#e0a83e;"></div>
+        </div>
+        <div class="conf-bar-label">0.636</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for Target, based on 4 article(s) from 3 distinct source(s). Dominant sentiment: positive (53% agreement among directional articles). Average market impact: 0.491. Overall confidence: 0.636/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:76%"></div></div>
+              <span class="breakdown-val">0.764</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:75%"></div></div>
+              <span class="breakdown-val">0.75</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:53%"></div></div>
+              <span class="breakdown-val">0.532</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:49%"></div></div>
+              <span class="breakdown-val">0.491</span>
+            </div>
+            
+              <span class="src">"Caterpillar lifts 2026 sales growth target after quarterly profit beat" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="amazon">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Amazon</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:52%; background:#e0a83e;"></div>
+        </div>
+        <div class="conf-bar-label">0.52</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Amazon, based on 2 article(s) from 1 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.297. Overall confidence: 0.52/1.0. Reason: average impact is below the 0.3 threshold — the confirmed news isn&#x27;t significant enough to justify a directional call.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:39%"></div></div>
+              <span class="breakdown-val">0.392</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:30%"></div></div>
+              <span class="breakdown-val">0.297</span>
+            </div>
+            
+              <span class="src">"Amazon tops $3 trillion market cap as stock continues post-earnings surge" — CNBC Top News</span>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="walmart">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Walmart</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:19%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.192</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Walmart, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.4. Overall confidence: 0.192/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.197</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:40%"></div></div>
+              <span class="breakdown-val">0.4</span>
+            </div>
+            
+              <span class="src">"Trader Joe&#x27;s has one advantage over Walmart and Target" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-consumer-goods" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Consumer Goods</span>
+              <span class="sector-meta">3 articole · 2 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 100%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="mcdonald&#x27;s">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">McDonald&#x27;s</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:64%; background:#e0a83e;"></div>
+        </div>
+        <div class="conf-bar-label">0.643</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for McDonald&#x27;s, based on 3 article(s) from 2 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.347. Overall confidence: 0.643/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:60%"></div></div>
+              <span class="breakdown-val">0.595</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:50%"></div></div>
+              <span class="breakdown-val">0.5</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:35%"></div></div>
+              <span class="breakdown-val">0.347</span>
+            </div>
+            
+              <span class="src">"McDonald&#x27;s earnings beat estimates, chain announces new U.S. head to accelerate growth" — CNBC Top News</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-energy" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Energy</span>
+              <span class="sector-meta">3 articole · 3 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 100%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="omv petrom">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">OMV Petrom</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:17%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.166</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for OMV Petrom, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.267. Overall confidence: 0.166/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.199</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:0%"></div></div>
+              <span class="breakdown-val">0.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:27%"></div></div>
+              <span class="breakdown-val">0.267</span>
+            </div>
+            
+              <span class="src">"Bursă. Cum arată noul cadru pentru piaţa carburanţilor: marje de retail plafonate la nivelul din 2025 ajustat cu inflaţia, fără plafon la rafinare şi taxă de solidaritate calculată progresiv. Ce spune OMV Petrom" — Ziarul Financiar</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-utilities" open>
+          <summary class="sector-header" style="background:#3d1518;">
+            <span class="sector-left">
+              <span class="sector-name">Utilities</span>
+              <span class="sector-meta">1 articole · 1 surse</span>
+            </span>
+            <span class="sentiment-tag">negative · consistență 100%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="transelectrica">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Transelectrica</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Transelectrica, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: negative (100% agreement among directional articles). Average market impact: 0.327. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.2</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:33%"></div></div>
+              <span class="breakdown-val">0.327</span>
+            </div>
+            
+              <span class="src">"ULTIMA ORĂ Criza energetică provocată de secetă. Bolojan repetă: Reducerile voluntare de consum ale marilor întreprinderi pot deveni obligatorii prin hotărâre de Guvern" — Profit.ro</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-automotive" open>
+          <summary class="sector-header" style="background:#0f3d24;">
+            <span class="sector-left">
+              <span class="sector-name">Automotive</span>
+              <span class="sector-meta">1 articole · 1 surse</span>
+            </span>
+            <span class="sentiment-tag">positive · consistență 100%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="toyota">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Toyota</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Toyota, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: positive (100% agreement among directional articles). Average market impact: 0.327. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.195</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:33%"></div></div>
+              <span class="breakdown-val">0.327</span>
+            </div>
+            
+              <span class="src">"Toyota boosts guidance, announces $6 billion share buyback as fiscal Q1 results shine" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+        <details class="sector-block" id="sector-media---entertainment" open>
+          <summary class="sector-header" style="background:#3d1518;">
+            <span class="sector-left">
+              <span class="sector-name">Media &amp; Entertainment</span>
+              <span class="sector-meta">1 articole · 1 surse</span>
+            </span>
+            <span class="sentiment-tag">negative · consistență 100%</span>
+          </summary>
+          <div class="rec-cards">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="spotify">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Spotify</div>
+              <div class="rc-tags"><span class="badge-pill">short-term</span><span class="badge-pill" style="color:#4a90d9">nou</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+          </div>
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:30%; background:#f0645f;"></div>
+        </div>
+        <div class="conf-bar-label">0.3</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              HOLD recommendation for Spotify, based on 1 article(s) from 1 distinct source(s). Dominant sentiment: negative (100% agreement among directional articles). Average market impact: 0.387. Overall confidence: 0.3/1.0. Reason: insufficient data — MarketLens never issues a BUY or SELL call based on a single article, regardless of its tone.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:20%"></div></div>
+              <span class="breakdown-val">0.2</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:25%"></div></div>
+              <span class="breakdown-val">0.25</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:39%"></div></div>
+              <span class="breakdown-val">0.387</span>
+            </div>
+            
+              <span class="src">"Spotify Stock Falls After Music Streamer Misses Earnings Goal" — Yahoo Finance</span>
+            </div>
+          </details>
+        </div>
+        </div>
+        </details>
+        
+
+    <div class="section-title">Simulare portofoliu (recomandări deja verificate prin Backtest)</div>
+    <p class="empty-state">Nicio simulare de portofoliu disponibilă (necesită recomandări deja verificate prin Backtest).</p>
+
+    <div class="section-title">Date de piață (fapte reale — fără verdict de subevaluare/supraevaluare)</div>
+    
+        <table>
+          <thead><tr><th>Ticker</th><th>Preț curent</th><th>Variație zilnică</th><th>Față de max 52săpt</th><th>Față de min 52săpt</th><th>P/E</th><th>Risc</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>CAT</td>
+              <td>830.03</td>
+              <td>1.87%</td>
+              <td>-22.68%</td>
+              <td>104.71%</td>
+              <td>40.647896</td>
+              <td>High (nan%)</td>
+            </tr>
+            
+            <tr>
+              <td>BLK</td>
+              <td>1126.63</td>
+              <td>3.32%</td>
+              <td>-7.65%</td>
+              <td>22.81%</td>
+              <td>26.97869</td>
+              <td>High (nan%)</td>
+            </tr>
+            
+            <tr>
+              <td>PLTR</td>
+              <td>125.65</td>
+              <td>2.1%</td>
+              <td>-39.45%</td>
+              <td>18.13%</td>
+              <td>141.17978</td>
+              <td>High (nan%)</td>
+            </tr>
+            
+            <tr>
+              <td>BTC</td>
+              <td>63857.91</td>
+              <td>0.62%</td>
+              <td>-49.4%</td>
+              <td>10.58%</td>
+              <td></td>
+              <td>Medium (25.18%)</td>
+            </tr>
+            
+            <tr>
+              <td>MCD</td>
+              <td>265.23</td>
+              <td>-2.0%</td>
+              <td>-22.39%</td>
+              <td>1.64%</td>
+              <td>21.883665</td>
+              <td>High (nan%)</td>
+            </tr>
+            
+            <tr>
+              <td>TGT</td>
+              <td>149.35</td>
+              <td>3.36%</td>
+              <td>-0.48%</td>
+              <td>78.99%</td>
+              <td>19.729195</td>
+              <td>High (nan%)</td>
+            </tr>
+            
+            <tr>
+              <td>MA</td>
+              <td>570.97</td>
+              <td>-0.37%</td>
+              <td>-5.12%</td>
+              <td>22.92%</td>
+              <td>31.423773</td>
+              <td>High (nan%)</td>
+            </tr>
+            
+            <tr>
+              <td>PFE</td>
+              <td>25.03</td>
+              <td>0.08%</td>
+              <td>-12.94%</td>
+              <td>6.15%</td>
+              <td>19.10687</td>
+              <td>High (nan%)</td>
+            </tr>
+            </tbody>
+        </table>
+        
+  </div>
+
+  <div class="footer">MarketLens v1 — raport generat automat. Nu constituie sfat financiar.</div>
+
+  <script>
+    function marketlensFilter() {
+      var query = document.getElementById('marketlens-search').value.toLowerCase();
+      var cards = document.querySelectorAll('.rec-card');
+      cards.forEach(function(card) {
+        var match = card.getAttribute('data-search').indexOf(query) !== -1;
+        card.style.display = match ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>
