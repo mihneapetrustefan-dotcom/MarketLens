@@ -139,5 +139,69 @@ class TestGetSnapshotsBatch(unittest.TestCase):
         self.assertEqual(self.fetcher.get_snapshots_batch([]), {})
 
 
+class TestGetPriceHistory(unittest.TestCase):
+    def setUp(self):
+        self.fetcher = MarketDataFetcher()
+
+    def test_parses_close_prices_into_date_series(self):
+        import pandas as pd
+        history_df = pd.DataFrame(
+            {"Close": [100.0, 102.5, 101.2]},
+            index=pd.to_datetime(["2026-07-01", "2026-07-02", "2026-07-03"]),
+        )
+        with patch.object(self.fetcher, "fetch_price_history_raw", return_value=history_df):
+            series = self.fetcher.get_price_history("TSLA")
+
+        self.assertEqual(len(series), 3)
+        self.assertEqual(series[0], {"date": "2026-07-01", "close": 100.0})
+        self.assertEqual(series[-1], {"date": "2026-07-03", "close": 101.2})
+
+    def test_empty_history_returns_empty_list(self):
+        import pandas as pd
+        with patch.object(self.fetcher, "fetch_price_history_raw", return_value=pd.DataFrame()):
+            series = self.fetcher.get_price_history("UNKNOWN")
+        self.assertEqual(series, [])
+
+    def test_fetch_exception_returns_empty_list_not_error(self):
+        with patch.object(self.fetcher, "fetch_price_history_raw", side_effect=RuntimeError("network down")):
+            series = self.fetcher.get_price_history("TSLA")
+        self.assertEqual(series, [])
+
+    def test_none_history_returns_empty_list(self):
+        with patch.object(self.fetcher, "fetch_price_history_raw", return_value=None):
+            series = self.fetcher.get_price_history("TSLA")
+        self.assertEqual(series, [])
+
+
+class TestGetPriceHistoryBatch(unittest.TestCase):
+    def setUp(self):
+        self.fetcher = MarketDataFetcher()
+
+    def test_fetches_multiple_tickers(self):
+        import pandas as pd
+        history_df = pd.DataFrame({"Close": [100.0]}, index=pd.to_datetime(["2026-07-01"]))
+        with patch.object(self.fetcher, "fetch_price_history_raw", return_value=history_df):
+            histories = self.fetcher.get_price_history_batch(["AAA", "BBB"])
+        self.assertEqual(set(histories.keys()), {"AAA", "BBB"})
+        self.assertEqual(len(histories["AAA"]), 1)
+
+    def test_one_failing_ticker_does_not_block_others(self):
+        import pandas as pd
+        history_df = pd.DataFrame({"Close": [100.0]}, index=pd.to_datetime(["2026-07-01"]))
+
+        def fake_fetch(ticker, days=30):
+            if ticker == "BAD":
+                raise RuntimeError("simulated failure")
+            return history_df
+
+        with patch.object(self.fetcher, "fetch_price_history_raw", side_effect=fake_fetch):
+            histories = self.fetcher.get_price_history_batch(["GOOD", "BAD"])
+        self.assertEqual(len(histories["GOOD"]), 1)
+        self.assertEqual(histories["BAD"], [])
+
+    def test_empty_ticker_list_returns_empty_dict(self):
+        self.assertEqual(self.fetcher.get_price_history_batch([]), {})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
