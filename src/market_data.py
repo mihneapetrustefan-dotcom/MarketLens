@@ -192,3 +192,58 @@ class MarketDataFetcher:
             succeeded, len(tickers),
         )
         return snapshots
+
+    def fetch_price_history_raw(self, ticker: str, days: int = 30):
+        """
+        Fetch raw daily price history for a ticker via yfinance.
+
+        Isolated as its own method — same pattern as fetch_snapshot()
+        and every other network call in this project — so unit tests
+        can mock it with no real network call.
+        """
+        import yfinance as yf
+        return yf.Ticker(ticker).history(period=f"{days}d")
+
+    def get_price_history(self, ticker: str, days: int = 30) -> List[Dict[str, Any]]:
+        """
+        Fetch a simple daily closing-price series for one ticker — real
+        historical closes only, no smoothing/interpolation, meant for
+        charting a price line on the Dashboard.
+
+        Returns:
+            A list of {"date": "YYYY-MM-DD", "close": float}, oldest
+            first. Returns an empty list on any failure or if no data
+            is available — NEVER raises, so a chart with no data just
+            renders empty rather than breaking the whole report.
+        """
+        try:
+            history = self.fetch_price_history_raw(ticker, days)
+        except Exception as exc:  # noqa: BLE001 — never let one bad ticker break the report
+            logger.error("Failed to fetch price history for '%s': %s", ticker, exc)
+            return []
+
+        if history is None or history.empty or "Close" not in history.columns:
+            return []
+
+        series = []
+        for index_value, close_value in zip(history.index, history["Close"]):
+            date_str = str(index_value.date()) if hasattr(index_value, "date") else str(index_value)
+            series.append({"date": date_str, "close": round(float(close_value), 2)})
+        return series
+
+    def get_price_history_batch(self, tickers: List[str], days: int = 30) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Fetch price history series for a whole list of tickers.
+
+        Returns:
+            A dict mapping ticker -> its price history list (possibly
+            empty for a ticker that failed — never dropped, never
+            stops the rest of the batch).
+        """
+        histories = {ticker: self.get_price_history(ticker, days) for ticker in tickers}
+        succeeded = sum(1 for h in histories.values() if h)
+        logger.info(
+            "Market Data: %d/%d ticker price history series fetched successfully",
+            succeeded, len(tickers),
+        )
+        return histories
