@@ -57,6 +57,7 @@ from backtest_engine import BacktestEngine
 from market_data import MarketDataFetcher, normalize_ticker_for_yfinance
 from risk_score import RiskScoreCalculator
 from portfolio_simulator import PortfolioSimulator
+from portfolio_history import PortfolioHistory
 from sector_aggregator import SectorAggregator
 from daily_summary import DailySummaryGenerator
 from dashboard import DashboardGenerator
@@ -155,12 +156,27 @@ def main() -> int:
     market_snapshots_raw = market_fetcher.get_snapshots_batch(list(yfinance_tickers.keys()))
     market_snapshots = {yf.replace("-USD", ""): snap for yf, snap in market_snapshots_raw.items()}
 
+    # Price history for the sparkline chart on each card — keyed by
+    # ENTITY name (not ticker), matching the convention Dashboard
+    # already uses for upgrade_downgrade_map/verified_track_record.
+    price_history_raw = market_fetcher.get_price_history_batch(list(yfinance_tickers.keys()), days=30)
+    price_history_map = {
+        yfinance_tickers[yf_symbol]: series
+        for yf_symbol, series in price_history_raw.items()
+        if series
+    }
+
     risk_calculator = RiskScoreCalculator(lookback_days=30)
     risk_snapshots_raw = risk_calculator.get_risk_scores_batch(list(yfinance_tickers.keys()))
     risk_snapshots = {yf.replace("-USD", ""): snap for yf, snap in risk_snapshots_raw.items()}
 
-    # --- 8. Portfolio simulation, sector macro view, daily summary text ---
+    # --- 8. Portfolio simulation (+ persisted history), sector macro view, daily summary text ---
     portfolio_result = PortfolioSimulator().simulate(backtest_result["results"])
+    portfolio_history_log = PortfolioHistory(DB_PATH)
+    portfolio_history_log.log_snapshot(portfolio_result)
+    portfolio_history = portfolio_history_log.load_all()
+    portfolio_history_log.close()
+
     sector_scores = SectorAggregator().score_all_sectors(all_articles)
     daily_summary_text = DailySummaryGenerator().generate(recommendations, sector_scores, upgrade_downgrade_results)
 
@@ -179,6 +195,8 @@ def main() -> int:
         entity_sector_map=dict(COMPANY_SECTOR_MAP),
         verified_track_record=verified_track_record,
         entity_articles_map=entity_articles_map,
+        price_history_map=price_history_map,
+        portfolio_history=portfolio_history,
     )
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
