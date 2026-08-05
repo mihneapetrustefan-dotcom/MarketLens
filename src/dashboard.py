@@ -44,6 +44,7 @@ this module never computes or displays a valuation judgment.
 """
 
 import html as html_lib
+import json
 from collections import Counter
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -177,8 +178,9 @@ class DashboardGenerator:
         upgrade_downgrade_map: Optional[Dict[str, Dict[str, Any]]] = None,
         verified_track_record: Optional[Dict[str, Optional[bool]]] = None,
         entity_articles_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        price_history_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     ) -> str:
-        """Render one entity as a styled card, with confidence bar, badges, and a hidden argument."""
+        """Render one entity as a styled card, with confidence bar, badges, a price sparkline, and a hidden argument."""
         color = self._RECOMMENDATION_COLORS.get(rec["recommendation"], "#8a8f98")
         horizon = rec.get("time_horizon")
         horizon_badge = f'<span class="badge-pill">{self._escape(horizon)}</span>' if horizon else ""
@@ -186,6 +188,7 @@ class DashboardGenerator:
         verified_badge = self._render_verified_badge(rec["entity"], verified_track_record)
         entity_articles = (entity_articles_map or {}).get(rec["entity"])
         representative = self._representative_article(rec, entity_articles)
+        sparkline = self._render_price_sparkline(rec["entity"], (price_history_map or {}).get(rec["entity"]))
 
         return f"""
         <div class="rec-card" style="box-shadow: inset 3px 0 0 {color};" data-search="{self._escape(rec['entity'].lower())}">
@@ -196,6 +199,7 @@ class DashboardGenerator:
             </div>
             <span class="rc-verdict" style="background:{color}22; color:{color};">{self._escape(rec['recommendation'])}</span>
           </div>
+          {sparkline}
           {self._render_confidence_bar(rec.get('confidence_score', 0.0))}
           <details class="argument">
             <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
@@ -237,6 +241,7 @@ class DashboardGenerator:
         upgrade_downgrade_map: Optional[Dict[str, Dict[str, Any]]],
         verified_track_record: Optional[Dict[str, Optional[bool]]],
         entity_articles_map: Optional[Dict[str, List[Dict[str, Any]]]],
+        price_history_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     ) -> str:
         """Render one collapsible sector section: header with sector-level stats, then its entity cards."""
         stats = sector_scores_by_name.get(sector_name, {})
@@ -249,7 +254,9 @@ class DashboardGenerator:
 
         slug = "".join(c if c.isalnum() else "-" for c in sector_name.lower())
         cards = "".join(
-            self._render_recommendation_card(r, upgrade_downgrade_map, verified_track_record, entity_articles_map)
+            self._render_recommendation_card(
+                r, upgrade_downgrade_map, verified_track_record, entity_articles_map, price_history_map
+            )
             for r in sector_recs
         )
 
@@ -324,6 +331,110 @@ class DashboardGenerator:
           <thead><tr><th>Ticker</th><th>Preț curent</th><th>Variație zilnică</th><th>Față de max 52săpt</th><th>Față de min 52săpt</th><th>P/E</th><th>Risc</th></tr></thead>
           <tbody>{"".join(rows)}</tbody>
         </table>
+        """
+
+    def _json_for_script(self, data: Any) -> str:
+        """
+        Serialize data for safe embedding inside an inline <script>
+        block. Escapes "</" so a string value (e.g. an article title)
+        can never prematurely close the surrounding <script> tag —
+        defense in depth, since this data ultimately originates from
+        real article text elsewhere in the pipeline.
+        """
+        return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+
+    def _render_portfolio_chart(self, portfolio_history: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render the portfolio-return-over-time line chart (a <canvas> +
+        the Chart.js config needed to draw it). Returns an empty-state
+        message instead if there's no history yet — a brand new
+        deployment won't have any snapshots logged until it has run at
+        least a couple of times.
+        """
+        if not portfolio_history:
+            return '<p class="empty-state">Niciun istoric de portofoliu încă — apare pe măsură ce pipeline-ul rulează automat, zi de zi.</p>'
+
+        labels = [self._escape((s.get("recorded_at") or "")[:10]) for s in portfolio_history]
+        values = [s.get("total_return_pct") for s in portfolio_history]
+
+        return f"""
+        <canvas id="portfolioChart" height="80"></canvas>
+        <script>
+          (function() {{
+            new Chart(document.getElementById('portfolioChart'), {{
+              type: 'line',
+              data: {{
+                labels: {self._json_for_script(labels)},
+                datasets: [{{
+                  label: 'Randament portofoliu simulat (%)',
+                  data: {self._json_for_script(values)},
+                  borderColor: '#4a90d9',
+                  backgroundColor: 'rgba(74,144,217,0.15)',
+                  fill: true,
+                  tension: 0.25,
+                  pointRadius: 2,
+                }}]
+              }},
+              options: {{
+                responsive: true,
+                plugins: {{ legend: {{ display: false }} }},
+                scales: {{
+                  x: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }},
+                  y: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }}
+                }}
+              }}
+            }});
+          }})();
+        </script>
+        """
+
+    def _render_price_sparkline(self, entity: str, price_history: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render one small sparkline chart (<canvas> + Chart.js config)
+        for a single entity's recent closing prices. Returns an empty
+        string (no chart at all, not an empty-state message — this
+        goes inside a compact card, not a full section) when there's
+        no price history for this entity.
+        """
+        if not price_history:
+            return ""
+
+        canvas_id = "spark-" + "".join(ch if ch.isalnum() else "-" for ch in entity.lower())
+        labels = [self._escape(p.get("date", "")) for p in price_history]
+        values = [p.get("close") for p in price_history]
+        is_up = len(values) >= 2 and values[-1] is not None and values[0] is not None and values[-1] >= values[0]
+        line_color = "#3ecf7e" if is_up else "#f0645f"
+
+        return f"""
+        <canvas id="{canvas_id}" height="36" class="sparkline"></canvas>
+        <script>
+          (function() {{
+            var el = document.getElementById('{canvas_id}');
+            if (el) {{
+              new Chart(el, {{
+                type: 'line',
+                data: {{
+                  labels: {self._json_for_script(labels)},
+                  datasets: [{{
+                    data: {self._json_for_script(values)},
+                    borderColor: '{line_color}',
+                    borderWidth: 1.5,
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 0,
+                  }}]
+                }},
+                options: {{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {{ legend: {{ display: false }}, tooltip: {{ enabled: false }} }},
+                  scales: {{ x: {{ display: false }}, y: {{ display: false }} }},
+                  elements: {{ point: {{ radius: 0 }} }}
+                }}
+              }});
+            }}
+          }})();
+        </script>
         """
 
     def _render_portfolio_summary(self, portfolio_result: Optional[Dict[str, Any]]) -> str:
@@ -403,6 +514,8 @@ class DashboardGenerator:
         entity_sector_map: Optional[Dict[str, str]] = None,
         verified_track_record: Optional[Dict[str, Optional[bool]]] = None,
         entity_articles_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        price_history_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        portfolio_history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Build the full HTML report as a single string.
@@ -427,6 +540,15 @@ class DashboardGenerator:
                 ConfidenceEngine.aggregate_by_entity(articles)), used
                 to pick the single most representative source article
                 shown inside each card's argument.
+            price_history_map: entity name -> output of
+                MarketDataFetcher.get_price_history() for that entity's
+                ticker (the CALLER maps ticker -> entity name before
+                passing this in, same convention already used for
+                market_data/risk_data). Drives the small sparkline
+                chart inside each card; a card with no entry here
+                simply renders without one.
+            portfolio_history: output of PortfolioHistory.load_all() —
+                drives the portfolio-return-over-time line chart.
 
         Returns:
             A complete, standalone HTML document (string).
@@ -454,7 +576,7 @@ class DashboardGenerator:
         sector_sections = "".join(
             self._render_sector_section(
                 name, grouped[name], sector_scores_by_name,
-                upgrade_downgrade_map, verified_track_record, entity_articles_map,
+                upgrade_downgrade_map, verified_track_record, entity_articles_map, price_history_map,
             )
             for name in sector_names
         )
@@ -464,6 +586,7 @@ class DashboardGenerator:
 <head>
 <meta charset="utf-8">
 <title>MarketLens — Raport de Investiții</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   * {{ box-sizing: border-box; }}
   body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#0a0b0f; color:#eef0f3; margin:0; padding:0; }}
@@ -503,6 +626,8 @@ class DashboardGenerator:
   .conf-bar-track {{ height:5px; border-radius:3px; background:#1f2333; margin-top:10px; overflow:hidden; }}
   .conf-bar-fill {{ height:100%; }}
   .conf-bar-label {{ font-size:10px; color:#6d7a99; margin-top:3px; }}
+
+  .sparkline {{ width:100%; max-height:36px; margin-top:8px; }}
 
   details.argument {{ margin-top:10px; }}
   details.argument summary {{ cursor:pointer; list-style:none; font-size:11px; color:#7a8bb0; display:flex; align-items:center; gap:5px; user-select:none; }}
@@ -554,6 +679,7 @@ class DashboardGenerator:
 
     <div class="section-title">Simulare portofoliu (recomandări deja verificate prin Backtest)</div>
     {self._render_portfolio_summary(portfolio_result)}
+    <div style="margin-top:16px;">{self._render_portfolio_chart(portfolio_history)}</div>
 
     <div class="section-title">Date de piață (fapte reale — fără verdict de subevaluare/supraevaluare)</div>
     {self._render_market_data_table(market_data, risk_data)}
