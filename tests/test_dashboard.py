@@ -367,6 +367,68 @@ class TestBackwardCompatibleStandaloneSections(unittest.TestCase):
         self.assertIn("Nicio perspectivă pe sector disponibilă", result)
 
 
+class TestPortfolioChart(unittest.TestCase):
+    """Tests for the portfolio-return-over-time chart."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_portfolio_history_renders_canvas_and_chart_script(self):
+        history = [
+            {"recorded_at": "2026-08-01T09:00:00+00:00", "total_return_pct": 2.0},
+            {"recorded_at": "2026-08-02T09:00:00+00:00", "total_return_pct": 5.5},
+        ]
+        html = self.generator.generate_report([], portfolio_history=history)
+        self.assertIn('id="portfolioChart"', html)
+        self.assertIn("new Chart(", html)
+        self.assertIn("2026-08-01", html)
+        self.assertIn("5.5", html)
+
+    def test_empty_portfolio_history_shows_empty_state(self):
+        html = self.generator.generate_report([], portfolio_history=None)
+        self.assertIn("Niciun istoric de portofoliu", html)
+
+    def test_chartjs_cdn_script_included_in_head(self):
+        html = self.generator.generate_report([])
+        self.assertIn("chart.js", html.lower())
+
+
+class TestPriceSparkline(unittest.TestCase):
+    """Tests for the per-card price sparkline chart."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_sparkline_renders_for_entity_with_price_history(self):
+        rec = make_recommendation(entity="Tesla")
+        price_history_map = {"Tesla": [{"date": "2026-07-01", "close": 200.0}, {"date": "2026-07-02", "close": 210.0}]}
+        html = self.generator.generate_report([rec], price_history_map=price_history_map)
+        self.assertIn("spark-tesla", html)
+        self.assertIn("210.0", html)
+
+    def test_no_price_history_for_entity_renders_no_sparkline(self):
+        rec = make_recommendation(entity="Tesla")
+        html = self.generator.generate_report([rec], price_history_map={})
+        self.assertNotIn("spark-tesla", html)
+
+    def test_missing_price_history_map_does_not_break_rendering(self):
+        rec = make_recommendation(entity="Tesla")
+        html = self.generator.generate_report([rec], price_history_map=None)
+        self.assertIn("Tesla", html)
+
+    def test_sparkline_color_reflects_upward_trend(self):
+        rec = make_recommendation(entity="Tesla")
+        price_history_map = {"Tesla": [{"date": "2026-07-01", "close": 100.0}, {"date": "2026-07-02", "close": 150.0}]}
+        html = self.generator.generate_report([rec], price_history_map=price_history_map)
+        self.assertIn("#3ecf7e", html)  # green, price went up
+
+    def test_sparkline_color_reflects_downward_trend(self):
+        rec = make_recommendation(entity="Tesla")
+        price_history_map = {"Tesla": [{"date": "2026-07-01", "close": 150.0}, {"date": "2026-07-02", "close": 100.0}]}
+        html = self.generator.generate_report([rec], price_history_map=price_history_map)
+        self.assertIn("#f0645f", html)  # red, price went down
+
+
 class TestSaveReport(unittest.TestCase):
     def setUp(self):
         self.generator = DashboardGenerator()
