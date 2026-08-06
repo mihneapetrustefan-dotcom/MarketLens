@@ -61,11 +61,34 @@ from portfolio_history import PortfolioHistory
 from sector_aggregator import SectorAggregator
 from daily_summary import DailySummaryGenerator
 from dashboard import DashboardGenerator
+from telegram_notifier import TelegramNotifier, build_alert_text
+from email_notifier import EmailNotifier, build_alert_email
 from ticker_registry import TICKER_REGISTRY
 from sector_registry import COMPANY_SECTOR_MAP
 
 DB_PATH = str(REPO_ROOT / "data" / "marketlens.db")
 REPORT_PATH = str(REPO_ROOT / "docs" / "index.html")
+WATCHLIST_PATH = str(REPO_ROOT / "watchlist.txt")
+
+
+def load_watchlist():
+    """
+    Load the optional user-maintained watchlist file (one company name
+    per line, '#' comments and blank lines ignored).
+
+    Returns:
+        A list of company names, or None if the file doesn't exist or
+        is empty — meaning "show everything", the exact same behavior
+        as before this feature existed. The watchlist ONLY affects
+        which entities appear on the Dashboard; data collection and
+        scoring still cover every tracked company regardless, so
+        broader corroboration isn't lost by narrowing the display.
+    """
+    if not os.path.exists(WATCHLIST_PATH):
+        return None
+    with open(WATCHLIST_PATH, encoding="utf-8") as f:
+        names = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+    return names or None
 
 
 def main() -> int:
@@ -119,6 +142,28 @@ def main() -> int:
     upgrade_downgrade_results = UpgradeDowngradeTracker().compare_batch(recommendations, previously_logged)
     upgrade_downgrade_map = {r["entity"]: r for r in upgrade_downgrade_results}
     rec_log.log_recommendations(recommendations, ticker_lookup=entity_to_ticker)
+
+    # --- 5b. Real-time alerts (Telegram and/or Email — each independent, both optional) ---
+    alert_text = build_alert_text(upgrade_downgrade_results)
+    if alert_text:
+        telegram = TelegramNotifier()
+        if telegram.is_configured():
+            sent = telegram.send_message(alert_text)
+            print(f"Telegram alert {'sent' if sent else 'FAILED to send'}")
+        else:
+            print("Telegram not configured (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID secrets not set) — skipping")
+
+        email_alert = build_alert_email(upgrade_downgrade_results)
+        if email_alert:
+            subject, body = email_alert
+            email_notifier = EmailNotifier()
+            if email_notifier.is_configured():
+                sent = email_notifier.send_message(subject, body)
+                print(f"Email alert {'sent' if sent else 'FAILED to send'}")
+            else:
+                print("Email not configured (SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD/ALERT_EMAIL_TO secrets not set) — skipping")
+    else:
+        print("No upgrade/downgrade changes today — no alert needed")
 
     # --- 6. Backtest previously-logged recommendations old enough to check ---
     backtest_engine = BacktestEngine(holding_period_days=5)
@@ -197,6 +242,7 @@ def main() -> int:
         entity_articles_map=entity_articles_map,
         price_history_map=price_history_map,
         portfolio_history=portfolio_history,
+        watchlist=load_watchlist(),
     )
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
