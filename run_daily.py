@@ -36,6 +36,7 @@ still gets noticed, without any extra monitoring setup.
 
 import os
 import sys
+import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -90,6 +91,45 @@ def load_watchlist():
     with open(WATCHLIST_PATH, encoding="utf-8") as f:
         names = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
     return names or None
+
+
+_logger = logging.getLogger("marketlens.run_daily")
+if not _logger.handlers:
+    logging.basicConfig(level=logging.INFO)
+
+
+def _safe_stage(step_name, fallback, func, *args, **kwargs):
+    """
+    Run a SECONDARY pipeline stage (one whose failure shouldn't stop
+    the whole run from producing a report) with a safe fallback value.
+
+    WHY THIS EXISTS: some stages are essential — if RSS collection or
+    Dashboard generation fails, there's genuinely nothing useful to
+    report, and the run SHOULD fail loudly (see the explicit checks
+    elsewhere in main()). But other stages are enrichment — Time
+    Horizon, Backtest, Market Data, Portfolio Simulation, Sector
+    Aggregator, Daily Summary — and a bug or a transient failure in
+    ANY ONE of them (e.g. a malformed article breaking Sector
+    Aggregator) previously meant the ENTIRE run failed and produced NO
+    report at all, even though every other stage had already succeeded.
+    This wrapper means a secondary stage failing degrades gracefully
+    to a safe default instead, and the run still finishes with
+    whatever it was able to compute.
+
+    Args:
+        step_name: human-readable name, used in the warning message.
+        fallback: value returned if `func` raises.
+        func, *args, **kwargs: the stage to run.
+
+    Returns:
+        func(*args, **kwargs)'s result, or `fallback` if it raised.
+    """
+    try:
+        return func(*args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 — a secondary stage must never take down the whole run
+        print(f"WARNING: '{step_name}' failed ({exc}) — continuing with a fallback so the report still generates")
+        _logger.error("Secondary stage '%s' failed", step_name, exc_info=True)
+        return fallback
 
 
 def main() -> int:
@@ -150,7 +190,9 @@ def main() -> int:
     recommendations = recommendation_engine.recommend_all(entities)
 
     entity_articles_map = confidence_engine.aggregate_by_entity(all_articles)
-    horizon_by_entity = TimeHorizonClassifier().classify_batch(entity_articles_map)
+    horizon_by_entity = _safe_stage(
+        "Time Horizon Classifier", {}, TimeHorizonClassifier().classify_batch, entity_articles_map
+    )
     for r in recommendations:
         h = horizon_by_entity.get(r["entity"])
         if h:
@@ -159,19 +201,24 @@ def main() -> int:
 
     # --- 5. Upgrade/downgrade vs. prior history, then log today's result ---
     rec_log = RecommendationLog(DB_PATH)
-    previously_logged = rec_log.load_all()
+    previously_logged = _safe_stage("RecommendationLog.load_all", [], rec_log.load_all)
     entity_to_ticker = {entry["name"]: entry["ticker"] for entry in TICKER_REGISTRY}
-    upgrade_downgrade_results = UpgradeDowngradeTracker().compare_batch(recommendations, previously_logged)
+    upgrade_downgrade_results = _safe_stage(
+        "Upgrade/Downgrade Tracker", [], UpgradeDowngradeTracker().compare_batch, recommendations, previously_logged
+    )
     upgrade_downgrade_map = {r["entity"]: r for r in upgrade_downgrade_results}
-    rec_log.log_recommendations(recommendations, ticker_lookup=entity_to_ticker)
+    _safe_stage(
+        "RecommendationLog.log_recommendations", None,
+        rec_log.log_recommendations, recommendations, ticker_lookup=entity_to_ticker,
+    )
 
     # --- 5b. Real-time alert via Email (only if there's something worth alerting about) ---
-    email_alert = build_alert_email(upgrade_downgrade_results)
+    email_alert = _safe_stage("build_alert_email", None, build_alert_email, upgrade_downgrade_results)
     if email_alert:
         subject, body = email_alert
         email_notifier = EmailNotifier()
         if email_notifier.is_configured():
-            sent = email_notifier.send_message(subject, body)
+            sent = _safe_stage("EmailNotifier.send_message", False, email_notifier.send_message, subject, body)
             print(f"Email alert {'sent' if sent else 'FAILED to send'}")
         else:
             print("Email not configured (SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD/ALERT_EMAIL_TO secrets not set) — skipping")
@@ -181,15 +228,16 @@ def main() -> int:
     # --- 6. Backtest previously-logged recommendations old enough to check ---
     backtest_engine = BacktestEngine(holding_period_days=5)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=backtest_engine.holding_period_days)).isoformat()
-    old_enough = rec_log.load_actionable_before(cutoff)
+    old_enough = _safe_stage("RecommendationLog.load_actionable_before", [], rec_log.load_actionable_before, cutoff)
+    empty_backtest = {
+        "results": [],
+        "summary": {"total_recommendations": 0, "checked": 0, "skipped": 0,
+                    "correct": 0, "hit_rate": None, "average_change_pct": None},
+    }
     if old_enough:
-        backtest_result = backtest_engine.run_backtest(old_enough)
+        backtest_result = _safe_stage("Backtest Engine", empty_backtest, backtest_engine.run_backtest, old_enough)
     else:
-        backtest_result = {
-            "results": [],
-            "summary": {"total_recommendations": 0, "checked": 0, "skipped": 0,
-                        "correct": 0, "hit_rate": None, "average_change_pct": None},
-        }
+        backtest_result = empty_backtest
     verified_track_record = {
         r["entity"]: r["was_correct"] for r in backtest_result["results"] if r.get("outcome") == "checked"
     }
@@ -197,46 +245,65 @@ def main() -> int:
           f"hit rate {backtest_result['summary']['hit_rate']}")
 
     # --- 7. Market data + risk score, for actionable (BUY/SELL) entities only ---
-    entity_to_category = {entry["name"]: entry["category"] for entry in TICKER_REGISTRY}
-    yfinance_tickers = {}
-    for r in recommendations:
-        if r["recommendation"] not in ("BUY", "SELL"):
-            continue
-        ticker = entity_to_ticker.get(r["entity"])
-        category = entity_to_category.get(r["entity"])
-        if not ticker or not category:
-            continue
-        yf_symbol = normalize_ticker_for_yfinance(ticker, category)
-        if yf_symbol:
-            yfinance_tickers[yf_symbol] = r["entity"]
+    def _build_market_data():
+        entity_to_category = {entry["name"]: entry["category"] for entry in TICKER_REGISTRY}
+        yfinance_tickers = {}
+        for r in recommendations:
+            if r["recommendation"] not in ("BUY", "SELL"):
+                continue
+            ticker = entity_to_ticker.get(r["entity"])
+            category = entity_to_category.get(r["entity"])
+            if not ticker or not category:
+                continue
+            yf_symbol = normalize_ticker_for_yfinance(ticker, category)
+            if yf_symbol:
+                yfinance_tickers[yf_symbol] = r["entity"]
 
-    market_fetcher = MarketDataFetcher()
-    market_snapshots_raw = market_fetcher.get_snapshots_batch(list(yfinance_tickers.keys()))
-    market_snapshots = {yf.replace("-USD", ""): snap for yf, snap in market_snapshots_raw.items()}
+        market_fetcher = MarketDataFetcher()
+        market_snapshots_raw = market_fetcher.get_snapshots_batch(list(yfinance_tickers.keys()))
+        market_snapshots = {yf.replace("-USD", ""): snap for yf, snap in market_snapshots_raw.items()}
 
-    # Price history for the sparkline chart on each card — keyed by
-    # ENTITY name (not ticker), matching the convention Dashboard
-    # already uses for upgrade_downgrade_map/verified_track_record.
-    price_history_raw = market_fetcher.get_price_history_batch(list(yfinance_tickers.keys()), days=30)
-    price_history_map = {
-        yfinance_tickers[yf_symbol]: series
-        for yf_symbol, series in price_history_raw.items()
-        if series
-    }
+        # Price history for the sparkline chart on each card — keyed by
+        # ENTITY name (not ticker), matching the convention Dashboard
+        # already uses for upgrade_downgrade_map/verified_track_record.
+        price_history_raw = market_fetcher.get_price_history_batch(list(yfinance_tickers.keys()), days=30)
+        price_history_map = {
+            yfinance_tickers[yf_symbol]: series
+            for yf_symbol, series in price_history_raw.items()
+            if series
+        }
 
-    risk_calculator = RiskScoreCalculator(lookback_days=30)
-    risk_snapshots_raw = risk_calculator.get_risk_scores_batch(list(yfinance_tickers.keys()))
-    risk_snapshots = {yf.replace("-USD", ""): snap for yf, snap in risk_snapshots_raw.items()}
+        risk_calculator = RiskScoreCalculator(lookback_days=30)
+        risk_snapshots_raw = risk_calculator.get_risk_scores_batch(list(yfinance_tickers.keys()))
+        risk_snapshots = {yf.replace("-USD", ""): snap for yf, snap in risk_snapshots_raw.items()}
+
+        return yfinance_tickers, market_snapshots, price_history_map, risk_snapshots
+
+    yfinance_tickers, market_snapshots, price_history_map, risk_snapshots = _safe_stage(
+        "Market Data / Risk Score", ({}, {}, {}, {}), _build_market_data,
+    )
 
     # --- 8. Portfolio simulation (+ persisted history), sector macro view, daily summary text ---
-    portfolio_result = PortfolioSimulator().simulate(backtest_result["results"])
-    portfolio_history_log = PortfolioHistory(DB_PATH)
-    portfolio_history_log.log_snapshot(portfolio_result)
-    portfolio_history = portfolio_history_log.load_all()
-    portfolio_history_log.close()
+    portfolio_result = _safe_stage(
+        "Portfolio Simulator",
+        {"total_invested": 0.0, "total_final_value": 0.0, "total_return_pct": None, "trades_simulated": 0, "trades": []},
+        PortfolioSimulator().simulate, backtest_result["results"],
+    )
 
-    sector_scores = SectorAggregator().score_all_sectors(all_articles)
-    daily_summary_text = DailySummaryGenerator().generate(recommendations, sector_scores, upgrade_downgrade_results)
+    def _log_and_load_portfolio_history():
+        portfolio_history_log = PortfolioHistory(DB_PATH)
+        portfolio_history_log.log_snapshot(portfolio_result)
+        history = portfolio_history_log.load_all()
+        portfolio_history_log.close()
+        return history
+
+    portfolio_history = _safe_stage("Portfolio History", [], _log_and_load_portfolio_history)
+
+    sector_scores = _safe_stage("Sector Aggregator", [], SectorAggregator().score_all_sectors, all_articles)
+    daily_summary_text = _safe_stage(
+        "Daily Summary Generator", None,
+        DailySummaryGenerator().generate, recommendations, sector_scores, upgrade_downgrade_results,
+    )
 
     # --- 9. Dashboard ---
     dashboard = DashboardGenerator()
