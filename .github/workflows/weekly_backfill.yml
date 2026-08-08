@@ -10,6 +10,13 @@ on:
 permissions:
   contents: write
 
+# Grup de concurență COMUN cu daily.yml — vezi explicația din acel
+# fișier. Fără asta, cele două workflow-uri pot ajunge să scrie în
+# aceleași fișiere aproape simultan și una din scrieri e respinsă.
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
 jobs:
   run-backfill:
     runs-on: ubuntu-latest
@@ -26,6 +33,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run weekly backfill + daily pipeline
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
         run: python run_weekly_backfill.py
 
       - name: Commit and push updated data + report
@@ -34,4 +47,5 @@ jobs:
           git config user.email "actions@github.com"
           git add data/ docs/
           git diff --staged --quiet || git commit -m "Actualizare săptămânală (backfill istoric) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
           git push
