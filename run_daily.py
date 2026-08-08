@@ -61,7 +61,6 @@ from portfolio_history import PortfolioHistory
 from sector_aggregator import SectorAggregator
 from daily_summary import DailySummaryGenerator
 from dashboard import DashboardGenerator
-from telegram_notifier import TelegramNotifier, build_alert_text
 from email_notifier import EmailNotifier, build_alert_email
 from ticker_registry import TICKER_REGISTRY
 from sector_registry import COMPANY_SECTOR_MAP
@@ -143,25 +142,16 @@ def main() -> int:
     upgrade_downgrade_map = {r["entity"]: r for r in upgrade_downgrade_results}
     rec_log.log_recommendations(recommendations, ticker_lookup=entity_to_ticker)
 
-    # --- 5b. Real-time alerts (Telegram and/or Email — each independent, both optional) ---
-    alert_text = build_alert_text(upgrade_downgrade_results)
-    if alert_text:
-        telegram = TelegramNotifier()
-        if telegram.is_configured():
-            sent = telegram.send_message(alert_text)
-            print(f"Telegram alert {'sent' if sent else 'FAILED to send'}")
+    # --- 5b. Real-time alert via Email (only if there's something worth alerting about) ---
+    email_alert = build_alert_email(upgrade_downgrade_results)
+    if email_alert:
+        subject, body = email_alert
+        email_notifier = EmailNotifier()
+        if email_notifier.is_configured():
+            sent = email_notifier.send_message(subject, body)
+            print(f"Email alert {'sent' if sent else 'FAILED to send'}")
         else:
-            print("Telegram not configured (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID secrets not set) — skipping")
-
-        email_alert = build_alert_email(upgrade_downgrade_results)
-        if email_alert:
-            subject, body = email_alert
-            email_notifier = EmailNotifier()
-            if email_notifier.is_configured():
-                sent = email_notifier.send_message(subject, body)
-                print(f"Email alert {'sent' if sent else 'FAILED to send'}")
-            else:
-                print("Email not configured (SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD/ALERT_EMAIL_TO secrets not set) — skipping")
+            print("Email not configured (SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD/ALERT_EMAIL_TO secrets not set) — skipping")
     else:
         print("No upgrade/downgrade changes today — no alert needed")
 
