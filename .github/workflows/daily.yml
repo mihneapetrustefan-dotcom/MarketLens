@@ -12,6 +12,13 @@ on:
 permissions:
   contents: write
 
+# Grup de concurență COMUN cu weekly_backfill.yml — cele două workflow-uri
+# scriu în aceleași fișiere (data/, docs/), deci GitHub le pune la coadă
+# în loc să le lase să ruleze în paralel și să se ciocnească la push.
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -28,6 +35,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run daily pipeline
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
         run: python run_daily.py
 
       - name: Commit and push updated data + report
@@ -36,4 +49,5 @@ jobs:
           git config user.email "actions@github.com"
           git add data/ docs/
           git diff --staged --quiet || git commit -m "Actualizare automată zilnică $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
           git push
