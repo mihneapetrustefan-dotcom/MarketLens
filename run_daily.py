@@ -46,6 +46,8 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from sources import RSS_FEEDS
 from rss_collector import RSSCollector
+from finnhub_news_collector import FinnhubNewsCollector
+from alpha_vantage_news_collector import AlphaVantageNewsCollector
 from pipeline_core import process_articles
 from news_database import NewsDatabase
 from confidence_engine import ConfidenceEngine
@@ -103,6 +105,27 @@ def main() -> int:
     collector = RSSCollector(feeds=RSS_FEEDS)
     raw_articles = collector.collect_all()
     print(f"Collected {len(raw_articles)} raw articles from {len(RSS_FEEDS)} RSS sources")
+
+    # --- 1b. Optional real API sources (Finnhub, Alpha Vantage) —
+    # both no-op cleanly if their API key secret isn't configured, so
+    # this is always safe to call regardless of setup.
+    stock_tickers = [entry["ticker"] for entry in TICKER_REGISTRY if entry["category"] == "stocks"]
+
+    finnhub = FinnhubNewsCollector()
+    if finnhub.is_configured():
+        finnhub_articles = finnhub.collect_batch(stock_tickers)
+        raw_articles.extend(finnhub_articles)
+        print(f"Collected {len(finnhub_articles)} additional article(s) from Finnhub")
+    else:
+        print("Finnhub not configured (FINNHUB_API_KEY secret not set) — skipping")
+
+    alpha_vantage = AlphaVantageNewsCollector()
+    if alpha_vantage.is_configured():
+        av_articles = alpha_vantage.collect_batch(stock_tickers)
+        raw_articles.extend(av_articles)
+        print(f"Collected {len(av_articles)} additional article(s) from Alpha Vantage")
+    else:
+        print("Alpha Vantage not configured (ALPHA_VANTAGE_API_KEY secret not set) — skipping")
 
     if not raw_articles:
         print("ERROR: zero articles collected — every configured source may be unreachable")
