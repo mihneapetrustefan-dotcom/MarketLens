@@ -516,6 +516,7 @@ class DashboardGenerator:
         entity_articles_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         price_history_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         portfolio_history: Optional[List[Dict[str, Any]]] = None,
+        watchlist: Optional[List[str]] = None,
     ) -> str:
         """
         Build the full HTML report as a single string.
@@ -549,6 +550,17 @@ class DashboardGenerator:
                 simply renders without one.
             portfolio_history: output of PortfolioHistory.load_all() —
                 drives the portfolio-return-over-time line chart.
+            watchlist: optional list of entity names (case-insensitive
+                match). When given and non-empty, ONLY those entities'
+                cards are shown — BUY, SELL, and HOLD alike — instead
+                of every tracked entity. Sector header stats (article
+                count, sentiment) still reflect the REAL, full-market
+                numbers for that sector, even when only 1-2 of its
+                cards are visible below — this is intentional and
+                documented here, not a bug: the macro context stays
+                honest while the card list is narrowed to what the
+                person actually asked to watch. None/empty means show
+                everything (unchanged default behavior).
 
         Returns:
             A complete, standalone HTML document (string).
@@ -557,6 +569,10 @@ class DashboardGenerator:
         db_stats = db_stats or {}
         sector_scores = sector_scores or []
         generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        if watchlist:
+            watchlist_lower = {name.lower() for name in watchlist}
+            recommendations = [r for r in recommendations if r["entity"].lower() in watchlist_lower]
 
         counts = {"BUY": 0, "SELL": 0, "HOLD": 0}
         for r in recommendations:
