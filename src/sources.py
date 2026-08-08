@@ -25,6 +25,17 @@ sources are intentionally NOT listed here — they belong to the future
 API Collector / Web Scraper modules. Listing a source we can't reliably
 parse via RSS would silently produce empty or broken data, which
 violates the "production-quality" requirement.
+
+VERIFICATION NOTE (v1.4 additions): Federal Reserve and Investing.com
+were added after directly confirming their feed URLs are real and
+currently serving content (Federal Reserve fetched live; Investing.com
+sourced from a third-party feed directory, not fetched directly —
+slightly lower confidence, flagged here rather than hidden). Further
+outlets mentioned in the project brief (Seeking Alpha, Motley Fool,
+Financial Times, Barron's, Decrypt, ECB, IMF, etc.) were deliberately
+NOT added without the same verification — guessing URLs risks silently
+shipping a broken/wrong source, which RSSCollector would fail on
+gracefully but would still misrepresent actual coverage.
 """
 
 from typing import List, Dict
@@ -40,6 +51,8 @@ RSS_FEEDS: List[Dict[str, str]] = [
     {"name": "Yahoo Finance", "url": "https://finance.yahoo.com/news/rssindex", "category": "stocks"},
     {"name": "MarketWatch Top Stories", "url": "http://feeds.marketwatch.com/marketwatch/topstories/", "category": "stocks"},
     {"name": "SEC Press Releases", "url": "https://www.sec.gov/news/pressreleases.rss", "category": "stocks"},
+    {"name": "Federal Reserve Press Releases", "url": "https://www.federalreserve.gov/feeds/press_all.xml", "category": "stocks"},
+    {"name": "Investing.com Stock Market News", "url": "https://www.investing.com/rss/news_25.rss", "category": "stocks"},
 
     # --- Crypto ---
     {"name": "CoinDesk", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "category": "crypto"},
