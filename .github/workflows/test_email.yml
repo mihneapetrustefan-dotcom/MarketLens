@@ -1,0 +1,29 @@
+name: Test Email Setup
+
+# Doar declanșare manuală — nu rulează niciodată automat. Folosit o
+# singură dată (sau ori de câte ori vrei), ca să confirmi rapid că
+# secretele SMTP sunt corect configurate, fără să aștepți un
+# upgrade/downgrade real în pipeline-ul principal.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Send test email
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+        run: python test_email_setup.py
