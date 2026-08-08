@@ -33,7 +33,7 @@ class TestProcessArticles(unittest.TestCase):
 
         self.assertEqual(len(processed), 1)
         article = processed[0]
-        for field in ("companies_mentioned", "tickers_mentioned", "sectors", "sentiment", "impact"):
+        for field in ("companies_mentioned", "tickers_mentioned", "sectors", "events", "sentiment", "impact"):
             self.assertIn(field, article)
 
     def test_empty_input_returns_empty_output(self):
