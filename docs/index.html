@@ -75,14 +75,14 @@
 <body>
   <div class="hero-band">
     <div>
-      <div class="hero-eyebrow">MarketLens · 2026-08-09 08:14 UTC</div>
-      <div class="hero-sub"><b>Today: 83 BUY and 12 SELL recommendation(s) across 124 tracked entities. Upgraded since last check: Banca Transilvania, AT&amp;T, Shell (+6 more). Downgraded since last check: Salesforce. Most-covered sector: Technology (2874 articles, positive sentiment).</b></div>
+      <div class="hero-eyebrow">MarketLens · 2026-08-09 09:23 UTC</div>
+      <div class="hero-sub"><b>Today: 83 BUY and 12 SELL recommendation(s) across 124 tracked entities. Most-covered sector: Technology (2875 articles, positive sentiment).</b></div>
     </div>
     <div class="kpi-strip">
       <div class="kpi"><div class="n" style="color:#3ecf7e">83</div><div class="l">Buy</div></div>
       <div class="kpi"><div class="n" style="color:#f0645f">12</div><div class="l">Sell</div></div>
       <div class="kpi"><div class="n">29</div><div class="l">Hold</div></div>
-      <div class="kpi"><div class="n">15030</div><div class="l">Articole</div></div>
+      <div class="kpi"><div class="n">15065</div><div class="l">Articole</div></div>
       <div class="kpi"><div class="n">134</div><div class="l">Surse</div></div>
     </div>
   </div>
@@ -90,14 +90,14 @@
   <div class="content">
     <input class="search-box" type="text" id="marketlens-search" placeholder="Caută o companie (ex: Tesla)..." onkeyup="marketlensFilter()">
 
-    <div class="jump-nav"><a class="jump-pill" href="#sector-technology">Technology (2874)</a><a class="jump-pill" href="#sector-cryptocurrency">Cryptocurrency (1838)</a><a class="jump-pill" href="#sector-financial-services">Financial Services (1480)</a><a class="jump-pill" href="#sector-healthcare">Healthcare (1140)</a><a class="jump-pill" href="#sector-retail---e-commerce">Retail &amp; E-commerce (977)</a><a class="jump-pill" href="#sector-industrials">Industrials (971)</a><a class="jump-pill" href="#sector-consumer-goods">Consumer Goods (897)</a><a class="jump-pill" href="#sector-energy">Energy (784)</a><a class="jump-pill" href="#sector-automotive">Automotive (772)</a><a class="jump-pill" href="#sector-media---entertainment">Media &amp; Entertainment (670)</a><a class="jump-pill" href="#sector-semiconductors">Semiconductors (557)</a><a class="jump-pill" href="#sector-telecommunications">Telecommunications (422)</a><a class="jump-pill" href="#sector-airlines---aviation">Airlines &amp; Aviation (387)</a><a class="jump-pill" href="#sector-utilities">Utilities (70)</a><a class="jump-pill" href="#sector-real-estate">Real Estate (8)</a><a class="jump-pill" href="#sector-altele">Altele</a></div>
+    <div class="jump-nav"><a class="jump-pill" href="#sector-technology">Technology (2875)</a><a class="jump-pill" href="#sector-cryptocurrency">Cryptocurrency (1838)</a><a class="jump-pill" href="#sector-financial-services">Financial Services (1480)</a><a class="jump-pill" href="#sector-healthcare">Healthcare (1140)</a><a class="jump-pill" href="#sector-retail---e-commerce">Retail &amp; E-commerce (977)</a><a class="jump-pill" href="#sector-industrials">Industrials (971)</a><a class="jump-pill" href="#sector-consumer-goods">Consumer Goods (897)</a><a class="jump-pill" href="#sector-energy">Energy (784)</a><a class="jump-pill" href="#sector-automotive">Automotive (772)</a><a class="jump-pill" href="#sector-media---entertainment">Media &amp; Entertainment (670)</a><a class="jump-pill" href="#sector-semiconductors">Semiconductors (557)</a><a class="jump-pill" href="#sector-telecommunications">Telecommunications (422)</a><a class="jump-pill" href="#sector-airlines---aviation">Airlines &amp; Aviation (387)</a><a class="jump-pill" href="#sector-utilities">Utilities (70)</a><a class="jump-pill" href="#sector-real-estate">Real Estate (8)</a><a class="jump-pill" href="#sector-altele">Altele</a></div>
 
     
         <details class="sector-block" id="sector-technology" open>
           <summary class="sector-header" style="background:#0f3d24;">
             <span class="sector-left">
               <span class="sector-name">Technology</span>
-              <span class="sector-meta">2874 articole · 98 surse</span>
+              <span class="sector-meta">2875 articole · 98 surse</span>
             </span>
             <span class="sentiment-tag">positive · consistență 66%</span>
           </summary>
@@ -971,11 +971,90 @@
           </details>
         </div>
         
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="alphabet">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Alphabet</div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <canvas id="spark-alphabet" height="36" class="sparkline"></canvas>
+        <script>
+          (function() {
+            var el = document.getElementById('spark-alphabet');
+            if (el) {
+              new Chart(el, {
+                type: 'line',
+                data: {
+                  labels: ["2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"],
+                  datasets: [{
+                    data: [337.39, 353.65, 357.37, 361.21, 359.91, 366.46, 367.03, 361.92, 358.89, 357.18, 352.51, 359.51, 370.92, 354.46, 346.77, 351.99, 347.15, 342.09, 317.69, 319.74, 326.56, 333.71, 336.71, 333.66, 356.13, 373.51, 377.65, 362.43, 357.75, 354.3],
+                    borderColor: '#3ecf7e',
+                    borderWidth: 1.5,
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 0,
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                  scales: { x: { display: false }, y: { display: false } },
+                  elements: { point: { radius: 0 } }
+                }
+              });
+            }
+          })();
+        </script>
+        
+          
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:75%; background:#3ecf7e;"></div>
+        </div>
+        <div class="conf-bar-label">0.75</div>
+        
+          <details class="argument">
+            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              BUY recommendation for Alphabet, based on 180 article(s) from 30 distinct source(s). Dominant sentiment: positive (60% agreement among directional articles). Average market impact: 0.352. Overall confidence: 0.75/1.0.
+              
+            <div class="breakdown-row">
+              <span class="breakdown-label">Volum</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Diversitate surse</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
+              <span class="breakdown-val">1.0</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Consistență sentiment</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:60%"></div></div>
+              <span class="breakdown-val">0.6</span>
+            </div>
+            
+            <div class="breakdown-row">
+              <span class="breakdown-label">Impact mediu</span>
+              <div class="breakdown-track"><div class="breakdown-fill" style="width:35%"></div></div>
+              <span class="breakdown-val">0.352</span>
+            </div>
+            
+              <span class="src">"Earnings call transcript: Alphabet beats Q2 2026 estimates, shares fall on capex surge - Investing.com" — Google News: Alphabet</span>
+            </div>
+          </details>
+        </div>
+        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #f0645f;" data-search="salesforce">
           <div class="rc-top">
             <div>
               <div class="rc-name">Salesforce</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#f0645f">↓ downgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#f0645f22; color:#f0645f;">SELL</span>
           </div>
@@ -1125,85 +1204,6 @@
             </div>
             
               <span class="src">"Zoom Communications (ZM) Stock Slides as Market Rises: Facts to Know Before You Trade - Yahoo Finance" — Google News: Zoom Communications</span>
-            </div>
-          </details>
-        </div>
-        
-        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="alphabet">
-          <div class="rc-top">
-            <div>
-              <div class="rc-name">Alphabet</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
-            </div>
-            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
-          </div>
-          
-        <canvas id="spark-alphabet" height="36" class="sparkline"></canvas>
-        <script>
-          (function() {
-            var el = document.getElementById('spark-alphabet');
-            if (el) {
-              new Chart(el, {
-                type: 'line',
-                data: {
-                  labels: ["2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"],
-                  datasets: [{
-                    data: [337.39, 353.65, 357.37, 361.21, 359.91, 366.46, 367.03, 361.92, 358.89, 357.18, 352.51, 359.51, 370.92, 354.46, 346.77, 351.99, 347.15, 342.09, 317.69, 319.74, 326.56, 333.71, 336.71, 333.66, 356.13, 373.51, 377.65, 362.43, 357.75, 354.3],
-                    borderColor: '#3ecf7e',
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                  }]
-                },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                  scales: { x: { display: false }, y: { display: false } },
-                  elements: { point: { radius: 0 } }
-                }
-              });
-            }
-          })();
-        </script>
-        
-          
-        <div class="conf-bar-track">
-          <div class="conf-bar-fill" style="width:74%; background:#3ecf7e;"></div>
-        </div>
-        <div class="conf-bar-label">0.744</div>
-        
-          <details class="argument">
-            <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
-            <div class="argument-body">
-              BUY recommendation for Alphabet, based on 179 article(s) from 30 distinct source(s). Dominant sentiment: positive (58% agreement among directional articles). Average market impact: 0.352. Overall confidence: 0.744/1.0.
-              
-            <div class="breakdown-row">
-              <span class="breakdown-label">Volum</span>
-              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
-              <span class="breakdown-val">1.0</span>
-            </div>
-            
-            <div class="breakdown-row">
-              <span class="breakdown-label">Diversitate surse</span>
-              <div class="breakdown-track"><div class="breakdown-fill" style="width:100%"></div></div>
-              <span class="breakdown-val">1.0</span>
-            </div>
-            
-            <div class="breakdown-row">
-              <span class="breakdown-label">Consistență sentiment</span>
-              <div class="breakdown-track"><div class="breakdown-fill" style="width:58%"></div></div>
-              <span class="breakdown-val">0.58</span>
-            </div>
-            
-            <div class="breakdown-row">
-              <span class="breakdown-label">Impact mediu</span>
-              <div class="breakdown-track"><div class="breakdown-fill" style="width:35%"></div></div>
-              <span class="breakdown-val">0.352</span>
-            </div>
-            
-              <span class="src">"Earnings call transcript: Alphabet beats Q2 2026 estimates, shares fall on capex surge - Investing.com" — Google News: Alphabet</span>
             </div>
           </details>
         </div>
@@ -1498,7 +1498,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Cisco</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
           </div>
@@ -1750,7 +1750,7 @@
                 data: {
                   labels: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"],
                   datasets: [{
-                    data: [1788.1, 1805.79, 1773.5, 1889.48, 1916.94, 1863.19, 1840.99, 1861.39, 1871.51, 1903.76, 1928.38, 1933.49, 1877.1, 1860.18, 1873.22, 1953.41, 1890.61, 1919.95, 1908.52, 1917.37, 1860.35, 1843.42, 1882.52, 1858.26, 1868.39, 1906.53, 1902.06, 1913.28, 1915.53, 1921.07],
+                    data: [1788.1, 1805.79, 1773.5, 1889.48, 1916.94, 1863.19, 1840.99, 1861.39, 1871.51, 1903.76, 1928.38, 1933.49, 1877.1, 1860.18, 1873.22, 1953.41, 1890.61, 1919.95, 1908.52, 1917.37, 1860.35, 1843.42, 1882.52, 1858.26, 1868.39, 1906.53, 1902.06, 1913.28, 1915.53, 1913.26],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -1829,7 +1829,7 @@
                 data: {
                   labels: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"],
                   datasets: [{
-                    data: [574.89, 573.95, 566.63, 581.76, 580.1, 572.19, 567.76, 570.29, 570.4, 570.73, 573.6, 570.75, 566.95, 564.34, 568.47, 574.5, 565.73, 570.49, 571.4, 592.01, 586.43, 574.96, 587.57, 588.8, 592.81, 593.22, 591.65, 592.2, 600.42, 602.41],
+                    data: [574.89, 573.95, 566.63, 581.76, 580.1, 572.19, 567.76, 570.29, 570.4, 570.73, 573.6, 570.75, 566.95, 564.34, 568.47, 574.5, 565.73, 570.49, 571.4, 592.01, 586.43, 574.96, 587.57, 588.8, 592.81, 593.22, 591.65, 592.2, 600.42, 601.21],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -1954,7 +1954,7 @@
             <div class="breakdown-row">
               <span class="breakdown-label">Consistență sentiment</span>
               <div class="breakdown-track"><div class="breakdown-fill" style="width:64%"></div></div>
-              <span class="breakdown-val">0.636</span>
+              <span class="breakdown-val">0.635</span>
             </div>
             
             <div class="breakdown-row">
@@ -1987,7 +1987,7 @@
                 data: {
                   labels: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"],
                   datasets: [{
-                    data: [63802.03, 63758.22, 62239.12, 64956.11, 64712.38, 63789.28, 63899.46, 64796.6, 64690.8, 65230.03, 66505.12, 66100.8, 65044.81, 64098.5, 64311.81, 65340.3, 63724.9, 63871.36, 63908.17, 64725.31, 62813.75, 62763.32, 63482.0, 63460.9, 64055.95, 64597.5, 64262.11, 64880.19, 64904.69, 64861.9],
+                    data: [63802.03, 63758.22, 62239.12, 64956.11, 64712.38, 63789.28, 63899.46, 64796.6, 64690.8, 65230.03, 66505.12, 66100.8, 65044.81, 64098.5, 64311.81, 65340.3, 63724.9, 63871.36, 63908.17, 64725.31, 62813.75, 62763.32, 63482.0, 63460.9, 64055.95, 64597.5, 64262.11, 64880.19, 64904.69, 64780.99],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -2115,7 +2115,7 @@
                 data: {
                   labels: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"],
                   datasets: [{
-                    data: [76.82, 76.87, 74.86, 77.76, 77.26, 75.27, 75.01, 75.46, 76.36, 77.79, 78.11, 77.91, 75.86, 73.88, 74.43, 76.6, 74.14, 73.7, 73.6, 74.47, 72.79, 71.87, 73.45, 73.47, 73.72, 73.96, 72.58, 73.64, 75.97, 76.38],
+                    data: [76.82, 76.87, 74.86, 77.76, 77.26, 75.27, 75.01, 75.46, 76.36, 77.79, 78.11, 77.91, 75.86, 73.88, 74.43, 76.6, 74.14, 73.7, 73.6, 74.47, 72.79, 71.87, 73.45, 73.47, 73.72, 73.96, 72.58, 73.64, 75.97, 76.3],
                     borderColor: '#f0645f',
                     borderWidth: 1.5,
                     fill: false,
@@ -2194,7 +2194,7 @@
                 data: {
                   labels: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"],
                   datasets: [{
-                    data: [1.1, 1.09, 1.07, 1.11, 1.11, 1.09, 1.09, 1.09, 1.1, 1.11, 1.14, 1.14, 1.11, 1.09, 1.1, 1.11, 1.07, 1.07, 1.07, 1.08, 1.06, 1.06, 1.08, 1.07, 1.07, 1.06, 1.03, 1.02, 1.04, 1.04],
+                    data: [1.1, 1.09, 1.07, 1.11, 1.11, 1.09, 1.09, 1.09, 1.1, 1.11, 1.14, 1.14, 1.11, 1.09, 1.1, 1.11, 1.07, 1.07, 1.07, 1.08, 1.06, 1.06, 1.08, 1.07, 1.07, 1.06, 1.03, 1.02, 1.04, 1.03],
                     borderColor: '#f0645f',
                     borderWidth: 1.5,
                     fill: false,
@@ -2273,7 +2273,7 @@
                 data: {
                   labels: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"],
                   datasets: [{
-                    data: [7.92, 7.99, 7.87, 8.34, 8.53, 8.33, 8.26, 8.34, 8.37, 8.58, 8.65, 8.62, 8.46, 8.33, 8.37, 8.81, 8.36, 8.43, 8.32, 8.46, 8.16, 8.06, 8.37, 8.17, 8.14, 8.15, 8.18, 8.18, 8.3, 8.32],
+                    data: [7.92, 7.99, 7.87, 8.34, 8.53, 8.33, 8.26, 8.34, 8.37, 8.58, 8.65, 8.62, 8.46, 8.33, 8.37, 8.81, 8.36, 8.43, 8.32, 8.46, 8.16, 8.06, 8.37, 8.17, 8.14, 8.15, 8.18, 8.18, 8.3, 8.3],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -2352,7 +2352,7 @@
                 data: {
                   labels: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"],
                   datasets: [{
-                    data: [44.7, 43.97, 43.49, 45.43, 45.12, 44.94, 45.14, 47.0, 47.04, 47.34, 46.82, 47.07, 46.93, 46.33, 46.51, 47.79, 46.0, 46.13, 45.41, 45.54, 44.24, 44.18, 44.63, 44.25, 44.83, 45.27, 45.4, 45.57, 45.98, 46.16],
+                    data: [44.7, 43.97, 43.49, 45.43, 45.12, 44.94, 45.14, 47.0, 47.04, 47.34, 46.82, 47.07, 46.93, 46.33, 46.51, 47.79, 46.0, 46.13, 45.41, 45.54, 44.24, 44.18, 44.63, 44.25, 44.83, 45.27, 45.4, 45.57, 45.98, 46.22],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -2604,7 +2604,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Banca Transilvania</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -2793,7 +2793,7 @@
             <div class="breakdown-row">
               <span class="breakdown-label">Consistență sentiment</span>
               <div class="breakdown-track"><div class="breakdown-fill" style="width:89%"></div></div>
-              <span class="breakdown-val">0.893</span>
+              <span class="breakdown-val">0.892</span>
             </div>
             
             <div class="breakdown-row">
@@ -3580,17 +3580,17 @@
         <div class="conf-bar-track">
           <div class="conf-bar-fill" style="width:58%; background:#e0a83e;"></div>
         </div>
-        <div class="conf-bar-label">0.579</div>
+        <div class="conf-bar-label">0.578</div>
         
           <details class="argument">
             <summary><span class="icon">ⓘ</span> Vezi argumentul</summary>
             <div class="argument-body">
-              HOLD recommendation for Patria Bank, based on 10 article(s) from 4 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.402. Overall confidence: 0.579/1.0. Reason: sentiment across articles shows no clear positive or negative consensus, despite sufficient data and impact.
+              HOLD recommendation for Patria Bank, based on 10 article(s) from 4 distinct source(s). Dominant sentiment: neutral (0% agreement among directional articles). Average market impact: 0.402. Overall confidence: 0.578/1.0. Reason: sentiment across articles shows no clear positive or negative consensus, despite sufficient data and impact.
               
             <div class="breakdown-row">
               <span class="breakdown-label">Volum</span>
               <div class="breakdown-track"><div class="breakdown-fill" style="width:99%"></div></div>
-              <span class="breakdown-val">0.993</span>
+              <span class="breakdown-val">0.991</span>
             </div>
             
             <div class="breakdown-row">
@@ -4154,7 +4154,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Eli Lilly</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -4410,7 +4410,7 @@
             <div class="breakdown-row">
               <span class="breakdown-label">Volum</span>
               <div class="breakdown-track"><div class="breakdown-fill" style="width:63%"></div></div>
-              <span class="breakdown-val">0.629</span>
+              <span class="breakdown-val">0.627</span>
             </div>
             
             <div class="breakdown-row">
@@ -6494,7 +6494,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Shell</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -6592,7 +6592,7 @@
             <div class="breakdown-row">
               <span class="breakdown-label">Volum</span>
               <div class="breakdown-track"><div class="breakdown-fill" style="width:98%"></div></div>
-              <span class="breakdown-val">0.983</span>
+              <span class="breakdown-val">0.981</span>
             </div>
             
             <div class="breakdown-row">
@@ -6818,7 +6818,7 @@
             <div class="breakdown-row">
               <span class="breakdown-label">Volum</span>
               <div class="breakdown-track"><div class="breakdown-fill" style="width:26%"></div></div>
-              <span class="breakdown-val">0.263</span>
+              <span class="breakdown-val">0.262</span>
             </div>
             
             <div class="breakdown-row">
@@ -7224,7 +7224,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Rivian Automotive</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -7442,7 +7442,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Warner Bros Discovery</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -7521,7 +7521,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Comcast</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -7987,7 +7987,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">AT&amp;T</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -8333,7 +8333,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">Southwest Airlines</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#3ecf7e">↑ upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill" style="color:#8a8f98">neschimbat</span></div>
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
@@ -8875,10 +8875,10 @@
             new Chart(document.getElementById('portfolioChart'), {
               type: 'line',
               data: {
-                labels: ["2026-08-05", "2026-08-05", "2026-08-06", "2026-08-08", "2026-08-08", "2026-08-08", "2026-08-09"],
+                labels: ["2026-08-05", "2026-08-05", "2026-08-06", "2026-08-08", "2026-08-08", "2026-08-08", "2026-08-09", "2026-08-09"],
                 datasets: [{
                   label: 'Randament portofoliu simulat (%)',
-                  data: [null, null, null, null, null, null, null],
+                  data: [null, null, null, null, null, null, null, null],
                   borderColor: '#4a90d9',
                   backgroundColor: 'rgba(74,144,217,0.15)',
                   fill: true,
@@ -9046,12 +9046,12 @@
             
             <tr>
               <td>ADA</td>
-              <td>0.19804</td>
-              <td>17.65%</td>
-              <td>-80.52%</td>
-              <td>42.79%</td>
+              <td>0.19659</td>
+              <td>16.79%</td>
+              <td>-80.66%</td>
+              <td>41.74%</td>
               <td></td>
-              <td>High (49.92%)</td>
+              <td>High (50.11%)</td>
             </tr>
             
             <tr>
@@ -9146,12 +9146,12 @@
             
             <tr>
               <td>ETH</td>
-              <td>1921.19</td>
-              <td>2.36%</td>
-              <td>-61.22%</td>
-              <td>27.53%</td>
+              <td>1913.26</td>
+              <td>-0.11%</td>
+              <td>-61.38%</td>
+              <td>27.0%</td>
               <td></td>
-              <td>Medium (33.5%)</td>
+              <td>Medium (33.52%)</td>
             </tr>
             
             <tr>
@@ -9276,12 +9276,12 @@
             
             <tr>
               <td>BNB</td>
-              <td>602.55</td>
-              <td>6.28%</td>
-              <td>-56.04%</td>
-              <td>11.87%</td>
+              <td>601.33</td>
+              <td>0.15%</td>
+              <td>-56.12%</td>
+              <td>11.65%</td>
               <td></td>
-              <td>Low (19.38%)</td>
+              <td>Low (19.37%)</td>
             </tr>
             
             <tr>
@@ -9306,12 +9306,12 @@
             
             <tr>
               <td>DOGE</td>
-              <td>0.07012</td>
-              <td>1.43%</td>
-              <td>-77.06%</td>
-              <td>3.16%</td>
+              <td>0.07002</td>
+              <td>1.29%</td>
+              <td>-77.09%</td>
+              <td>3.01%</td>
               <td></td>
-              <td>Medium (29.42%)</td>
+              <td>Medium (29.43%)</td>
             </tr>
             
             <tr>
@@ -9326,12 +9326,12 @@
             
             <tr>
               <td>BTC</td>
-              <td>64861.9</td>
-              <td>-0.29%</td>
-              <td>-48.6%</td>
-              <td>12.32%</td>
+              <td>64780.99</td>
+              <td>-0.41%</td>
+              <td>-48.67%</td>
+              <td>12.18%</td>
               <td></td>
-              <td>Medium (23.56%)</td>
+              <td>Medium (23.57%)</td>
             </tr>
             
             <tr>
@@ -9425,6 +9425,16 @@
             </tr>
             
             <tr>
+              <td>GOOGL</td>
+              <td>354.3</td>
+              <td>-0.96%</td>
+              <td>-13.29%</td>
+              <td>80.21%</td>
+              <td>17.759398</td>
+              <td>High (45.35%)</td>
+            </tr>
+            
+            <tr>
               <td>VZ</td>
               <td>47.06</td>
               <td>0.15%</td>
@@ -9475,16 +9485,6 @@
             </tr>
             
             <tr>
-              <td>GOOGL</td>
-              <td>354.3</td>
-              <td>-0.96%</td>
-              <td>-13.29%</td>
-              <td>80.21%</td>
-              <td>17.759398</td>
-              <td>High (45.35%)</td>
-            </tr>
-            
-            <tr>
               <td>TSLA</td>
               <td>328.58</td>
               <td>2.83%</td>
@@ -9526,12 +9526,12 @@
             
             <tr>
               <td>SOL</td>
-              <td>76.38</td>
-              <td>0.7%</td>
-              <td>-69.84%</td>
-              <td>26.43%</td>
+              <td>76.29</td>
+              <td>0.58%</td>
+              <td>-69.87%</td>
+              <td>26.28%</td>
               <td></td>
-              <td>Medium (29.58%)</td>
+              <td>Medium (29.56%)</td>
             </tr>
             
             <tr>
@@ -9546,12 +9546,12 @@
             
             <tr>
               <td>XRP</td>
-              <td>1.0365</td>
-              <td>-6.36%</td>
-              <td>-69.02%</td>
-              <td>2.65%</td>
+              <td>1.0327</td>
+              <td>-6.7%</td>
+              <td>-69.14%</td>
+              <td>2.27%</td>
               <td></td>
-              <td>Medium (28.94%)</td>
+              <td>Medium (28.96%)</td>
             </tr>
             
             <tr>
@@ -9636,10 +9636,10 @@
             
             <tr>
               <td>LINK</td>
-              <td>8.325</td>
-              <td>0.3%</td>
-              <td>-69.98%</td>
-              <td>18.55%</td>
+              <td>8.304</td>
+              <td>-1.89%</td>
+              <td>-70.06%</td>
+              <td>18.25%</td>
               <td></td>
               <td>Medium (37.75%)</td>
             </tr>
@@ -9656,12 +9656,12 @@
             
             <tr>
               <td>LTC</td>
-              <td>46.16</td>
-              <td>-1.64%</td>
-              <td>-65.95%</td>
-              <td>17.2%</td>
+              <td>46.22</td>
+              <td>-1.51%</td>
+              <td>-65.91%</td>
+              <td>17.35%</td>
               <td></td>
-              <td>Medium (27.37%)</td>
+              <td>Medium (27.38%)</td>
             </tr>
             
             <tr>
@@ -9686,12 +9686,12 @@
             
             <tr>
               <td>DOT</td>
-              <td>0.8092</td>
-              <td>-0.62%</td>
-              <td>-83.4%</td>
-              <td>8.13%</td>
+              <td>0.8062</td>
+              <td>-1.11%</td>
+              <td>-83.46%</td>
+              <td>7.73%</td>
               <td></td>
-              <td>Medium (37.19%)</td>
+              <td>Medium (37.25%)</td>
             </tr>
             
             <tr>
