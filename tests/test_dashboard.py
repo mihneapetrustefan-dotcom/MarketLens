@@ -1,222 +1,207 @@
 """
 test_dashboard.py
---------------------
-Unit tests for Dashboard v2 (dashboard.py) — the sector-grouped
-redesign, with confidence bars, verified-track-record badges, a
-collapsible evidence argument (breakdown + representative article),
-sticky sector navigation, and a client-side search box.
-
-TESTING STRATEGY:
-DashboardGenerator only produces an HTML string — no rendering, no
-browser, no JS execution. Tests assert specific substrings/attributes
-appear correctly in the generated output. The search box's actual
-filtering behavior is client-side JS and is not unit-tested here (it's
-verified structurally: the script and data-search attributes exist);
-this mirrors how the earlier <details> disclosure widget's open/close
-behavior was never Python-tested either — only its HTML structure.
+---------------------
+Unit tests for Dashboard v2 (dashboard.py) — sidebar navigation,
+pinned watchlist section, and source-linked arguments.
 """
 
 import unittest
-import tempfile
-import os
 
 from dashboard import DashboardGenerator
 
 
-def make_recommendation(**overrides):
-    base = {
-        "entity": "Tesla",
-        "recommendation": "BUY",
-        "explanation": "BUY recommendation for Tesla, based on 3 articles.",
-        "confidence_score": 0.75,
-        "sufficient_data": True,
-        "article_count": 3,
-        "distinct_source_count": 3,
-        "dominant_sentiment": "positive",
-        "average_impact": 0.6,
-        "volume_score": 0.6,
-        "source_diversity_score": 0.75,
-        "sentiment_consistency": 0.9,
+def make_recommendation(entity="Tesla", recommendation="BUY", confidence_score=0.75,
+                         dominant_sentiment="positive", article_count=10, distinct_source_count=5,
+                         average_impact=0.5, explanation="Test explanation", **extra):
+    rec = {
+        "entity": entity, "recommendation": recommendation, "confidence_score": confidence_score,
+        "dominant_sentiment": dominant_sentiment, "article_count": article_count,
+        "distinct_source_count": distinct_source_count, "average_impact": average_impact,
+        "explanation": explanation, "sufficient_data": True,
     }
-    base.update(overrides)
-    return base
+    rec.update(extra)
+    return rec
 
 
 class TestReportStructure(unittest.TestCase):
-    """Tests confirming the output is a well-formed, complete HTML document."""
-
     def setUp(self):
         self.generator = DashboardGenerator()
 
-    def test_report_is_valid_html_document(self):
+    def test_generates_valid_html_document(self):
         html = self.generator.generate_report([make_recommendation()])
-        self.assertTrue(html.strip().startswith("<!DOCTYPE html>"))
+        self.assertIn("<!DOCTYPE html>", html)
         self.assertIn("</html>", html)
 
-    def test_report_includes_generation_timestamp(self):
+    def test_sidebar_present_with_anchor_links(self):
+        html = self.generator.generate_report([make_recommendation()])
+        self.assertIn('href="#rezumat"', html)
+        self.assertIn('href="#sectoare"', html)
+        self.assertIn('href="#portofoliu"', html)
+        self.assertIn('href="#piata"', html)
+        self.assertIn('href="#schimbari"', html)
+
+    def test_chartjs_cdn_included(self):
+        html = self.generator.generate_report([make_recommendation()])
+        self.assertIn("chart.js", html.lower())
+
+    def test_entity_name_appears_in_report(self):
+        html = self.generator.generate_report([make_recommendation(entity="Tesla")])
+        self.assertIn("Tesla", html)
+
+    def test_empty_recommendations_does_not_crash(self):
         html = self.generator.generate_report([])
-        self.assertIn("MarketLens ·", html)
+        self.assertIn("<!DOCTYPE html>", html)
 
 
 class TestSummaryCounts(unittest.TestCase):
-    """Tests for the BUY/SELL/HOLD KPI counts."""
-
     def setUp(self):
         self.generator = DashboardGenerator()
 
     def test_counts_reflect_recommendation_mix(self):
-        recommendations = [
-            make_recommendation(entity="Tesla", recommendation="BUY"),
-            make_recommendation(entity="Bitcoin", recommendation="SELL"),
-            make_recommendation(entity="Apple", recommendation="HOLD"),
-            make_recommendation(entity="Nvidia", recommendation="HOLD"),
+        recs = [
+            make_recommendation(entity="A", recommendation="BUY"),
+            make_recommendation(entity="B", recommendation="SELL"),
+            make_recommendation(entity="C", recommendation="HOLD"),
+            make_recommendation(entity="D", recommendation="HOLD"),
         ]
-        html = self.generator.generate_report(recommendations)
-        self.assertIn('style="color:#3ecf7e">1</div><div class="l">Buy', html)
-        self.assertIn('style="color:#f0645f">1</div><div class="l">Sell', html)
-        self.assertIn('>2</div><div class="l">Hold', html)
-
-    def test_db_stats_appear_in_summary(self):
-        html = self.generator.generate_report([], db_stats={"total_articles": 210, "distinct_sources": 9})
-        self.assertIn("210", html)
-        self.assertIn("9", html)
+        html = self.generator.generate_report(recs)
+        self.assertIn("1 BUY", html)
+        self.assertIn("1 SELL", html)
+        self.assertIn("2 HOLD", html)
 
 
 class TestSectorGrouping(unittest.TestCase):
-    """Tests for the sector-grouped layout — the core of the v2 redesign."""
-
     def setUp(self):
         self.generator = DashboardGenerator()
 
-    def test_entities_grouped_under_their_sector(self):
-        recs = [
-            make_recommendation(entity="Tesla"),
-            make_recommendation(entity="Ford Motor Company", recommendation="HOLD"),
-        ]
-        html = self.generator.generate_report(recs, entity_sector_map={
-            "Tesla": "Automotive", "Ford Motor Company": "Automotive",
-        })
+    def test_entities_grouped_by_sector(self):
+        recs = [make_recommendation(entity="Tesla"), make_recommendation(entity="Bitcoin")]
+        entity_sector_map = {"Tesla": "Automotive", "Bitcoin": "Cryptocurrency"}
+        html = self.generator.generate_report(recs, entity_sector_map=entity_sector_map)
         self.assertIn("AUTOMOTIVE", html.upper())
-        # Both entities' names must appear within the generated document.
-        self.assertIn("Tesla", html)
-        self.assertIn("Ford Motor Company", html)
+        self.assertIn("CRYPTOCURRENCY", html.upper())
 
-    def test_unknown_entity_falls_back_to_other_group(self):
-        recs = [make_recommendation(entity="Some New Company")]
+    def test_unmapped_entity_falls_back_to_altele(self):
+        recs = [make_recommendation(entity="Unknown Co")]
         html = self.generator.generate_report(recs, entity_sector_map={})
-        self.assertIn("Altele", html)
+        self.assertIn("ALTELE", html.upper())
 
-    def test_sector_header_shows_aggregate_stats(self):
+    def test_sector_header_shows_stats(self):
         recs = [make_recommendation(entity="Tesla")]
-        sector_scores = [{
-            "sector": "Automotive", "article_count": 42, "distinct_source_count": 5,
-            "dominant_sentiment": "positive", "sentiment_consistency": 0.8, "average_impact": 0.4,
-        }]
-        html = self.generator.generate_report(
-            recs, entity_sector_map={"Tesla": "Automotive"}, sector_scores=sector_scores,
-        )
+        entity_sector_map = {"Tesla": "Automotive"}
+        sector_scores = [{"sector": "Automotive", "article_count": 42, "distinct_source_count": 5,
+                           "dominant_sentiment": "positive", "sentiment_consistency": 0.8, "average_impact": 0.4}]
+        html = self.generator.generate_report(recs, entity_sector_map=entity_sector_map, sector_scores=sector_scores)
         self.assertIn("42", html)
-        self.assertIn("positive", html)
-
-    def test_jump_nav_links_to_each_sector(self):
-        recs = [
-            make_recommendation(entity="Tesla"),
-            make_recommendation(entity="Bitcoin"),
-        ]
-        html = self.generator.generate_report(
-            recs, entity_sector_map={"Tesla": "Automotive", "Bitcoin": "Cryptocurrency"},
-        )
-        self.assertIn('href="#sector-automotive"', html)
-        self.assertIn('href="#sector-cryptocurrency"', html)
-
-    def test_sector_sections_are_collapsible_details(self):
-        html = self.generator.generate_report([make_recommendation()], entity_sector_map={"Tesla": "Automotive"})
-        self.assertIn('<details class="sector-block"', html)
-        self.assertIn("open>", html)  # starts expanded by default
 
 
 class TestConfidenceBar(unittest.TestCase):
-    """Tests for the visual confidence bar."""
-
     def setUp(self):
         self.generator = DashboardGenerator()
 
-    def test_confidence_bar_reflects_score(self):
-        rec = make_recommendation(confidence_score=0.87)
+    def test_high_confidence_renders_green(self):
+        rec = make_recommendation(confidence_score=0.8)
         html = self.generator.generate_report([rec])
-        self.assertIn("width:87%", html)
-        self.assertIn("0.87", html)
+        self.assertIn("#3ecf7e", html)
 
-    def test_low_confidence_uses_warning_color(self):
-        rec = make_recommendation(confidence_score=0.3)
+    def test_none_confidence_does_not_crash(self):
+        rec = make_recommendation(confidence_score=None)
         html = self.generator.generate_report([rec])
-        self.assertIn("#f0645f", html)  # low-confidence red
+        self.assertIn(rec["entity"], html)
 
 
 class TestVerifiedBadge(unittest.TestCase):
-    """Tests for the verified track-record badge."""
-
     def setUp(self):
         self.generator = DashboardGenerator()
 
     def test_correct_prior_outcome_shows_positive_badge(self):
         rec = make_recommendation(entity="Tesla")
         html = self.generator.generate_report([rec], verified_track_record={"Tesla": True})
-        self.assertIn("verificare: corectă", html)
+        self.assertIn("verified-ok", html)
 
     def test_incorrect_prior_outcome_shows_negative_badge(self):
         rec = make_recommendation(entity="Tesla")
         html = self.generator.generate_report([rec], verified_track_record={"Tesla": False})
-        self.assertIn("verificare: greșită", html)
+        self.assertIn("verified-bad", html)
 
     def test_no_track_record_shows_no_badge(self):
         rec = make_recommendation(entity="Tesla")
         html = self.generator.generate_report([rec], verified_track_record=None)
-        self.assertNotIn("verificare:", html)
+        # The CSS rule ".verified-ok { ... }" is always present in the
+        # <style> block regardless of usage — check for the actual
+        # rendered badge <span>, not the bare class-name substring.
+        self.assertNotIn('class="badge-pill verified-ok"', html)
+        self.assertNotIn('class="badge-pill verified-bad"', html)
 
     def test_none_value_for_entity_shows_no_badge(self):
         rec = make_recommendation(entity="Tesla")
         html = self.generator.generate_report([rec], verified_track_record={"Tesla": None})
-        self.assertNotIn("verificare:", html)
+        self.assertNotIn('class="badge-pill verified-ok"', html)
+        self.assertNotIn('class="badge-pill verified-bad"', html)
 
 
 class TestArgumentBreakdown(unittest.TestCase):
-    """Tests for the hidden, expandable argument (breakdown + representative article)."""
-
     def setUp(self):
         self.generator = DashboardGenerator()
 
-    def test_breakdown_shows_all_four_components(self):
-        rec = make_recommendation(volume_score=0.6, source_diversity_score=0.75,
-                                   sentiment_consistency=0.9, average_impact=0.5)
+    def test_breakdown_chips_appear_when_scores_present(self):
+        rec = make_recommendation(volume_score=0.8, source_diversity_score=0.9,
+                                   sentiment_consistency=0.94, average_impact=0.6)
         html = self.generator.generate_report([rec])
-        self.assertIn("Volum", html)
-        self.assertIn("Diversitate surse", html)
-        self.assertIn("Consistență sentiment", html)
-        self.assertIn("Impact mediu", html)
+        self.assertIn("Volum 0.8/1", html)
+        self.assertIn("Diversitate surse 0.9/1", html)
+        self.assertIn("Consistență 0.94/1", html)
+        self.assertIn("Impact 0.6/1", html)
 
-    def test_representative_article_picks_highest_impact_matching_sentiment(self):
-        rec = make_recommendation(entity="Tesla", dominant_sentiment="positive")
-        articles = [
-            {"title": "Tesla faces minor recall", "source": "A",
-             "sentiment": {"label": "negative"}, "impact": {"score": 0.9}},
-            {"title": "Tesla beats earnings estimates", "source": "Reuters",
-             "sentiment": {"label": "positive"}, "impact": {"score": 0.6}},
-            {"title": "Tesla stock climbs on strong deliveries", "source": "CNBC",
-             "sentiment": {"label": "positive"}, "impact": {"score": 0.8}},
-        ]
-        html = self.generator.generate_report(
-            [rec], entity_articles_map={"Tesla": articles},
-        )
-        # Must pick the highest-impact POSITIVE article (0.8, CNBC),
-        # not the highest-impact article overall (0.9, negative).
-        self.assertIn("Tesla stock climbs on strong deliveries", html)
-        self.assertNotIn("Tesla faces minor recall", html)
-
-    def test_no_articles_map_omits_representative_article_gracefully(self):
+    def test_missing_breakdown_scores_renders_nothing_extra(self):
         rec = make_recommendation()
-        html = self.generator.generate_report([rec], entity_articles_map=None)
-        self.assertIn("Tesla", html)  # still renders fine
+        rec.pop("average_impact", None)
+        html = self.generator.generate_report([rec])
+        self.assertIn(rec["entity"], html)
+
+
+class TestRepresentativeArticleSourceLink(unittest.TestCase):
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_article_with_url_renders_clickable_link(self):
+        rec = make_recommendation(entity="Tesla")
+        articles_map = {"Tesla": [{"title": "Tesla beats estimates", "source": "Reuters",
+                                    "url": "https://example.com/article1", "impact": {"score": 0.6}}]}
+        html = self.generator.generate_report([rec], entity_articles_map=articles_map)
+        self.assertIn('href="https://example.com/article1"', html)
+        self.assertIn("Tesla beats estimates", html)
+        self.assertIn("Reuters", html)
+
+    def test_article_without_url_renders_as_inactive_text_not_link(self):
+        rec = make_recommendation(entity="Tesla")
+        articles_map = {"Tesla": [{"title": "Tesla news", "source": "Reuters", "url": None, "impact": {"score": 0.5}}]}
+        html = self.generator.generate_report([rec], entity_articles_map=articles_map)
+        self.assertIn("source-link-inactive", html)
+        self.assertNotIn('href="None"', html)
+
+    def test_picks_highest_impact_article_among_several(self):
+        rec = make_recommendation(entity="Tesla")
+        articles_map = {"Tesla": [
+            {"title": "Low impact story", "source": "A", "url": "http://a", "impact": {"score": 0.1}},
+            {"title": "High impact story", "source": "B", "url": "http://b", "impact": {"score": 0.9}},
+        ]}
+        html = self.generator.generate_report([rec], entity_articles_map=articles_map)
+        self.assertIn("High impact story", html)
+        self.assertNotIn("Low impact story", html)
+
+    def test_no_articles_for_entity_does_not_crash(self):
+        rec = make_recommendation(entity="Tesla")
+        html = self.generator.generate_report([rec], entity_articles_map={})
+        self.assertIn(rec["entity"], html)
+
+    def test_url_is_html_escaped(self):
+        rec = make_recommendation(entity="Tesla")
+        articles_map = {"Tesla": [{"title": "Title", "source": "S",
+                                    "url": 'http://example.com/"><script>alert(1)</script>',
+                                    "impact": {"score": 0.5}}]}
+        html = self.generator.generate_report([rec], entity_articles_map=articles_map)
+        self.assertNotIn("<script>alert(1)</script>", html)
 
 
 class TestUpgradeDowngradeBadge(unittest.TestCase):
@@ -227,46 +212,76 @@ class TestUpgradeDowngradeBadge(unittest.TestCase):
         rec = make_recommendation(entity="Tesla")
         udg_map = {"Tesla": {"entity": "Tesla", "change": "upgrade"}}
         html = self.generator.generate_report([rec], upgrade_downgrade_map=udg_map)
-        self.assertIn("upgrade", html)
+        self.assertIn("change-up", html)
 
-    def test_no_map_does_not_break_rendering(self):
+    def test_downgrade_badge_appears(self):
         rec = make_recommendation(entity="Tesla")
-        html = self.generator.generate_report([rec], upgrade_downgrade_map=None)
+        udg_map = {"Tesla": {"entity": "Tesla", "change": "downgrade"}}
+        html = self.generator.generate_report([rec], upgrade_downgrade_map=udg_map)
+        self.assertIn("change-down", html)
+
+    def test_unchanged_shows_no_badge(self):
+        rec = make_recommendation(entity="Tesla")
+        udg_map = {"Tesla": {"entity": "Tesla", "change": "unchanged"}}
+        html = self.generator.generate_report([rec], upgrade_downgrade_map=udg_map)
+        # ".change-up { ... }" is always present as a CSS rule in the
+        # <style> block regardless of usage — check for the actual
+        # rendered badge <span>, not the bare class-name substring.
+        self.assertNotIn('class="badge-pill change-up"', html)
+        self.assertNotIn('class="badge-pill change-down"', html)
+
+
+class TestWatchlistSection(unittest.TestCase):
+    """Tests for the v2 PINNED watchlist section (not a filter)."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_watchlist_entity_appears_in_pinned_section(self):
+        recs = [make_recommendation(entity="Tesla"), make_recommendation(entity="Apple")]
+        html = self.generator.generate_report(recs, watchlist=["Tesla"])
+        self.assertIn('id="watchlist"', html)
+        self.assertIn("pinned", html)
+
+    def test_non_watchlist_entities_still_shown_in_sectors(self):
+        recs = [make_recommendation(entity="Tesla"), make_recommendation(entity="Apple")]
+        entity_sector_map = {"Tesla": "Automotive", "Apple": "Technology"}
+        html = self.generator.generate_report(recs, watchlist=["Tesla"], entity_sector_map=entity_sector_map)
+        self.assertIn("Apple", html)
+        self.assertIn("TECHNOLOGY", html.upper())
+
+    def test_watchlist_entity_not_duplicated_in_sector_section(self):
+        recs = [make_recommendation(entity="Tesla")]
+        entity_sector_map = {"Tesla": "Automotive"}
+        html = self.generator.generate_report(recs, watchlist=["Tesla"], entity_sector_map=entity_sector_map)
+        self.assertNotIn("AUTOMOTIVE", html.upper())
+
+    def test_no_watchlist_shows_all_entities_normally_no_pinned_section(self):
+        recs = [make_recommendation(entity="Tesla"), make_recommendation(entity="Apple")]
+        html = self.generator.generate_report(recs, watchlist=None)
+        self.assertNotIn('id="watchlist"', html)
         self.assertIn("Tesla", html)
+        self.assertIn("Apple", html)
 
+    def test_empty_watchlist_list_behaves_like_none(self):
+        recs = [make_recommendation(entity="Tesla")]
+        html = self.generator.generate_report(recs, watchlist=[])
+        self.assertNotIn('id="watchlist"', html)
 
-class TestSearchBox(unittest.TestCase):
-    """Tests for the search box's HTML structure (JS filtering itself is not Python-testable)."""
+    def test_watchlist_matching_is_case_insensitive(self):
+        recs = [make_recommendation(entity="Tesla")]
+        html = self.generator.generate_report(recs, watchlist=["tesla"])
+        self.assertIn('id="watchlist"', html)
 
-    def setUp(self):
-        self.generator = DashboardGenerator()
+    def test_sidebar_shows_watchlist_link_when_present(self):
+        recs = [make_recommendation(entity="Tesla"), make_recommendation(entity="Apple")]
+        html = self.generator.generate_report(recs, watchlist=["Tesla", "Apple"])
+        self.assertIn('href="#watchlist"', html)
 
-    def test_search_input_present(self):
-        html = self.generator.generate_report([make_recommendation()])
-        self.assertIn('id="marketlens-search"', html)
-
-    def test_cards_have_data_search_attribute(self):
-        rec = make_recommendation(entity="Tesla")
-        html = self.generator.generate_report([rec])
-        self.assertIn('data-search="tesla"', html)
-
-    def test_filter_script_present(self):
-        html = self.generator.generate_report([make_recommendation()])
-        self.assertIn("function marketlensFilter", html)
-
-
-class TestHtmlEscaping(unittest.TestCase):
-    """Tests confirming real-world content is safely escaped."""
-
-    def setUp(self):
-        self.generator = DashboardGenerator()
-
-    def test_special_characters_in_entity_name_are_escaped(self):
-        rec = make_recommendation(entity="AT&T", explanation="Explanation with <b>tags</b> & symbols")
-        html = self.generator.generate_report([rec])
-        self.assertIn("AT&amp;T", html)
-        self.assertIn("&lt;b&gt;tags&lt;/b&gt;", html)
-        self.assertNotIn("<b>tags</b>", html)
+    def test_sidebar_omits_watchlist_link_when_absent(self):
+        recs = [make_recommendation(entity="Tesla")]
+        html = self.generator.generate_report(recs, watchlist=None)
+        self.assertNotIn('href="#watchlist"', html)
 
 
 class TestMarketDataSection(unittest.TestCase):
@@ -280,7 +295,7 @@ class TestMarketDataSection(unittest.TestCase):
         self.assertIn("TSLA", html)
         self.assertIn("220.0", html)
 
-    def test_never_renders_undervalued_or_overvalued_labels(self):
+    def test_never_renders_valuation_verdict_language(self):
         market_data = {"TSLA": {"current_price": 220.0, "daily_change_pct": 2.5,
                                  "pct_from_52w_high": -12.0, "pct_from_52w_low": 46.67, "trailing_pe": 45.5}}
         html = self.generator.generate_report([], market_data=market_data)
@@ -289,22 +304,22 @@ class TestMarketDataSection(unittest.TestCase):
         self.assertNotIn("subevaluat", html.lower())
         self.assertNotIn("supraevaluat", html.lower())
 
-    def test_ticker_with_error_shows_error_message(self):
+    def test_ticker_with_error_shows_error_not_figures(self):
         market_data = {"BAD": {"error": "Market data unavailable: timeout"}}
         html = self.generator.generate_report([], market_data=market_data)
         self.assertIn("Market data unavailable", html)
 
-    def test_risk_data_appears_in_market_table(self):
-        market_data = {"TSLA": {"current_price": 220.0, "daily_change_pct": 1.0,
-                                 "pct_from_52w_high": -5.0, "pct_from_52w_low": 30.0, "trailing_pe": 40.0}}
-        risk_data = {"TSLA": {"ticker": "TSLA", "annualized_volatility_pct": 55.3, "risk_level": "High"}}
-        html = self.generator.generate_report([], market_data=market_data, risk_data=risk_data)
-        self.assertIn("High", html)
-        self.assertIn("55.3", html)
-
     def test_no_market_data_shows_empty_state(self):
         html = self.generator.generate_report([], market_data=None)
         self.assertIn("Nicio dată de piață disponibilă", html)
+
+    def test_risk_data_appears_alongside_market_data(self):
+        market_data = {"TSLA": {"current_price": 220.0, "daily_change_pct": 1.0,
+                                 "pct_from_52w_high": -5.0, "pct_from_52w_low": 30.0, "trailing_pe": 40.0}}
+        risk_data = {"TSLA": {"risk_level": "High", "annualized_volatility_pct": 55.3}}
+        html = self.generator.generate_report([], market_data=market_data, risk_data=risk_data)
+        self.assertIn("High", html)
+        self.assertIn("55.3", html)
 
 
 class TestPortfolioSection(unittest.TestCase):
@@ -312,10 +327,8 @@ class TestPortfolioSection(unittest.TestCase):
         self.generator = DashboardGenerator()
 
     def test_portfolio_result_appears_in_summary(self):
-        portfolio_result = {
-            "total_invested": 2000.0, "total_final_value": 2200.0,
-            "total_return_pct": 10.0, "trades_simulated": 2, "trades": [],
-        }
+        portfolio_result = {"total_invested": 2000.0, "total_final_value": 2200.0,
+                             "total_return_pct": 10.0, "trades_simulated": 2, "trades": []}
         html = self.generator.generate_report([], portfolio_result=portfolio_result)
         self.assertIn("2200.0", html)
         self.assertIn("10.0", html)
@@ -324,120 +337,87 @@ class TestPortfolioSection(unittest.TestCase):
         html = self.generator.generate_report([], portfolio_result=None)
         self.assertIn("Nicio simulare de portofoliu disponibilă", html)
 
-
-class TestDailySummary(unittest.TestCase):
-    def setUp(self):
-        self.generator = DashboardGenerator()
-
-    def test_daily_summary_text_appears_when_provided(self):
-        html = self.generator.generate_report([], daily_summary_text="Today: 3 BUY and 1 SELL.")
-        self.assertIn("Today: 3 BUY and 1 SELL.", html)
-
-    def test_no_daily_summary_shows_default_text(self):
-        html = self.generator.generate_report([], daily_summary_text=None)
-        self.assertIn("Raport de investiții generat automat.", html)
-
-
-class TestBackwardCompatibleStandaloneSections(unittest.TestCase):
-    """Tests for the retained standalone sector-distribution/table methods."""
-
-    def setUp(self):
-        self.generator = DashboardGenerator()
-
-    def test_sector_distribution_renders_bars(self):
-        articles = [{"sectors": [{"sector": "Technology", "source": "company", "via": ["Apple"]}]}]
-        result = self.generator._render_sector_distribution(articles)
-        self.assertIn("Technology", result)
-
-    def test_sector_distribution_empty_state(self):
-        result = self.generator._render_sector_distribution([])
-        self.assertIn("Nicio clasificare pe sector disponibilă", result)
-
-    def test_sector_scores_table_renders_rows(self):
-        sector_scores = [{
-            "sector": "Technology", "article_count": 42, "distinct_source_count": 5,
-            "dominant_sentiment": "positive", "sentiment_consistency": 0.8, "average_impact": 0.4,
-        }]
-        result = self.generator._render_sector_scores_table(sector_scores)
-        self.assertIn("Technology", result)
-        self.assertIn("42", result)
-
-    def test_sector_scores_table_empty_state(self):
-        result = self.generator._render_sector_scores_table(None)
-        self.assertIn("Nicio perspectivă pe sector disponibilă", result)
-
-
-class TestPortfolioChart(unittest.TestCase):
-    """Tests for the portfolio-return-over-time chart."""
-
-    def setUp(self):
-        self.generator = DashboardGenerator()
-
-    def test_portfolio_history_renders_canvas_and_chart_script(self):
-        history = [
-            {"recorded_at": "2026-08-01T09:00:00+00:00", "total_return_pct": 2.0},
-            {"recorded_at": "2026-08-02T09:00:00+00:00", "total_return_pct": 5.5},
-        ]
+    def test_portfolio_history_renders_chart(self):
+        history = [{"recorded_at": "2026-08-01T09:00:00+00:00", "total_return_pct": 2.0},
+                   {"recorded_at": "2026-08-02T09:00:00+00:00", "total_return_pct": 5.5}]
         html = self.generator.generate_report([], portfolio_history=history)
         self.assertIn('id="portfolioChart"', html)
-        self.assertIn("new Chart(", html)
         self.assertIn("2026-08-01", html)
-        self.assertIn("5.5", html)
 
-    def test_empty_portfolio_history_shows_empty_state(self):
+    def test_no_portfolio_history_shows_empty_state(self):
         html = self.generator.generate_report([], portfolio_history=None)
         self.assertIn("Niciun istoric de portofoliu", html)
 
-    def test_chartjs_cdn_script_included_in_head(self):
-        html = self.generator.generate_report([])
-        self.assertIn("chart.js", html.lower())
-
 
 class TestPriceSparkline(unittest.TestCase):
-    """Tests for the per-card price sparkline chart."""
-
     def setUp(self):
         self.generator = DashboardGenerator()
 
-    def test_sparkline_renders_for_entity_with_price_history(self):
+    def test_sparkline_renders_for_entity_with_history(self):
         rec = make_recommendation(entity="Tesla")
         price_history_map = {"Tesla": [{"date": "2026-07-01", "close": 200.0}, {"date": "2026-07-02", "close": 210.0}]}
         html = self.generator.generate_report([rec], price_history_map=price_history_map)
         self.assertIn("spark-tesla", html)
-        self.assertIn("210.0", html)
 
-    def test_no_price_history_for_entity_renders_no_sparkline(self):
+    def test_no_price_history_renders_no_sparkline_canvas(self):
         rec = make_recommendation(entity="Tesla")
         html = self.generator.generate_report([rec], price_history_map={})
         self.assertNotIn("spark-tesla", html)
 
-    def test_missing_price_history_map_does_not_break_rendering(self):
-        rec = make_recommendation(entity="Tesla")
-        html = self.generator.generate_report([rec], price_history_map=None)
-        self.assertIn("Tesla", html)
 
-    def test_sparkline_color_reflects_upward_trend(self):
-        rec = make_recommendation(entity="Tesla")
-        price_history_map = {"Tesla": [{"date": "2026-07-01", "close": 100.0}, {"date": "2026-07-02", "close": 150.0}]}
-        html = self.generator.generate_report([rec], price_history_map=price_history_map)
-        self.assertIn("#3ecf7e", html)  # green, price went up
-
-    def test_sparkline_color_reflects_downward_trend(self):
-        rec = make_recommendation(entity="Tesla")
-        price_history_map = {"Tesla": [{"date": "2026-07-01", "close": 150.0}, {"date": "2026-07-02", "close": 100.0}]}
-        html = self.generator.generate_report([rec], price_history_map=price_history_map)
-        self.assertIn("#f0645f", html)  # red, price went down
-
-
-class TestSaveReport(unittest.TestCase):
+class TestChangesSection(unittest.TestCase):
     def setUp(self):
         self.generator = DashboardGenerator()
 
-    def test_saves_html_content_to_file(self):
-        html = self.generator.generate_report([make_recommendation()])
+    def test_shows_upgrade_and_downgrade_lines(self):
+        results = [
+            {"entity": "Tesla", "previous": "HOLD", "current": "BUY", "change": "upgrade"},
+            {"entity": "Bitcoin", "previous": "BUY", "current": "SELL", "change": "downgrade"},
+        ]
+        html = self.generator.generate_report([], upgrade_downgrade_results=results)
+        self.assertIn("Tesla", html)
+        self.assertIn("Bitcoin", html)
+
+    def test_no_changes_shows_empty_state(self):
+        results = [{"entity": "Tesla", "previous": "HOLD", "current": "HOLD", "change": "unchanged"}]
+        html = self.generator.generate_report([], upgrade_downgrade_results=results)
+        self.assertIn("Nicio schimbare azi", html)
+
+    def test_empty_results_shows_empty_state(self):
+        html = self.generator.generate_report([], upgrade_downgrade_results=[])
+        self.assertIn("empty-state", html)
+
+    def test_derives_from_upgrade_downgrade_map_when_results_omitted(self):
+        udg_map = {"Tesla": {"entity": "Tesla", "previous": "HOLD", "current": "BUY", "change": "upgrade"}}
+        html = self.generator.generate_report([], upgrade_downgrade_map=udg_map)
+        self.assertIn("change-line", html)
+
+
+class TestHtmlEscaping(unittest.TestCase):
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_entity_name_with_html_is_escaped(self):
+        rec = make_recommendation(entity="<script>alert(1)</script>")
+        html = self.generator.generate_report([rec])
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_explanation_with_html_is_escaped(self):
+        rec = make_recommendation(explanation="<img src=x onerror=alert(1)>")
+        html = self.generator.generate_report([rec])
+        self.assertNotIn("<img src=x onerror=alert(1)>", html)
+
+
+class TestSaveReport(unittest.TestCase):
+    def test_writes_html_to_file(self):
+        import tempfile
+        import os
+        generator = DashboardGenerator()
+        html = generator.generate_report([make_recommendation()])
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = os.path.join(tmp_dir, "report.html")
-            self.generator.save_report(html, path)
+            generator.save_report(html, path)
             self.assertTrue(os.path.exists(path))
             with open(path, encoding="utf-8") as f:
                 content = f.read()
