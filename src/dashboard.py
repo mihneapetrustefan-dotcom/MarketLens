@@ -539,6 +539,55 @@ class DashboardGenerator:
         </script>
         """
 
+    def _render_calibration_chart(self, calibration_report: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render the confidence calibration bar chart — checks whether a
+        HIGHER confidence score actually correlates with being right
+        MORE OFTEN, using real outcomes grouped by confidence bucket,
+        instead of assuming the score means something because the
+        formula that produces it looks reasonable. A count of checked
+        recommendations is listed under each bar, since a bucket with
+        very few checks is far less reliable than one with many.
+        """
+        if not calibration_report:
+            return '<p class="empty-state">Niciun raport de calibrare încă — necesită recomandări verificate în mai multe intervale de încredere.</p>'
+
+        labels = [self._escape(b["bucket_label"]) for b in calibration_report]
+        values = [round((b.get("hit_rate") or 0) * 100, 1) for b in calibration_report]
+        counts_line = " · ".join(
+            f'{self._escape(b["bucket_label"])}: {b["count"]} verificări' for b in calibration_report
+        )
+
+        return f"""
+        <canvas id="calibrationChart" height="70"></canvas>
+        <div style="font-size:11px; color:#8c8470; margin-top:8px;">{counts_line}</div>
+        <script>
+          (function() {{
+            if (window.Chart) {{
+              new Chart(document.getElementById('calibrationChart'), {{
+                type: 'bar',
+                data: {{
+                  labels: {self._json_for_script(labels)},
+                  datasets: [{{
+                    label: 'Rată de succes reală (%)',
+                    data: {self._json_for_script(values)},
+                    backgroundColor: '#4a90d9',
+                  }}]
+                }},
+                options: {{
+                  responsive: true,
+                  plugins: {{ legend: {{ display: false }} }},
+                  scales: {{
+                    x: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }},
+                    y: {{ min: 0, max: 100, ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }}
+                  }}
+                }}
+              }});
+            }}
+          }})();
+        </script>
+        """
+
     def _render_changes_section(self, upgrade_downgrade_results: Optional[List[Dict[str, Any]]]) -> str:
         """Render the list of entities whose recommendation changed since it was last logged."""
         if not upgrade_downgrade_results:
@@ -604,6 +653,7 @@ class DashboardGenerator:
         watchlist: Optional[List[str]] = None,
         upgrade_downgrade_results: Optional[List[Dict[str, Any]]] = None,
         accuracy_history: Optional[List[Dict[str, Any]]] = None,
+        calibration_report: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Build the full HTML report as a single string.
@@ -798,6 +848,9 @@ class DashboardGenerator:
 
     <div class="section-title">Rată de succes în timp <span class="section-hint">(precizie cumulativă a Backtest Engine)</span></div>
     <div class="chart-frame">{self._render_accuracy_chart(accuracy_history)}</div>
+
+    <div class="section-title">Calibrarea încrederii <span class="section-hint">(înseamnă cu adevărat ceva scorul de încredere?)</span></div>
+    <div class="chart-frame">{self._render_calibration_chart(calibration_report)}</div>
 
     <div class="section-title" id="piata">Date de piață <span class="section-hint">(fapte reale — fără verdict de subevaluare/supraevaluare)</span></div>
     {self._render_market_data_table(market_data, risk_data)}
