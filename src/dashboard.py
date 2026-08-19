@@ -50,7 +50,10 @@ class DashboardGenerator:
     data table.
     """
 
-    _RECOMMENDATION_COLORS = {"BUY": "#3ecf7e", "SELL": "#f0645f", "HOLD": "#8a8f98"}
+    _RECOMMENDATION_COLORS = {
+        "STRONG_BUY": "#2ecc71", "BUY": "#3ecf7e", "HOLD": "#8a8f98",
+        "SELL": "#f0645f", "STRONG_SELL": "#e63946",
+    }
 
     _SECTOR_TINTS = {
         "positive": "#0f3d24",
@@ -130,22 +133,67 @@ class DashboardGenerator:
             return ""
         return f'<div class="breakdown">{"".join(chips)}</div>'
 
+    def _recency_weight_for_display(self, timestamp_str: Optional[str], half_life_days: float = 7.0) -> float:
+        """
+        Compute an exponential recency weight in (0, 1] for a
+        timestamp, used ONLY to help pick which single article best
+        represents an entity's card right now — a separate, much
+        shorter-lived concern than Confidence Score's own Time Decay
+        (which uses a 480h/20-day half-life to keep historical
+        coverage meaningfully weighted in the SCORE). Here, the
+        question is "what's the best article to SHOW someone today",
+        where a 3-week-old article should rarely keep outranking a
+        good recent one just because it once scored a slightly higher
+        raw impact — a 7-day half-life reflects that.
+
+        Returns 1.0 for a missing/unparseable timestamp (treated as
+        "unknown age", not penalized) — the same resilience pattern
+        used everywhere else timestamps are parsed in this project.
+        """
+        if not timestamp_str:
+            return 1.0
+        try:
+            published = datetime.fromisoformat(str(timestamp_str).replace("Z", "+00:00"))
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return 1.0
+
+        age_days = (datetime.now(timezone.utc) - published).total_seconds() / 86400.0
+        if age_days < 0:
+            age_days = 0.0
+        return 0.5 ** (age_days / half_life_days)
+
     def _representative_article(
         self, rec: Dict[str, Any], entity_articles: Optional[List[Dict[str, Any]]]
     ) -> str:
         """
-        Pick the single highest-impact article backing this entity's
-        recommendation and render it as a clickable link to the real
-        source — so the person can verify the actual news in one click.
-        Returns an empty string if no articles are available.
+        Pick the single article that best represents this entity's
+        recommendation RIGHT NOW, and render it as a clickable link to
+        the real source — so the person can verify the actual news in
+        one click. Returns an empty string if no articles are
+        available.
+
+        WHY RECENCY IS NOW FACTORED IN (previously picked by raw
+        impact alone): a single high-impact article from weeks ago
+        could stay "the representative article" indefinitely, even
+        once dozens of more recent (if less dramatic) articles had
+        appeared — exactly the "the linked articles are always old"
+        problem observed in real use. Impact is now weighted by
+        recency before picking the best one, so a strong recent
+        article can win out over a stale old one, while a genuinely
+        much more impactful older article can still surface if
+        nothing recent comes close — it's down-weighted, not excluded.
         """
         if not entity_articles:
             return ""
 
-        def impact_of(article: Dict[str, Any]) -> float:
-            return (article.get("impact") or {}).get("score", 0.0) or 0.0
+        def combined_score(article: Dict[str, Any]) -> float:
+            impact = (article.get("impact") or {}).get("score", 0.0) or 0.0
+            published = article.get("published_at") or article.get("collected_at")
+            return impact * self._recency_weight_for_display(published)
 
-        best = max(entity_articles, key=impact_of, default=None)
+        best = max(entity_articles, key=combined_score, default=None)
         if not best or not best.get("title"):
             return ""
 
@@ -222,6 +270,12 @@ class DashboardGenerator:
         sparkline = self._render_price_sparkline(rec["entity"], (price_history_map or {}).get(rec["entity"]))
         pin_class = " pinned" if pinned else ""
         pin_icon = '<span class="pin-icon">*</span>' if pinned else ""
+        # "STRONG_BUY" -> "★ STRONG BUY" for display — the underlying
+        # value stays exactly "STRONG_BUY" everywhere else (data-search,
+        # comparisons, etc.); only the label shown to the person changes.
+        verdict_label = rec["recommendation"].replace("_", " ")
+        if rec["recommendation"].startswith("STRONG_"):
+            verdict_label = f"★ {verdict_label}"
 
         return f"""
         <div class="rec-card{pin_class}" style="box-shadow: inset 3px 0 0 {color};" data-search="{self._escape(rec['entity'].lower())}">
@@ -230,7 +284,7 @@ class DashboardGenerator:
               <div class="rc-name">{pin_icon}{self._escape(rec['entity'])}</div>
               <div class="rc-tags">{horizon_badge}{change_badge}{verified_badge}</div>
             </div>
-            <span class="rc-verdict" style="background:{color}22; color:{color};">{self._escape(rec['recommendation'])}</span>
+            <span class="rc-verdict" style="background:{color}22; color:{color};">{self._escape(verdict_label)}</span>
           </div>
           {sparkline}
           {self._render_confidence_bar(rec.get('confidence_score'))}
@@ -521,9 +575,11 @@ class DashboardGenerator:
         sector_scores = sector_scores or []
         generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-        counts = {"BUY": 0, "SELL": 0, "HOLD": 0}
+        counts = {"STRONG_BUY": 0, "BUY": 0, "HOLD": 0, "SELL": 0, "STRONG_SELL": 0}
         for r in recommendations:
             counts[r["recommendation"]] = counts.get(r["recommendation"], 0) + 1
+        total_buy = counts["BUY"] + counts["STRONG_BUY"]
+        total_sell = counts["SELL"] + counts["STRONG_SELL"]
 
         watchlist_recs: List[Dict[str, Any]] = []
         remaining_recs = recommendations
@@ -586,8 +642,8 @@ class DashboardGenerator:
   .hero-number {{ font-family:'Playfair Display', serif; font-size:52px; font-weight:800; text-align:center; margin:12px 0; color:#3ecf7e; background:none; -webkit-text-fill-color:initial; }}
   .hero-summary {{ max-width:720px; margin:0 auto 20px auto; text-align:center; font-size:13.5px; color:#c8c2ae; font-style:italic; line-height:1.6; }}
 
-  .kpi-row {{ display:flex; justify-content:center; gap:44px; border-top:1px solid #33301f; border-bottom:1px solid #33301f; padding:16px 0; margin:16px 0 8px 0; }}
-  .kpi {{ text-align:center; background:none; padding:0; }}
+  .kpi-row {{ display:flex; justify-content:center; flex-wrap:wrap; gap:44px; border-top:1px solid #33301f; border-bottom:1px solid #33301f; padding:16px 0; margin:16px 0 8px 0; }}
+  .kpi {{ text-align:center; background:none; padding:0; margin:0 22px; }}
   .kpi .n {{ font-size:20px; font-weight:700; display:block; color:#f5f1e6; }}
   .kpi .l {{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:#8c8470; margin-top:2px; }}
 
@@ -648,13 +704,15 @@ class DashboardGenerator:
 
   <div class="main">
     <div id="rezumat"></div>
-    <div class="hero-number">{counts['BUY']} BUY · {counts['SELL']} SELL · {counts['HOLD']} HOLD</div>
+    <div class="hero-number">{total_buy} BUY · {total_sell} SELL · {counts['HOLD']} HOLD</div>
     {f'<div class="hero-summary">{self._escape(daily_summary_text)}</div>' if daily_summary_text else ''}
 
     <div class="kpi-row">
+      <div class="kpi"><div class="n" style="color:#2ecc71">{counts['STRONG_BUY']}</div><div class="l">Strong Buy</div></div>
       <div class="kpi"><div class="n" style="color:#3ecf7e">{counts['BUY']}</div><div class="l">Buy</div></div>
-      <div class="kpi"><div class="n" style="color:#d4695a">{counts['SELL']}</div><div class="l">Sell</div></div>
       <div class="kpi"><div class="n">{counts['HOLD']}</div><div class="l">Hold</div></div>
+      <div class="kpi"><div class="n" style="color:#d4695a">{counts['SELL']}</div><div class="l">Sell</div></div>
+      <div class="kpi"><div class="n" style="color:#e63946">{counts['STRONG_SELL']}</div><div class="l">Strong Sell</div></div>
       <div class="kpi"><div class="n">{self._escape(db_stats.get('total_articles', '-'))}</div><div class="l">Articole</div></div>
       <div class="kpi"><div class="n">{self._escape(db_stats.get('distinct_sources', '-'))}</div><div class="l">Surse</div></div>
     </div>
