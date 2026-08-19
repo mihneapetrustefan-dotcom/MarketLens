@@ -341,6 +341,65 @@ class RecommendationLog:
             daily[day] = entry  # later same-day entries overwrite earlier ones — last-of-day wins
         return list(daily.values())
 
+    def load_calibration_report(self, bucket_size: float = 0.1, min_confidence: float = 0.5) -> List[Dict[str, Any]]:
+        """
+        Group every CHECKED recommendation by its confidence_score
+        into fixed-width buckets, and compute the ACTUAL observed hit
+        rate in each bucket.
+
+        WHY THIS EXISTS: a confidence score is only a meaningful signal
+        if a HIGHER score actually correlates with being right MORE
+        OFTEN — otherwise it's just a number that looks informative
+        without being one. This answers that directly, from real
+        outcomes, instead of assuming it's true because the formula
+        that produces it looks reasonable.
+
+        Args:
+            bucket_size: width of each confidence bucket. Default 0.1.
+            min_confidence: lowest confidence value to start bucketing
+                from — default 0.5, matching
+                RecommendationEngine.min_confidence_for_action's own
+                default (nothing below that threshold is ever
+                actionable, so it's never backtested either).
+
+        Returns:
+            A list of {"bucket_label", "bucket_min", "bucket_max",
+            "count", "correct", "hit_rate"}, ordered from lowest to
+            highest confidence bucket. A bucket with zero checked
+            recommendations is OMITTED entirely (nothing to report
+            yet), never shown as a misleading 0%.
+        """
+        cursor = self._conn.execute(
+            "SELECT confidence_score, was_correct FROM recommendations WHERE was_correct IS NOT NULL"
+        )
+
+        buckets: Dict[int, Dict[str, Any]] = {}
+        for row in cursor.fetchall():
+            confidence = row["confidence_score"]
+            if confidence is None or confidence < min_confidence:
+                continue
+            bucket_index = int((confidence - min_confidence) / bucket_size)
+            bucket_min = round(min_confidence + bucket_index * bucket_size, 2)
+            bucket_max = round(bucket_min + bucket_size, 2)
+            if bucket_index not in buckets:
+                buckets[bucket_index] = {
+                    "bucket_label": f"{bucket_min}-{bucket_max}",
+                    "bucket_min": bucket_min,
+                    "bucket_max": bucket_max,
+                    "count": 0,
+                    "correct": 0,
+                }
+            buckets[bucket_index]["count"] += 1
+            if row["was_correct"]:
+                buckets[bucket_index]["correct"] += 1
+
+        report = []
+        for index in sorted(buckets.keys()):
+            bucket = buckets[index]
+            bucket["hit_rate"] = round(bucket["correct"] / bucket["count"], 3) if bucket["count"] else None
+            report.append(bucket)
+        return report
+
     def close(self) -> None:
         """Close the underlying SQLite connection cleanly."""
         self._conn.close()
