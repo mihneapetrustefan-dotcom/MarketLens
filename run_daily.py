@@ -226,9 +226,12 @@ def main() -> int:
         print("No upgrade/downgrade changes today — no alert needed")
 
     # --- 6. Backtest previously-logged recommendations old enough to check ---
-    backtest_engine = BacktestEngine(holding_period_days=5)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=backtest_engine.holding_period_days)).isoformat()
-    old_enough = _safe_stage("RecommendationLog.load_actionable_before", [], rec_log.load_actionable_before, cutoff)
+      backtest_engine = BacktestEngine()
+    old_enough = _safe_stage(
+        "RecommendationLog.load_actionable_due_for_check", [],
+        rec_log.load_actionable_due_for_check,
+        backtest_engine.holding_period_days_by_horizon, backtest_engine.holding_period_days,
+    )
     empty_backtest = {
         "results": [],
         "summary": {"total_recommendations": 0, "checked": 0, "skipped": 0,
