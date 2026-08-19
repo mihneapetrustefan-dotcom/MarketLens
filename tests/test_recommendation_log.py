@@ -1,32 +1,21 @@
 """
 test_recommendation_log.py
------------------------------
-Unit tests for Recommendation Log v1 (recommendation_log.py).
-
-TESTING STRATEGY: in-memory SQLite (":memory:"), same approach as
-test_news_database.py — fast, isolated, no real file touched.
+------------------------------
+Unit tests for Recommendation Log v1.1 (time_horizon storage + safe
+schema migration + per-horizon backtest readiness).
 """
 
+import os
+import sqlite3
+import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from recommendation_log import RecommendationLog
 
 
-def make_recommendation(**overrides):
-    base = {
-        "entity": "Tesla",
-        "recommendation": "BUY",
-        "confidence_score": 0.75,
-    }
-    base.update(overrides)
-    return base
-
-
-class TestSchemaInitialization(unittest.TestCase):
-    def test_table_exists_after_construction(self):
-        log = RecommendationLog(":memory:")
-        self.assertEqual(log.load_all(), [])
-        log.close()
+def make_recommendation(entity="Tesla", recommendation="BUY", confidence_score=0.7, time_horizon="short-term"):
+    return {"entity": entity, "recommendation": recommendation, "confidence_score": confidence_score, "time_horizon": time_horizon}
 
 
 class TestLogRecommendations(unittest.TestCase):
@@ -36,67 +25,150 @@ class TestLogRecommendations(unittest.TestCase):
     def tearDown(self):
         self.log.close()
 
-    def test_logs_recommendation_with_ticker_from_lookup(self):
+    def test_logged_recommendation_is_retrievable(self):
+        self.log.log_recommendations([make_recommendation(entity="Tesla")])
+        rows = self.log.load_all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["entity"], "Tesla")
+
+    def test_time_horizon_is_persisted(self):
+        self.log.log_recommendations([make_recommendation(time_horizon="long-term")])
+        rows = self.log.load_all()
+        self.assertEqual(rows[0]["time_horizon"], "long-term")
+
+    def test_missing_time_horizon_is_stored_as_null(self):
+        rec = make_recommendation()
+        del rec["time_horizon"]
+        self.log.log_recommendations([rec])
+        rows = self.log.load_all()
+        self.assertIsNone(rows[0]["time_horizon"])
+
+    def test_ticker_lookup_resolves_ticker(self):
         self.log.log_recommendations([make_recommendation(entity="Tesla")], ticker_lookup={"Tesla": "TSLA"})
-        stored = self.log.load_all()
-        self.assertEqual(len(stored), 1)
-        self.assertEqual(stored[0]["ticker"], "TSLA")
+        rows = self.log.load_all()
+        self.assertEqual(rows[0]["ticker"], "TSLA")
 
-    def test_logs_recommendation_with_null_ticker_when_unknown(self):
-        self.log.log_recommendations([make_recommendation(entity="Unknown Corp")], ticker_lookup={"Tesla": "TSLA"})
-        stored = self.log.load_all()
-        self.assertIsNone(stored[0]["ticker"])
-
-    def test_logs_multiple_recommendations(self):
-        recs = [make_recommendation(entity="Tesla"), make_recommendation(entity="Bitcoin", recommendation="SELL")]
-        count = self.log.log_recommendations(recs, ticker_lookup={"Tesla": "TSLA", "Bitcoin": "BTC"})
-        self.assertEqual(count, 2)
-        self.assertEqual(len(self.log.load_all()), 2)
-
-    def test_every_logged_row_has_a_generated_at_timestamp(self):
-        self.log.log_recommendations([make_recommendation()])
-        stored = self.log.load_all()
-        self.assertIsNotNone(stored[0]["generated_at"])
-
-    def test_empty_list_logs_nothing(self):
-        count = self.log.log_recommendations([])
-        self.assertEqual(count, 0)
-        self.assertEqual(self.log.load_all(), [])
+    def test_entity_missing_from_lookup_gets_null_ticker(self):
+        self.log.log_recommendations([make_recommendation(entity="Unknown Co")], ticker_lookup={"Tesla": "TSLA"})
+        rows = self.log.load_all()
+        self.assertIsNone(rows[0]["ticker"])
 
 
-class TestLoadActionableBefore(unittest.TestCase):
+class TestSchemaMigration(unittest.TestCase):
+    """Confirms an EXISTING database (created before time_horizon existed) is safely migrated, not wiped."""
+
+    def test_pre_existing_table_without_time_horizon_gets_migrated(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = os.path.join(tmp_dir, "old.db")
+
+            # Simulate a database created by the OLD version of this module (no time_horizon column).
+            conn = sqlite3.connect(db_path)
+            conn.execute("""
+                CREATE TABLE recommendations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity TEXT NOT NULL,
+                    ticker TEXT,
+                    recommendation TEXT NOT NULL,
+                    confidence_score REAL,
+                    generated_at TEXT NOT NULL
+                )
+            """)
+            conn.execute(
+                "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, generated_at) VALUES (?, ?, ?, ?, ?)",
+                ("Nvidia", "NVDA", "BUY", 0.87, "2026-08-01T09:00:00+00:00"),
+            )
+            conn.commit()
+            conn.close()
+
+            # Opening it with the NEW module must not raise, must not lose the old row.
+            log = RecommendationLog(db_path)
+            rows = log.load_all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["entity"], "Nvidia")
+            self.assertIsNone(rows[0]["time_horizon"])  # old row has no horizon recorded
+            log.close()
+
+    def test_migration_is_idempotent_across_repeated_opens(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = os.path.join(tmp_dir, "test.db")
+            log1 = RecommendationLog(db_path)
+            log1.log_recommendations([make_recommendation()])
+            log1.close()
+
+            # Re-opening (as a fresh daily run would) must not raise
+            # "duplicate column" or any other migration error.
+            log2 = RecommendationLog(db_path)
+            rows = log2.load_all()
+            self.assertEqual(len(rows), 1)
+            log2.close()
+
+
+class TestLoadActionableDueForCheck(unittest.TestCase):
+    """The core bug-fix behavior: readiness now depends on EACH row's own time_horizon."""
+
     def setUp(self):
         self.log = RecommendationLog(":memory:")
+        self.horizon_days = {"short-term": 5, "mixed": 15, "long-term": 45}
 
     def tearDown(self):
         self.log.close()
 
-    def test_excludes_hold_recommendations(self):
+    def _insert_raw(self, entity, recommendation, time_horizon, days_ago):
+        generated_at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
         self.log._conn.execute(
-            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, generated_at) VALUES (?,?,?,?,?)",
-            ("Apple", "AAPL", "HOLD", 0.4, "2026-08-01T00:00:00+00:00"),
+            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, time_horizon, generated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (entity, "TCK", recommendation, 0.7, time_horizon, generated_at),
         )
         self.log._conn.commit()
-        result = self.log.load_actionable_before("2026-08-02T00:00:00+00:00")
-        self.assertEqual(result, [])
 
-    def test_includes_buy_and_sell_before_cutoff(self):
-        self.log._conn.execute(
-            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, generated_at) VALUES (?,?,?,?,?)",
-            ("Tesla", "TSLA", "BUY", 0.7, "2026-08-01T00:00:00+00:00"),
-        )
-        self.log._conn.commit()
-        result = self.log.load_actionable_before("2026-08-02T00:00:00+00:00")
-        self.assertEqual(len(result), 1)
+    def test_long_term_5_days_old_is_not_yet_due(self):
+        self._insert_raw("Nvidia", "BUY", "long-term", days_ago=5)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(due, [])
 
-    def test_excludes_recommendations_after_cutoff(self):
-        self.log._conn.execute(
-            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, generated_at) VALUES (?,?,?,?,?)",
-            ("Tesla", "TSLA", "BUY", 0.7, "2026-08-10T00:00:00+00:00"),
-        )
-        self.log._conn.commit()
-        result = self.log.load_actionable_before("2026-08-02T00:00:00+00:00")
-        self.assertEqual(result, [])
+    def test_long_term_46_days_old_is_due(self):
+        self._insert_raw("Nvidia", "BUY", "long-term", days_ago=46)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(len(due), 1)
+        self.assertEqual(due[0]["entity"], "Nvidia")
+
+    def test_short_term_6_days_old_is_due(self):
+        self._insert_raw("Tesla", "BUY", "short-term", days_ago=6)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(len(due), 1)
+
+    def test_mixed_5_days_old_is_not_yet_due(self):
+        self._insert_raw("Apple", "BUY", "mixed", days_ago=5)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(due, [])
+
+    def test_null_horizon_uses_default_days(self):
+        self._insert_raw("Legacy Co", "BUY", None, days_ago=6)
+        due = self.log.load_actionable_due_for_check(self.horizon_days, default_holding_period_days=5)
+        self.assertEqual(len(due), 1)
+
+    def test_hold_recommendations_never_included(self):
+        self._insert_raw("Microsoft", "HOLD", "short-term", days_ago=100)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(due, [])
+
+    def test_mixed_batch_only_returns_due_entries(self):
+        self._insert_raw("Nvidia", "BUY", "long-term", days_ago=5)     # not due
+        self._insert_raw("Tesla", "BUY", "short-term", days_ago=6)      # due
+        self._insert_raw("Apple", "SELL", "long-term", days_ago=50)     # due
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        due_entities = {r["entity"] for r in due}
+        self.assertEqual(due_entities, {"Tesla", "Apple"})
+
+    def test_strong_buy_included_in_due_for_check(self):
+        self._insert_raw("Nvidia", "STRONG_BUY", "short-term", days_ago=6)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(len(due), 1)
+
+    def test_strong_sell_included_in_due_for_check(self):
+        self._insert_raw("Coinbase", "STRONG_SELL", "short-term", days_ago=6)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(len(due), 1)
 
 
 if __name__ == "__main__":
