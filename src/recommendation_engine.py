@@ -89,7 +89,20 @@ class RecommendationEngine:
 
         Returns:
             {"entity", "recommendation" (STRONG_BUY/BUY/HOLD/SELL/
-            STRONG_SELL), "confidence_score", "explanation"}
+            STRONG_SELL), "confidence_score", "explanation", "hold_gap"}
+
+            hold_gap (v1.5): for a HOLD blocked specifically by the
+            confidence or impact gate (NOT by insufficient data, which
+            isn't measured on the same 0-1 scale), a dict
+            {"blocked_by": "confidence"|"impact", "gap": float,
+            "threshold": float} showing exactly how far the entity is
+            from crossing that gate — e.g. "confidence 0.42, needs
+            0.50, gap 0.08". None for every other case (BUY, SELL,
+            STRONG_*, or a HOLD from insufficient data). WHY THIS
+            EXISTS: previously a HOLD only said "below threshold" in
+            prose — with hundreds of tracked entities, there was no
+            quick way to see which HOLDs are close to flipping
+            actionable versus nowhere near it.
         """
         entity = entity_confidence["entity"]
         confidence_score = entity_confidence.get("confidence_score")
@@ -98,6 +111,7 @@ class RecommendationEngine:
         average_impact = entity_confidence.get("average_impact") or 0.0
 
         explanation_parts: List[str] = []
+        hold_gap: Optional[Dict[str, Any]] = None
 
         if not sufficient_data:
             recommendation = "HOLD"
@@ -107,14 +121,19 @@ class RecommendationEngine:
             )
         elif (confidence_score or 0.0) < self.min_confidence_for_action:
             recommendation = "HOLD"
+            gap = round(self.min_confidence_for_action - (confidence_score or 0.0), 3)
+            hold_gap = {"blocked_by": "confidence", "gap": gap, "threshold": self.min_confidence_for_action}
             explanation_parts.append(
-                f"Încredere {confidence_score} sub pragul de {self.min_confidence_for_action} necesar pentru o acțiune."
+                f"Încredere {confidence_score} sub pragul de {self.min_confidence_for_action} necesar pentru o acțiune "
+                f"(la {gap} distanță)."
             )
         elif average_impact < self.min_impact_for_action:
             recommendation = "HOLD"
+            gap = round(self.min_impact_for_action - average_impact, 3)
+            hold_gap = {"blocked_by": "impact", "gap": gap, "threshold": self.min_impact_for_action}
             explanation_parts.append(
                 f"Impact mediu {average_impact} sub pragul de {self.min_impact_for_action} — "
-                f"știrile nu par suficient de semnificative pentru o acțiune."
+                f"știrile nu par suficient de semnificative pentru o acțiune (la {gap} distanță)."
             )
         elif dominant_sentiment == "positive":
             recommendation = "BUY"
@@ -138,6 +157,7 @@ class RecommendationEngine:
             "recommendation": recommendation,
             "confidence_score": confidence_score,
             "explanation": " ".join(explanation_parts),
+            "hold_gap": hold_gap,
         }
 
     def recommend_all(self, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
