@@ -53,7 +53,40 @@ class TestReportStructure(unittest.TestCase):
         self.assertIn("<!DOCTYPE html>", html)
 
 
-class TestSummaryCounts(unittest.TestCase):
+class TestHoldGapDisplay(unittest.TestCase):
+    """Tests for the v1.5 hold-gap proximity indicator on HOLD cards."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_hold_gap_confidence_shown_on_card(self):
+        rec = make_recommendation(entity="Tesla", recommendation="HOLD")
+        rec["hold_gap"] = {"blocked_by": "confidence", "gap": 0.08, "threshold": 0.5}
+        html = self.generator.generate_report([rec])
+        self.assertIn("0.08", html)
+        self.assertIn("încredere", html)
+
+    def test_hold_gap_impact_shown_on_card(self):
+        rec = make_recommendation(entity="Tesla", recommendation="HOLD")
+        rec["hold_gap"] = {"blocked_by": "impact", "gap": 0.12, "threshold": 0.3}
+        html = self.generator.generate_report([rec])
+        self.assertIn("0.12", html)
+        self.assertIn("impact", html)
+
+    def test_no_hold_gap_renders_nothing_extra(self):
+        rec = make_recommendation(entity="Tesla", recommendation="HOLD")
+        rec["hold_gap"] = None
+        html = self.generator.generate_report([rec])
+        self.assertNotIn('<div class="hold-gap"', html)
+
+    def test_missing_hold_gap_key_does_not_crash(self):
+        rec = make_recommendation(entity="Tesla", recommendation="HOLD")
+        rec.pop("hold_gap", None)
+        html = self.generator.generate_report([rec])
+        self.assertIn("Tesla", html)
+
+
+
     def setUp(self):
         self.generator = DashboardGenerator()
 
