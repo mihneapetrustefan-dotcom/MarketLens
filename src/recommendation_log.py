@@ -157,7 +157,7 @@ class RecommendationLog:
         recommendation against ITS OWN declared horizon instead.
         """
         cursor = self._conn.execute(
-            "SELECT * FROM recommendations WHERE recommendation IN ('BUY', 'SELL') AND generated_at <= ?",
+            "SELECT * FROM recommendations WHERE recommendation IN ('BUY', 'SELL', 'STRONG_BUY', 'STRONG_SELL') AND generated_at <= ?",
             (cutoff_iso,),
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -193,7 +193,7 @@ class RecommendationLog:
         """
         now = datetime.now(timezone.utc)
         cursor = self._conn.execute(
-            "SELECT * FROM recommendations WHERE recommendation IN ('BUY', 'SELL')"
+            "SELECT * FROM recommendations WHERE recommendation IN ('BUY', 'SELL', 'STRONG_BUY', 'STRONG_SELL')"
         )
 
         due = []
