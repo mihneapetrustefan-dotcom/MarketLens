@@ -56,6 +56,61 @@ class TestBasicRecommendation(unittest.TestCase):
         self.assertEqual(result["recommendation"], "HOLD")
 
 
+class TestHoldGapTransparency(unittest.TestCase):
+    """Tests for the v1.5 hold_gap field — exact distance to actionable, for HOLDs blocked by a numeric gate."""
+
+    def setUp(self):
+        self.engine = RecommendationEngine()
+
+    def test_hold_blocked_by_confidence_reports_gap(self):
+        ec = make_entity_confidence(confidence_score=0.42, dominant_sentiment="positive", average_impact=0.6)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "HOLD")
+        self.assertIsNotNone(result["hold_gap"])
+        self.assertEqual(result["hold_gap"]["blocked_by"], "confidence")
+        self.assertAlmostEqual(result["hold_gap"]["gap"], 0.08, places=2)
+        self.assertEqual(result["hold_gap"]["threshold"], 0.5)
+
+    def test_hold_blocked_by_impact_reports_gap(self):
+        ec = make_entity_confidence(confidence_score=0.9, dominant_sentiment="positive", average_impact=0.22)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "HOLD")
+        self.assertIsNotNone(result["hold_gap"])
+        self.assertEqual(result["hold_gap"]["blocked_by"], "impact")
+        self.assertAlmostEqual(result["hold_gap"]["gap"], 0.08, places=2)
+
+    def test_hold_from_insufficient_data_has_no_gap(self):
+        ec = make_entity_confidence(sufficient_data=False, confidence_score=0.9, dominant_sentiment="positive")
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "HOLD")
+        self.assertIsNone(result["hold_gap"])
+
+    def test_hold_from_neutral_sentiment_has_no_gap(self):
+        ec = make_entity_confidence(confidence_score=0.9, dominant_sentiment="neutral", average_impact=0.9)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "HOLD")
+        self.assertIsNone(result["hold_gap"])
+
+    def test_buy_has_no_hold_gap(self):
+        ec = make_entity_confidence(confidence_score=0.6, dominant_sentiment="positive", average_impact=0.5)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "BUY")
+        self.assertIsNone(result["hold_gap"])
+
+    def test_strong_buy_has_no_hold_gap(self):
+        ec = make_entity_confidence(confidence_score=0.9, dominant_sentiment="positive", average_impact=0.6, sentiment_consistency=0.9)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "STRONG_BUY")
+        self.assertIsNone(result["hold_gap"])
+
+    def test_gap_is_zero_at_exact_threshold_boundary(self):
+        # Exactly AT the threshold should qualify as BUY (>=), so this
+        # tests just BELOW it produces a tiny, correctly-rounded gap.
+        ec = make_entity_confidence(confidence_score=0.499, dominant_sentiment="positive", average_impact=0.6)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["hold_gap"]["gap"], 0.001)
+
+
 class TestStrongTier(unittest.TestCase):
     def setUp(self):
         self.engine = RecommendationEngine()
