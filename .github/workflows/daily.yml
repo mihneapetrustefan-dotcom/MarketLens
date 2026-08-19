@@ -4,8 +4,7 @@ name: MarketLens Daily Pipeline
 # Time), plus la miezul nopții. Orele de mai jos sunt calculate pentru
 # EST (ora standard de iarnă, UTC-5) — vara (EDT, UTC-4), din cauza
 # schimbării orei, rulările vor cădea cu o oră mai devreme față de
-# intenția inițială (ex. "înainte de deschidere" va cădea la 8:00 ET
-# în loc de 9:00 ET). GitHub Actions nu ajustează automat cron-ul la
+# intenția inițială. GitHub Actions nu ajustează automat cron-ul la
 # ora de vară — dacă vrei precizie exactă tot anul, cron-ul de mai jos
 # trebuie actualizat manual de 2 ori pe an.
 #
@@ -32,10 +31,7 @@ permissions:
 
 # Grup de concurență COMUN cu weekly_backfill.yml — cele două
 # workflow-uri scriu în aceleași fișiere (data/, docs/), deci GitHub
-# le pune la coadă în loc să le lase să ruleze în paralel și să se
-# ciocnească la push. Cu 5 rulări/zi, asta contează chiar mai mult
-# acum — o rulare care începe cât timp alta e încă activă așteaptă
-# cuminte la coadă, în loc să eșueze.
+# le pune la coadă în loc să le lase să ruleze în paralel.
 concurrency:
   group: marketlens-data-write
   cancel-in-progress: false
@@ -72,5 +68,25 @@ jobs:
           git config user.email "actions@github.com"
           git add data/ docs/
           git diff --staged --quiet || git commit -m "Actualizare automată $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git pull --rebase origin main
-          git push
+
+          # Calea rapidă, obișnuită: rebase curat peste orice a ajuns
+          # între timp pe main.
+          if git pull --rebase origin main; then
+            git push
+          else
+            # Conflict — de obicei pe data/marketlens.db sau
+            # docs/index.html (fișiere REGENERATE integral la fiecare
+            # rulare, nu editate incremental, deci nu se pot combina
+            # linie cu linie ca un fișier text obișnuit). In loc sa
+            # esuam si sa cerem interventie manuala, pastram automat
+            # versiunea proaspat generata de rularea curenta — orice
+            # articol colectat exclusiv de rularea concurenta, in
+            # fereastra scurta de suprapunere, va fi recolectat oricum
+            # la rularea urmatoare (RSS-urile arata istoric recent, nu
+            # doar strict-nou).
+            echo "Conflict la rebase — pastram versiunea proaspat generata de aceasta rulare."
+            git rebase --abort || true
+            git fetch origin main
+            git merge -X ours origin/main --no-edit -m "Merge automat (rezolvare conflict pe fisiere regenerate)"
+            git push
+          fi
