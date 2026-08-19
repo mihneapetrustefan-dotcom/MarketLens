@@ -226,7 +226,7 @@ def main() -> int:
         print("No upgrade/downgrade changes today — no alert needed")
 
     # --- 6. Backtest previously-logged recommendations old enough to check ---
-      backtest_engine = BacktestEngine()
+    backtest_engine = BacktestEngine()
     old_enough = _safe_stage(
         "RecommendationLog.load_actionable_due_for_check", [],
         rec_log.load_actionable_due_for_check,
