@@ -241,8 +241,15 @@ def main() -> int:
         backtest_result = _safe_stage("Backtest Engine", empty_backtest, backtest_engine.run_backtest, old_enough)
     else:
         backtest_result = empty_backtest
-    verified_track_record = {
-        r["entity"]: r["was_correct"] for r in backtest_result["results"] if r.get("outcome") == "checked"
+      def _persist_backtest_results():
+        for r in backtest_result["results"]:
+            rec_log.mark_checked(r["id"], r.get("was_correct"))
+    _safe_stage("RecommendationLog.mark_checked (batch)", None, _persist_backtest_results)
+
+    verified_track_record = _safe_stage(
+        "RecommendationLog.load_latest_verified_outcome_per_entity", {},
+        rec_log.load_latest_verified_outcome_per_entity,
+    )
     }
     print(f"Backtest: {backtest_result['summary']['checked']} recommendation(s) checked, "
           f"hit rate {backtest_result['summary']['hit_rate']}")
