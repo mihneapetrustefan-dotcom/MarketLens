@@ -241,7 +241,7 @@ def main() -> int:
         backtest_result = _safe_stage("Backtest Engine", empty_backtest, backtest_engine.run_backtest, old_enough)
     else:
         backtest_result = empty_backtest
-      def _persist_backtest_results():
+         def _persist_backtest_results():
         for r in backtest_result["results"]:
             rec_log.mark_checked(r["id"], r.get("was_correct"))
     _safe_stage("RecommendationLog.mark_checked (batch)", None, _persist_backtest_results)
