@@ -5,33 +5,30 @@ run_daily.py
 MarketLens daily automation entry point.
 
 RESPONSIBILITY:
-Run the CORE pipeline — RSS collection, processing, persistence,
+Run the CORE pipeline — RSS + API collection, processing, persistence,
 scoring, recommendations, and the Dashboard — completely unattended,
-via GitHub Actions, once a day, with NO user interaction of any kind.
-This replaces the Colab notebook's manual "Run all" + Google Drive
-authorization click with a script that just runs.
+via GitHub Actions, several times a day, with NO user interaction of
+any kind.
 
 KEY DIFFERENCE FROM THE COLAB VERSION — no Google Drive:
 Persistence (the SQLite database + the generated Dashboard) lives
 inside THIS repository (`data/marketlens.db`, `docs/index.html`)
 instead of Google Drive. The GitHub Actions workflow that calls this
-script commits the updated files back to the repo after every run —
-that's what makes the accumulated history durable across runs, exactly
-like Drive did for the notebook, but requiring zero manual
-authorization.
+script commits the updated files back to the repo after every run.
 
 WHAT THIS SCRIPT DOES NOT DO: Google News Historical Backfill (see
-run_weekly_backfill.py) — deliberately a separate, less frequent job,
-since scanning every tracked company against Google News (with a
-polite delay between each request) takes several minutes; running it
-daily would slow down this fast, frequent core update for no benefit.
+run_weekly_backfill.py) — deliberately a separate, less frequent job.
 
 FAILURE DETECTION: this script returns a non-zero exit code if
-something goes clearly wrong (e.g. zero articles collected — meaning
-every RSS source is unreachable). GitHub Actions marks a run with a
-non-zero exit as FAILED, and GitHub emails the repository owner about
-failed workflow runs by default — so a silent, unattended failure
-still gets noticed, without any extra monitoring setup.
+something clearly goes wrong (e.g. zero articles collected). GitHub
+Actions marks a run with a non-zero exit as FAILED, and GitHub emails
+the repository owner about failed workflow runs by default.
+
+RESILIENCE: every SECONDARY stage (anything past collection,
+processing, persistence, and scoring/Dashboard generation — the truly
+essential ones) is wrapped in _safe_stage(), so a bug or a transient
+failure in any one of them degrades gracefully to a safe fallback
+instead of failing the entire run and producing no report at all.
 """
 
 import os
@@ -80,11 +77,8 @@ def load_watchlist():
 
     Returns:
         A list of company names, or None if the file doesn't exist or
-        is empty — meaning "show everything", the exact same behavior
-        as before this feature existed. The watchlist ONLY affects
-        which entities appear on the Dashboard; data collection and
-        scoring still cover every tracked company regardless, so
-        broader corroboration isn't lost by narrowing the display.
+        is empty — meaning "no pinned section", the Dashboard shows
+        everything normally either way.
     """
     if not os.path.exists(WATCHLIST_PATH):
         return None
@@ -103,18 +97,13 @@ def _safe_stage(step_name, fallback, func, *args, **kwargs):
     Run a SECONDARY pipeline stage (one whose failure shouldn't stop
     the whole run from producing a report) with a safe fallback value.
 
-    WHY THIS EXISTS: some stages are essential — if RSS collection or
-    Dashboard generation fails, there's genuinely nothing useful to
-    report, and the run SHOULD fail loudly (see the explicit checks
-    elsewhere in main()). But other stages are enrichment — Time
-    Horizon, Backtest, Market Data, Portfolio Simulation, Sector
-    Aggregator, Daily Summary — and a bug or a transient failure in
-    ANY ONE of them (e.g. a malformed article breaking Sector
-    Aggregator) previously meant the ENTIRE run failed and produced NO
-    report at all, even though every other stage had already succeeded.
-    This wrapper means a secondary stage failing degrades gracefully
-    to a safe default instead, and the run still finishes with
-    whatever it was able to compute.
+    Essential stages (RSS collection, processing, Dashboard
+    generation) are NOT wrapped in this — if those fail, there is
+    genuinely nothing useful to report, and the run should fail
+    loudly. Everything else — Time Horizon, Upgrade/Downgrade,
+    Backtest, Market Data, Portfolio Simulation, Sector Aggregator,
+    Daily Summary, Accuracy History — degrades gracefully to a safe
+    default instead.
 
     Args:
         step_name: human-readable name, used in the warning message.
@@ -135,9 +124,7 @@ def _safe_stage(step_name, fallback, func, *args, **kwargs):
 def main() -> int:
     """
     Run the full daily pipeline once. Returns a process exit code:
-    0 on success, non-zero if something is clearly wrong (so CI marks
-    the run as failed rather than silently producing a stale/empty
-    report).
+    0 on success, non-zero if something is clearly wrong.
     """
     print(f"=== MarketLens daily run started at {datetime.now(timezone.utc).isoformat()} ===")
 
@@ -147,8 +134,7 @@ def main() -> int:
     print(f"Collected {len(raw_articles)} raw articles from {len(RSS_FEEDS)} RSS sources")
 
     # --- 1b. Optional real API sources (Finnhub, Alpha Vantage) —
-    # both no-op cleanly if their API key secret isn't configured, so
-    # this is always safe to call regardless of setup.
+    # both no-op cleanly if their API key secret isn't configured.
     stock_tickers = [entry["ticker"] for entry in TICKER_REGISTRY if entry["category"] == "stocks"]
 
     finnhub = FinnhubNewsCollector()
@@ -171,7 +157,7 @@ def main() -> int:
         print("ERROR: zero articles collected — every configured source may be unreachable")
         return 1
 
-    # --- 2. Process (Cleaner through Impact Engine) ---
+    # --- 2. Process (Cleaner through Impact Engine, including Event Detection) ---
     processed = process_articles(raw_articles)
     print(f"{len(processed)} article(s) remain after cleaning/deduplication/scoring")
 
@@ -226,9 +212,12 @@ def main() -> int:
         print("No upgrade/downgrade changes today — no alert needed")
 
     # --- 6. Backtest previously-logged recommendations old enough to check ---
-    backtest_engine = BacktestEngine(holding_period_days=5)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=backtest_engine.holding_period_days)).isoformat()
-    old_enough = _safe_stage("RecommendationLog.load_actionable_before", [], rec_log.load_actionable_before, cutoff)
+    backtest_engine = BacktestEngine()
+    old_enough = _safe_stage(
+        "RecommendationLog.load_actionable_due_for_check", [],
+        rec_log.load_actionable_due_for_check,
+        backtest_engine.holding_period_days_by_horizon, backtest_engine.holding_period_days,
+    )
     empty_backtest = {
         "results": [],
         "summary": {"total_recommendations": 0, "checked": 0, "skipped": 0,
@@ -238,18 +227,34 @@ def main() -> int:
         backtest_result = _safe_stage("Backtest Engine", empty_backtest, backtest_engine.run_backtest, old_enough)
     else:
         backtest_result = empty_backtest
-    verified_track_record = {
-        r["entity"]: r["was_correct"] for r in backtest_result["results"] if r.get("outcome") == "checked"
-    }
+
+    # Persist each result back onto ITS OWN logged row, so it's never
+    # re-checked again and the Dashboard shows a specific, stable
+    # outcome per entity instead of whichever row happened to come due
+    # on a given day.
+    def _persist_backtest_results():
+        for r in backtest_result["results"]:
+            rec_log.mark_checked(r["id"], r.get("was_correct"))
+
+    _safe_stage("RecommendationLog.mark_checked (batch)", None, _persist_backtest_results)
+
+    verified_track_record = _safe_stage(
+        "RecommendationLog.load_latest_verified_outcome_per_entity", {},
+        rec_log.load_latest_verified_outcome_per_entity,
+    )
+    accuracy_history = _safe_stage(
+        "RecommendationLog.load_accuracy_history_daily", [],
+        rec_log.load_accuracy_history_daily,
+    )
     print(f"Backtest: {backtest_result['summary']['checked']} recommendation(s) checked, "
           f"hit rate {backtest_result['summary']['hit_rate']}")
 
-    # --- 7. Market data + risk score, for actionable (BUY/SELL) entities only ---
+    # --- 7. Market data + risk score, for actionable (BUY/SELL/STRONG_BUY/STRONG_SELL) entities only ---
     def _build_market_data():
         entity_to_category = {entry["name"]: entry["category"] for entry in TICKER_REGISTRY}
         yfinance_tickers = {}
         for r in recommendations:
-            if r["recommendation"] not in ("BUY", "SELL"):
+            if r["recommendation"] not in ("BUY", "SELL", "STRONG_BUY", "STRONG_SELL"):
                 continue
             ticker = entity_to_ticker.get(r["entity"])
             category = entity_to_category.get(r["entity"])
@@ -316,7 +321,6 @@ def main() -> int:
         sector_scores=sector_scores,
         upgrade_downgrade_map=upgrade_downgrade_map,
         portfolio_result=portfolio_result,
-        accuracy_history=accuracy_history,
         daily_summary_text=daily_summary_text,
         entity_sector_map=dict(COMPANY_SECTOR_MAP),
         verified_track_record=verified_track_record,
@@ -324,6 +328,8 @@ def main() -> int:
         price_history_map=price_history_map,
         portfolio_history=portfolio_history,
         watchlist=load_watchlist(),
+        upgrade_downgrade_results=upgrade_downgrade_results,
+        accuracy_history=accuracy_history,
     )
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
@@ -332,7 +338,7 @@ def main() -> int:
     rec_log.close()
     db.close()
 
-    actionable = sum(1 for r in recommendations if r["recommendation"] in ("BUY", "SELL"))
+    actionable = sum(1 for r in recommendations if r["recommendation"] in ("BUY", "SELL", "STRONG_BUY", "STRONG_SELL"))
     print(f"=== Run complete: {actionable} actionable recommendation(s) out of {len(recommendations)} entities ===")
     return 0
 
