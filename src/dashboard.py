@@ -492,6 +492,53 @@ class DashboardGenerator:
         </script>
         """
 
+    def _render_accuracy_chart(self, accuracy_history: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render the cumulative hit-rate-over-time line chart — makes
+        VISIBLE (instead of just claimed) whether Backtest Engine's
+        track record is actually improving as more recommendations get
+        checked, rather than only ever showing a single current number.
+        """
+        if not accuracy_history:
+            return '<p class="empty-state">Niciun istoric de precizie încă — apare pe măsură ce recomandările ajung la scadență și sunt verificate.</p>'
+
+        labels = [self._escape((s.get("checked_at") or "")[:10]) for s in accuracy_history]
+        values = [round((s.get("cumulative_hit_rate") or 0) * 100, 1) for s in accuracy_history]
+        counts = [s.get("cumulative_checked") for s in accuracy_history]
+
+        return f"""
+        <canvas id="accuracyChart" height="70"></canvas>
+        <script>
+          (function() {{
+            if (window.Chart) {{
+              new Chart(document.getElementById('accuracyChart'), {{
+                type: 'line',
+                data: {{
+                  labels: {self._json_for_script(labels)},
+                  datasets: [{{
+                    label: 'Rată de succes cumulativă (%)',
+                    data: {self._json_for_script(values)},
+                    borderColor: '#e8c547',
+                    backgroundColor: 'rgba(232,197,71,0.12)',
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: 2,
+                  }}]
+                }},
+                options: {{
+                  responsive: true,
+                  plugins: {{ legend: {{ display: false }} }},
+                  scales: {{
+                    x: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }},
+                    y: {{ min: 0, max: 100, ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }}
+                  }}
+                }}
+              }});
+            }}
+          }})();
+        </script>
+        """
+
     def _render_changes_section(self, upgrade_downgrade_results: Optional[List[Dict[str, Any]]]) -> str:
         """Render the list of entities whose recommendation changed since it was last logged."""
         if not upgrade_downgrade_results:
@@ -556,6 +603,7 @@ class DashboardGenerator:
         portfolio_history: Optional[List[Dict[str, Any]]] = None,
         watchlist: Optional[List[str]] = None,
         upgrade_downgrade_results: Optional[List[Dict[str, Any]]] = None,
+        accuracy_history: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Build the full HTML report as a single string.
@@ -747,6 +795,9 @@ class DashboardGenerator:
     <div class="section-title" id="portofoliu">Simulare portofoliu <span class="section-hint">(recomandări deja verificate prin Backtest)</span></div>
     {self._render_portfolio_summary(portfolio_result)}
     <div class="chart-frame" style="margin-top:16px;">{self._render_portfolio_chart(portfolio_history)}</div>
+
+    <div class="section-title">Rată de succes în timp <span class="section-hint">(precizie cumulativă a Backtest Engine)</span></div>
+    <div class="chart-frame">{self._render_accuracy_chart(accuracy_history)}</div>
 
     <div class="section-title" id="piata">Date de piață <span class="section-hint">(fapte reale — fără verdict de subevaluare/supraevaluare)</span></div>
     {self._render_market_data_table(market_data, risk_data)}
