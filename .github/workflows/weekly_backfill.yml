@@ -1,18 +1,19 @@
 name: MarketLens Weekly Historical Backfill
 
-# Rulează automat în fiecare duminică, la 06:00 UTC (înaintea rulării
-# zilnice normale), și poate fi pornit și manual din tab-ul "Actions".
+# Rulează de 2 ori pe săptămână (duminică și miercuri, 06:00 UTC),
+# plus poate fi pornit manual din tab-ul "Actions".
 on:
   schedule:
     - cron: '0 6 * * 0'
+    - cron: '0 6 * * 3'
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 # Grup de concurență COMUN cu daily.yml — vezi explicația din acel
-# fișier. Fără asta, cele două workflow-uri pot ajunge să scrie în
-# aceleași fișiere aproape simultan și una din scrieri e respinsă.
+# fișier. Cu 5 rulări/zi pe daily.yml plus asta, concurența devine
+# chiar mai importantă — GitHub pune totul la coadă automat.
 concurrency:
   group: marketlens-data-write
   cancel-in-progress: false
@@ -39,6 +40,8 @@ jobs:
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
         run: python run_weekly_backfill.py
 
       - name: Commit and push updated data + report
@@ -46,6 +49,6 @@ jobs:
           git config user.name "marketlens-bot"
           git config user.email "actions@github.com"
           git add data/ docs/
-          git diff --staged --quiet || git commit -m "Actualizare săptămânală (backfill istoric) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git diff --staged --quiet || git commit -m "Actualizare (backfill istoric) $(date -u +'%Y-%m-%d %H:%M UTC')"
           git pull --rebase origin main
           git push
