@@ -69,6 +69,31 @@ class TestSummaryCounts(unittest.TestCase):
         self.assertIn("1 SELL", html)
         self.assertIn("2 HOLD", html)
 
+    def test_strong_buy_counted_separately_and_rolled_into_hero_total(self):
+        recs = [
+            make_recommendation(entity="A", recommendation="STRONG_BUY"),
+            make_recommendation(entity="B", recommendation="BUY"),
+        ]
+        html = self.generator.generate_report(recs)
+        self.assertIn("2 BUY", html)  # hero line: STRONG_BUY + BUY combined
+        self.assertIn("Strong Buy", html)  # dedicated KPI cell label present
+
+    def test_strong_sell_counted_separately_and_rolled_into_hero_total(self):
+        recs = [
+            make_recommendation(entity="A", recommendation="STRONG_SELL"),
+            make_recommendation(entity="B", recommendation="SELL"),
+        ]
+        html = self.generator.generate_report(recs)
+        self.assertIn("2 SELL", html)
+        self.assertIn("Strong Sell", html)
+
+    def test_strong_buy_card_shows_star_prefixed_label(self):
+        rec = make_recommendation(entity="Nvidia", recommendation="STRONG_BUY")
+        html = self.generator.generate_report([rec])
+        self.assertIn("STRONG BUY", html)
+        self.assertIn("★", html)
+        self.assertNotIn("STRONG_BUY<", html)  # underscore never leaks into the visible label
+
 
 class TestSectorGrouping(unittest.TestCase):
     def setUp(self):
@@ -194,6 +219,45 @@ class TestRepresentativeArticleSourceLink(unittest.TestCase):
         rec = make_recommendation(entity="Tesla")
         html = self.generator.generate_report([rec], entity_articles_map={})
         self.assertIn(rec["entity"], html)
+
+    def test_recent_lower_impact_article_beats_stale_high_impact_one(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        rec = make_recommendation(entity="Tesla")
+        articles_map = {"Tesla": [
+            {"title": "Old blowout earnings report", "source": "A", "url": "http://a",
+             "impact": {"score": 0.9}, "published_at": (now - timedelta(days=30)).isoformat()},
+            {"title": "Fresh routine update", "source": "B", "url": "http://b",
+             "impact": {"score": 0.5}, "published_at": now.isoformat()},
+        ]}
+        html = self.generator.generate_report([rec], entity_articles_map=articles_map)
+        self.assertIn("Fresh routine update", html)
+        self.assertNotIn("Old blowout earnings report", html)
+
+    def test_much_more_impactful_old_article_can_still_win(self):
+        # Recency down-weights, but doesn't wipe out a genuinely huge
+        # impact gap versus a near-irrelevant recent article.
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        rec = make_recommendation(entity="Tesla")
+        articles_map = {"Tesla": [
+            {"title": "Massive historic event", "source": "A", "url": "http://a",
+             "impact": {"score": 1.0}, "published_at": (now - timedelta(days=10)).isoformat()},
+            {"title": "Trivial mention", "source": "B", "url": "http://b",
+             "impact": {"score": 0.02}, "published_at": now.isoformat()},
+        ]}
+        html = self.generator.generate_report([rec], entity_articles_map=articles_map)
+        self.assertIn("Massive historic event", html)
+
+    def test_missing_timestamp_falls_back_to_pure_impact_comparison(self):
+        rec = make_recommendation(entity="Tesla")
+        articles_map = {"Tesla": [
+            {"title": "No date low impact", "source": "A", "url": "http://a", "impact": {"score": 0.2}},
+            {"title": "No date high impact", "source": "B", "url": "http://b", "impact": {"score": 0.8}},
+        ]}
+        html = self.generator.generate_report([rec], entity_articles_map=articles_map)
+        self.assertIn("No date high impact", html)
+        self.assertNotIn("No date low impact", html)
 
     def test_url_is_html_escaped(self):
         rec = make_recommendation(entity="Tesla")
