@@ -436,28 +436,32 @@ class DashboardGenerator:
             )
         return "".join(lines)
 
-    def _render_sidebar(
+    def _render_masthead(
         self,
+        generated_at: str,
         sector_names: List[str],
         total_entities: int,
         watchlist_count: int,
         changes_count: int,
     ) -> str:
-        """Render the sticky left sidebar with anchor links to every section of the report."""
-        watchlist_item = (
-            f'<a class="nav-item star" href="#watchlist">Watchlist <span class="count">{watchlist_count}</span></a>'
+        """Render the newspaper-style masthead + horizontal section nav strip (replaces the old sidebar — same anchor ids/hrefs, so every section remains reachable via a plain link, JS or not)."""
+        watchlist_link = (
+            f'<a href="#watchlist">Watchlist <span class="count">{watchlist_count}</span></a>'
             if watchlist_count else ""
         )
         return f"""
-        <div class="sidebar">
-          <div class="brand">MarketLens</div>
-          <a class="nav-item" href="#rezumat">Rezumat</a>
-          {watchlist_item}
-          <a class="nav-item" href="#sectoare">Sectoare <span class="count">{len(sector_names)}</span></a>
-          <a class="nav-item" href="#portofoliu">Portofoliu</a>
-          <a class="nav-item" href="#piata">Date de piață</a>
-          <a class="nav-item" href="#schimbari">Schimbări <span class="count">{changes_count}</span></a>
-          <div class="nav-footer">{total_entities} entități urmărite</div>
+        <div class="masthead">
+          <div class="brand">The MarketLens Journal</div>
+          <div class="sub">{generated_at} · {total_entities} companii urmărite</div>
+        </div>
+        <div class="nav-strip">
+          <a href="#rezumat">Rezumat</a>
+          {watchlist_link}
+          <a href="#sectoare">Sectoare <span class="count">{len(sector_names)}</span></a>
+          <a href="#portofoliu">Portofoliu</a>
+          <a href="#piata">Date de piață</a>
+          <a href="#schimbari">Schimbări <span class="count">{changes_count}</span></a>
+          <span class="count">{total_entities} entități</span>
         </div>
         """
 
@@ -552,100 +556,104 @@ class DashboardGenerator:
             upgrade_downgrade_results = list((upgrade_downgrade_map or {}).values())
         changes_count = sum(1 for r in upgrade_downgrade_results if r.get("change") in ("upgrade", "downgrade"))
 
-        sidebar = self._render_sidebar(sector_names, len(recommendations), len(watchlist_recs), changes_count)
+        masthead = self._render_masthead(generated_at, sector_names, len(recommendations), len(watchlist_recs), changes_count)
 
         return f"""<!DOCTYPE html>
 <html lang="ro">
 <head>
 <meta charset="utf-8">
 <title>MarketLens — Raport de Investiții</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   * {{ box-sizing: border-box; }}
-  body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#0a0b0f; color:#eef0f3; margin:0; display:flex; }}
+  body {{ font-family:'Source Sans 3', Georgia, serif; background:#0d0c0a; color:#eae6da; margin:0; padding:0; }}
 
-  .sidebar {{ width:190px; flex-shrink:0; height:100vh; position:sticky; top:0; background:#0f1218; border-right:1px solid #1f2333; padding:20px 0; overflow-y:auto; }}
-  .sidebar .brand {{ padding:0 16px 16px 16px; font-size:13px; font-weight:800; border-bottom:1px solid #1f2333; margin-bottom:12px; }}
-  .nav-item {{ display:flex; justify-content:space-between; padding:10px 16px; font-size:12px; color:#7a8bb0; text-decoration:none; }}
-  .nav-item:hover {{ background:#151a28; color:#eef0f3; }}
-  .nav-item.star {{ color:#e8c547; }}
-  .nav-item .count {{ color:#4a5063; font-size:10px; }}
-  .nav-footer {{ padding:14px 16px; font-size:10px; color:#4a5063; border-top:1px solid #1f2333; margin-top:12px; }}
+  .masthead {{ text-align:center; border-bottom:4px double #eae6da; padding:28px 24px 16px 24px; }}
+  .masthead .brand {{ font-family:'Playfair Display', serif; font-size:38px; font-weight:900; margin:0; letter-spacing:1px; color:#f5f1e6; }}
+  .masthead .sub {{ font-size:11px; letter-spacing:3px; text-transform:uppercase; color:#8c8470; margin-top:6px; }}
 
-  .main {{ flex:1; padding:24px 32px; max-width:900px; }}
-  .hero-eyebrow {{ font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#6d7a99; margin-bottom:6px; }}
-  .hero-number {{ font-size:32px; font-weight:800; background: linear-gradient(90deg, #3ecf7e, #4a90d9); -webkit-background-clip:text; background-clip:text; color:transparent; }}
-  .hero-summary {{ font-size:13px; color:#c2c8d6; margin-top:10px; line-height:1.6; background:#151a28; border-radius:8px; padding:12px 16px; }}
+  .nav-strip {{ display:flex; justify-content:center; flex-wrap:wrap; gap:26px; padding:12px 24px; border-bottom:1px solid #33301f; font-size:11px; letter-spacing:1px; text-transform:uppercase; position:sticky; top:0; background:#0d0c0a; z-index:10; }}
+  .nav-strip a, .nav-strip span.count:last-child {{ margin:0 13px; }}
+  .nav-strip a {{ color:#c8c2ae; text-decoration:none; }}
+  .nav-strip a:hover {{ color:#d4915a; }}
+  .nav-strip .count {{ color:#5f5a48; margin-left:3px; }}
 
-  .kpi-row {{ display:flex; gap:10px; margin:16px 0; }}
-  .kpi {{ background:#151a28; border-radius:10px; padding:14px; flex:1; text-align:center; }}
-  .kpi .n {{ font-size:20px; font-weight:800; }}
-  .kpi .l {{ font-size:9px; color:#8a8f98; text-transform:uppercase; margin-top:2px; }}
+  .main {{ max-width:1400px; margin:0 auto; padding:28px 40px 48px 40px; }}
 
-  .search-box {{ width:100%; background:#151a28; border:1px solid #262c3d; border-radius:8px; padding:9px 14px; color:#eef0f3; font-size:13px; margin:8px 0 20px 0; }}
-  .search-box::placeholder {{ color:#5f6673; }}
+  .hero-eyebrow {{ display:none; }}
+  .hero-number {{ font-family:'Playfair Display', serif; font-size:52px; font-weight:800; text-align:center; margin:12px 0; color:#3ecf7e; background:none; -webkit-text-fill-color:initial; }}
+  .hero-summary {{ max-width:720px; margin:0 auto 20px auto; text-align:center; font-size:13.5px; color:#c8c2ae; font-style:italic; line-height:1.6; }}
 
-  .section-title {{ font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#eef0f3; margin:32px 0 14px 0; padding-top:10px; scroll-margin-top:16px; }}
-  .section-hint {{ font-size:10px; color:#5a6178; font-weight:400; text-transform:none; margin-left:8px; }}
+  .kpi-row {{ display:flex; justify-content:center; gap:44px; border-top:1px solid #33301f; border-bottom:1px solid #33301f; padding:16px 0; margin:16px 0 8px 0; }}
+  .kpi {{ text-align:center; background:none; padding:0; }}
+  .kpi .n {{ font-size:20px; font-weight:700; display:block; color:#f5f1e6; }}
+  .kpi .l {{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:#8c8470; margin-top:2px; }}
 
-  .rec-cards {{ display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; }}
-  .rec-card {{ background:#151a28; border-radius:12px; padding:14px 16px; }}
-  .rec-card.pinned {{ box-shadow: 0 0 0 1px #e8c54755, inset 3px 0 0 #e8c547 !important; }}
+  .search-box {{ display:block; margin:22px auto; max-width:340px; width:100%; background:transparent; border:1px solid #33301f; border-radius:0; padding:9px 14px; color:#eae6da; font-family:'Source Sans 3', sans-serif; font-size:13px; text-align:center; }}
+  .search-box::placeholder {{ color:#5f5a48; font-style:italic; }}
+
+  .section-title {{ font-family:'Playfair Display', serif; font-size:23px; font-weight:800; text-transform:none; letter-spacing:0; border-bottom:2px solid #eae6da; padding-bottom:8px; margin:40px 0 18px 0; color:#f5f1e6; scroll-margin-top:56px; }}
+  .section-hint {{ font-family:'Source Sans 3', sans-serif; font-size:11px; color:#8c8470; font-weight:400; text-transform:none; margin-left:10px; }}
+
+  .rec-cards {{ columns:3; column-gap:32px; }}
+  .rec-card {{ background:none; border-radius:0; padding:0; break-inside:avoid; display:block; margin-bottom:24px; padding-bottom:18px; border-bottom:1px solid #2a2717; }}
+  .rec-card.pinned {{ box-shadow:none !important; background:#1c1810; padding:14px 16px; border-bottom:none; border-left:3px solid #d4b545; margin-bottom:16px; }}
   .rc-top {{ display:flex; justify-content:space-between; align-items:flex-start; }}
-  .rc-name {{ font-size:14px; font-weight:700; }}
-  .pin-icon {{ color:#e8c547; margin-right:5px; }}
-  .rc-tags {{ display:flex; gap:5px; flex-wrap:wrap; margin-top:4px; }}
-  .badge-pill {{ font-size:9px; font-weight:700; background:#1c2029; color:#9aa0a6; padding:2px 7px; border-radius:8px; }}
-  .badge-pill.change-up {{ background:#12261a; color:#3ecf7e; }}
-  .badge-pill.change-down {{ background:#2a1518; color:#f0645f; }}
-  .badge-pill.verified-ok {{ background:#12261a; color:#3ecf7e; }}
-  .badge-pill.verified-bad {{ background:#2a1518; color:#f0645f; }}
-  .rc-verdict {{ font-size:12px; font-weight:800; padding:3px 10px; border-radius:6px; }}
-  .sparkline {{ width:100%; max-height:28px; margin-top:8px; }}
+  .rc-name {{ font-family:'Playfair Display', serif; font-size:18px; font-weight:700; color:#f5f1e6; }}
+  .pin-icon {{ color:#d4b545; margin-right:5px; }}
+  .rc-tags {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }}
+  .badge-pill {{ font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; background:none; color:#8c8470; border:1px solid #33301f; padding:2px 7px; border-radius:0; }}
+  .badge-pill.change-up {{ background:none; color:#3ecf7e; border-color:#254a35; }}
+  .badge-pill.change-down {{ background:none; color:#d4695a; border-color:#4a2a28; }}
+  .badge-pill.verified-ok {{ background:none; color:#3ecf7e; border-color:#254a35; }}
+  .badge-pill.verified-bad {{ background:none; color:#d4695a; border-color:#4a2a28; }}
+  .rc-verdict {{ font-family:'Source Sans 3', sans-serif; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:3px 10px; border-radius:0; }}
+  .sparkline {{ width:100%; max-height:24px; margin-top:8px; }}
 
-  .conf-track {{ height:5px; border-radius:3px; background:#1f2333; margin-top:10px; overflow:hidden; }}
+  .conf-track {{ height:2px; border-radius:0; background:#2a2717; margin-top:10px; overflow:hidden; }}
   .conf-fill {{ height:100%; }}
-  .conf-label {{ font-size:10px; color:#6d7a99; margin-top:3px; }}
+  .conf-label {{ font-size:10px; color:#8c8470; margin-top:3px; }}
 
-  details.argument {{ margin-top:8px; }}
-  details.argument summary {{ cursor:pointer; list-style:none; font-size:11px; color:#7a8bb0; display:flex; align-items:center; gap:5px; user-select:none; }}
+  details.argument {{ margin-top:10px; }}
+  details.argument summary {{ cursor:pointer; list-style:none; font-size:11px; color:#8c8470; display:flex; align-items:center; gap:5px; user-select:none; }}
   details.argument summary::-webkit-details-marker {{ display:none; }}
-  details.argument summary .icon {{ display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#1f2740; color:#9db4e8; font-size:10px; font-weight:800; }}
-  details.argument[open] summary .icon {{ background:#4a90d9; color:#fff; }}
-  .argument-body {{ background:#0e1220; border-radius:8px; padding:10px 12px; margin-top:8px; font-size:11.5px; line-height:1.5; color:#c2c8d6; }}
+  details.argument summary .icon {{ display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; border:1px solid #5f5a48; color:#8c8470; font-size:9px; font-weight:800; }}
+  details.argument[open] summary .icon {{ background:#d4915a; border-color:#d4915a; color:#0d0c0a; }}
+  .argument-body {{ background:none; border-radius:0; padding:0; margin-top:8px; font-size:12.5px; line-height:1.6; color:#c8c2ae; border-left:2px solid #2a2717; padding-left:12px; }}
   .breakdown {{ display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }}
-  .breakdown .chip {{ font-size:9.5px; background:#1a1f30; color:#9db4e8; padding:3px 8px; border-radius:6px; }}
-  .source-link {{ display:block; color:#4a90d9; text-decoration:none; margin-top:6px; }}
+  .breakdown .chip {{ font-size:9.5px; background:none; color:#8c8470; border:1px solid #33301f; padding:2px 7px; border-radius:0; }}
+  .source-link {{ display:block; color:#d4915a; text-decoration:none; margin-top:8px; font-style:italic; }}
   .source-link:hover {{ text-decoration:underline; }}
-  .source-link-inactive {{ display:block; color:#6d7a99; font-style:italic; margin-top:6px; }}
+  .source-link-inactive {{ display:block; color:#5f5a48; font-style:italic; margin-top:8px; }}
 
-  .sector-block {{ margin-bottom:24px; scroll-margin-top:16px; }}
-  .sector-header {{ display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:10px; margin-bottom:12px; }}
-  .sector-name {{ font-size:14px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; }}
-  .sector-meta {{ font-size:11px; opacity:0.75; }}
-  .sentiment-tag {{ margin-left:auto; font-size:10px; font-weight:700; padding:3px 10px; border-radius:12px; background:rgba(255,255,255,0.12); }}
+  .sector-block {{ margin-bottom:8px; scroll-margin-top:56px; }}
+  .sector-header {{ display:flex; align-items:baseline; gap:14px; padding:0 0 10px 0; margin-bottom:18px; border-bottom:1px solid #33301f; background:none !important; border-radius:0; }}
+  .sector-name {{ font-family:'Playfair Display', serif; font-size:19px; font-weight:800; text-transform:none; letter-spacing:0; color:#f5f1e6; }}
+  .sector-meta {{ font-size:11px; opacity:0.7; color:#8c8470; }}
+  .sentiment-tag {{ margin-left:auto; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; padding:0; border-radius:0; background:none !important; color:#8c8470; }}
 
   table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-  th {{ text-align:left; color:#7a8bb0; font-weight:600; padding:8px 10px; border-bottom:1px solid #1f2333; font-size:10px; text-transform:uppercase; }}
-  td {{ padding:8px 10px; border-bottom:1px solid #161a24; }}
+  th {{ text-align:left; font-family:'Playfair Display', serif; font-weight:700; color:#f5f1e6; padding:8px 10px; border-bottom:2px solid #eae6da; font-size:12px; text-transform:none; }}
+  td {{ padding:8px 10px; border-bottom:1px solid #2a2717; color:#c8c2ae; }}
 
-  .change-line {{ font-size:13px; padding:8px 0; border-bottom:1px solid #161a24; }}
-  .empty-state {{ color:#6d7a99; font-size:13px; font-style:italic; }}
-  .footer {{ margin-top:40px; font-size:11px; color:#4a5063; padding-bottom:24px; }}
+  .change-line {{ font-size:13px; padding:8px 0; border-bottom:1px solid #2a2717; }}
+  .empty-state {{ color:#8c8470; font-size:13px; font-style:italic; }}
+  .footer {{ margin-top:48px; padding:20px 0 32px 0; border-top:1px solid #33301f; font-size:11px; color:#5f5a48; text-align:center; }}
 </style>
 </head>
 <body>
-  {sidebar}
+  {masthead}
 
   <div class="main">
     <div id="rezumat"></div>
-    <div class="hero-eyebrow">MarketLens · {generated_at}</div>
     <div class="hero-number">{counts['BUY']} BUY · {counts['SELL']} SELL · {counts['HOLD']} HOLD</div>
     {f'<div class="hero-summary">{self._escape(daily_summary_text)}</div>' if daily_summary_text else ''}
 
     <div class="kpi-row">
       <div class="kpi"><div class="n" style="color:#3ecf7e">{counts['BUY']}</div><div class="l">Buy</div></div>
-      <div class="kpi"><div class="n" style="color:#f0645f">{counts['SELL']}</div><div class="l">Sell</div></div>
+      <div class="kpi"><div class="n" style="color:#d4695a">{counts['SELL']}</div><div class="l">Sell</div></div>
       <div class="kpi"><div class="n">{counts['HOLD']}</div><div class="l">Hold</div></div>
       <div class="kpi"><div class="n">{self._escape(db_stats.get('total_articles', '-'))}</div><div class="l">Articole</div></div>
       <div class="kpi"><div class="n">{self._escape(db_stats.get('distinct_sources', '-'))}</div><div class="l">Surse</div></div>
@@ -660,7 +668,7 @@ class DashboardGenerator:
 
     <div class="section-title" id="portofoliu">Simulare portofoliu <span class="section-hint">(recomandări deja verificate prin Backtest)</span></div>
     {self._render_portfolio_summary(portfolio_result)}
-    <div style="margin-top:16px;">{self._render_portfolio_chart(portfolio_history)}</div>
+    <div class="chart-frame" style="margin-top:16px;">{self._render_portfolio_chart(portfolio_history)}</div>
 
     <div class="section-title" id="piata">Date de piață <span class="section-hint">(fapte reale — fără verdict de subevaluare/supraevaluare)</span></div>
     {self._render_market_data_table(market_data, risk_data)}
