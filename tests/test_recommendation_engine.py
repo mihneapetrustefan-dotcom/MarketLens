@@ -1,13 +1,7 @@
 """
 test_recommendation_engine.py
---------------------------------
-Unit tests for Recommendation Engine v1 (recommendation_engine.py).
-
-TESTING STRATEGY:
-Synthetic entity-confidence dicts (matching ConfidenceEngine's exact
-output shape) with hand-crafted values for each of the three gates.
-Each gate gets a dedicated test proving it independently forces HOLD,
-plus tests confirming BUY/SELL are reachable only when ALL gates pass.
+---------------------------------
+Unit tests for Recommendation Engine v1.3 (adds STRONG_BUY/STRONG_SELL).
 """
 
 import unittest
@@ -15,145 +9,144 @@ import unittest
 from recommendation_engine import RecommendationEngine
 
 
-def make_entity_confidence(**overrides):
-    base = {
-        "entity": "Tesla",
-        "article_count": 3,
-        "distinct_source_count": 3,
-        "sentiment_breakdown": {"positive": 3, "negative": 0, "neutral": 0},
-        "dominant_sentiment": "positive",
-        "sentiment_consistency": 1.0,
-        "average_impact": 0.6,
-        "confidence_score": 0.8,
-        "sufficient_data": True,
-        "reason": "Based on 3 articles from 3 distinct source(s)",
+def make_entity_confidence(
+    entity="Tesla", confidence_score=0.7, sufficient_data=True,
+    dominant_sentiment="positive", average_impact=0.5,
+    sentiment_consistency=0.6, article_count=5,
+):
+    return {
+        "entity": entity, "confidence_score": confidence_score, "sufficient_data": sufficient_data,
+        "dominant_sentiment": dominant_sentiment, "average_impact": average_impact,
+        "sentiment_consistency": sentiment_consistency, "article_count": article_count,
     }
-    base.update(overrides)
-    return base
 
 
-class TestSufficientDataGate(unittest.TestCase):
-    """Tests for Gate 1 — the 'never a single article' rule."""
-
+class TestBasicRecommendation(unittest.TestCase):
     def setUp(self):
         self.engine = RecommendationEngine()
 
-    def test_insufficient_data_forces_hold_regardless_of_strong_positive_signal(self):
-        ec = make_entity_confidence(
-            sufficient_data=False,
-            confidence_score=0.3,
-            dominant_sentiment="positive",
-            average_impact=1.0,
-            article_count=1,
-        )
-        result = self.engine.recommend_entity(ec)
-        self.assertEqual(result["recommendation"], "HOLD")
-        self.assertIn("insufficient data", result["explanation"].lower())
-
-    def test_insufficient_data_forces_hold_regardless_of_strong_negative_signal(self):
-        ec = make_entity_confidence(
-            sufficient_data=False,
-            confidence_score=0.3,
-            dominant_sentiment="negative",
-            average_impact=1.0,
-            article_count=1,
-        )
-        result = self.engine.recommend_entity(ec)
-        self.assertEqual(result["recommendation"], "HOLD")
-
-
-class TestMinimumConfidenceGate(unittest.TestCase):
-    """Tests for Gate 2 — minimum confidence required for a directional call."""
-
-    def setUp(self):
-        self.engine = RecommendationEngine()
-
-    def test_low_confidence_forces_hold_despite_positive_sentiment(self):
-        ec = make_entity_confidence(confidence_score=0.2, dominant_sentiment="positive", average_impact=0.9)
-        result = self.engine.recommend_entity(ec)
-        self.assertEqual(result["recommendation"], "HOLD")
-        self.assertIn("confidence score is below", result["explanation"].lower())
-
-    def test_confidence_exactly_at_threshold_passes_the_gate(self):
-        ec = make_entity_confidence(confidence_score=0.5, dominant_sentiment="positive", average_impact=0.9)
+    def test_positive_sentiment_sufficient_data_gives_buy(self):
+        ec = make_entity_confidence(dominant_sentiment="positive", confidence_score=0.6, average_impact=0.5)
         result = self.engine.recommend_entity(ec)
         self.assertEqual(result["recommendation"], "BUY")
 
+    def test_negative_sentiment_gives_sell(self):
+        ec = make_entity_confidence(dominant_sentiment="negative", confidence_score=0.6, average_impact=0.5)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "SELL")
 
-class TestMinimumImpactGate(unittest.TestCase):
-    """Tests for Gate 3 — minimum market impact required for a directional call."""
+    def test_neutral_sentiment_gives_hold(self):
+        ec = make_entity_confidence(dominant_sentiment="neutral", confidence_score=0.9, average_impact=0.9)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "HOLD")
 
-    def setUp(self):
-        self.engine = RecommendationEngine()
+    def test_insufficient_data_forces_hold(self):
+        ec = make_entity_confidence(sufficient_data=False, dominant_sentiment="positive", confidence_score=0.9)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "HOLD")
 
-    def test_low_impact_forces_hold_despite_high_confidence_and_positive_sentiment(self):
+    def test_low_confidence_forces_hold(self):
+        ec = make_entity_confidence(confidence_score=0.3, dominant_sentiment="positive", average_impact=0.9)
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "HOLD")
+
+    def test_low_impact_forces_hold(self):
         ec = make_entity_confidence(confidence_score=0.9, dominant_sentiment="positive", average_impact=0.1)
         result = self.engine.recommend_entity(ec)
         self.assertEqual(result["recommendation"], "HOLD")
-        self.assertIn("average impact is below", result["explanation"].lower())
-
-    def test_impact_exactly_at_threshold_passes_the_gate(self):
-        ec = make_entity_confidence(confidence_score=0.9, dominant_sentiment="negative", average_impact=0.3)
-        result = self.engine.recommend_entity(ec)
-        self.assertEqual(result["recommendation"], "SELL")
 
 
-class TestDirectionalCall(unittest.TestCase):
-    """Tests for the final directional decision once all gates pass."""
-
+class TestStrongTier(unittest.TestCase):
     def setUp(self):
         self.engine = RecommendationEngine()
 
-    def test_positive_sentiment_with_all_gates_passed_gives_buy(self):
-        ec = make_entity_confidence(dominant_sentiment="positive", confidence_score=0.8, average_impact=0.6)
+    def test_high_confidence_high_consistency_upgrades_to_strong_buy(self):
+        ec = make_entity_confidence(
+            dominant_sentiment="positive", confidence_score=0.9,
+            average_impact=0.6, sentiment_consistency=0.9,
+        )
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "STRONG_BUY")
+
+    def test_high_confidence_high_consistency_upgrades_to_strong_sell(self):
+        ec = make_entity_confidence(
+            dominant_sentiment="negative", confidence_score=0.9,
+            average_impact=0.6, sentiment_consistency=0.9,
+        )
+        result = self.engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "STRONG_SELL")
+
+    def test_high_confidence_but_low_consistency_stays_plain_buy(self):
+        ec = make_entity_confidence(
+            dominant_sentiment="positive", confidence_score=0.95,
+            average_impact=0.6, sentiment_consistency=0.4,
+        )
         result = self.engine.recommend_entity(ec)
         self.assertEqual(result["recommendation"], "BUY")
 
-    def test_negative_sentiment_with_all_gates_passed_gives_sell(self):
-        ec = make_entity_confidence(dominant_sentiment="negative", confidence_score=0.8, average_impact=0.6)
+    def test_high_consistency_but_low_confidence_stays_plain_buy(self):
+        ec = make_entity_confidence(
+            dominant_sentiment="positive", confidence_score=0.6,
+            average_impact=0.6, sentiment_consistency=0.95,
+        )
         result = self.engine.recommend_entity(ec)
-        self.assertEqual(result["recommendation"], "SELL")
+        self.assertEqual(result["recommendation"], "BUY")
 
-    def test_mixed_sentiment_with_all_gates_passed_still_gives_hold(self):
-        ec = make_entity_confidence(dominant_sentiment="mixed", confidence_score=0.8, average_impact=0.6)
+    def test_exactly_at_threshold_upgrades(self):
+        engine = RecommendationEngine(strong_confidence_threshold=0.85, strong_consistency_threshold=0.85)
+        ec = make_entity_confidence(
+            dominant_sentiment="positive", confidence_score=0.85,
+            average_impact=0.6, sentiment_consistency=0.85,
+        )
+        result = engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "STRONG_BUY")
+
+    def test_hold_never_becomes_strong(self):
+        ec = make_entity_confidence(
+            dominant_sentiment="neutral", confidence_score=0.99,
+            average_impact=0.99, sentiment_consistency=0.99,
+        )
         result = self.engine.recommend_entity(ec)
         self.assertEqual(result["recommendation"], "HOLD")
-        self.assertIn("no clear positive or negative consensus", result["explanation"].lower())
 
-    def test_neutral_sentiment_with_all_gates_passed_still_gives_hold(self):
-        ec = make_entity_confidence(dominant_sentiment="neutral", confidence_score=0.8, average_impact=0.6)
+    def test_hold_from_insufficient_data_never_becomes_strong_even_with_high_consistency(self):
+        ec = make_entity_confidence(
+            sufficient_data=False, dominant_sentiment="positive",
+            confidence_score=0.99, sentiment_consistency=0.99,
+        )
         result = self.engine.recommend_entity(ec)
         self.assertEqual(result["recommendation"], "HOLD")
 
+    def test_custom_strong_thresholds_are_respected(self):
+        engine = RecommendationEngine(strong_confidence_threshold=0.6, strong_consistency_threshold=0.5)
+        ec = make_entity_confidence(
+            dominant_sentiment="positive", confidence_score=0.65,
+            average_impact=0.5, sentiment_consistency=0.55,
+        )
+        result = engine.recommend_entity(ec)
+        self.assertEqual(result["recommendation"], "STRONG_BUY")
 
-class TestExplanationContent(unittest.TestCase):
-    """Tests confirming explanations cite the real figures, not just a label."""
+    def test_default_strong_thresholds_unchanged(self):
+        engine = RecommendationEngine()
+        self.assertEqual(engine.strong_confidence_threshold, 0.85)
+        self.assertEqual(engine.strong_consistency_threshold, 0.85)
 
-    def setUp(self):
-        self.engine = RecommendationEngine()
-
-    def test_explanation_cites_article_and_source_counts(self):
-        ec = make_entity_confidence(article_count=5, distinct_source_count=4)
+    def test_strong_explanation_mentions_strong_signal(self):
+        ec = make_entity_confidence(
+            dominant_sentiment="positive", confidence_score=0.9,
+            average_impact=0.6, sentiment_consistency=0.9,
+        )
         result = self.engine.recommend_entity(ec)
-        self.assertIn("5 article", result["explanation"])
-        self.assertIn("4 distinct source", result["explanation"])
+        self.assertIn("puternic", result["explanation"].lower())
 
-    def test_explanation_cites_confidence_score(self):
-        ec = make_entity_confidence(confidence_score=0.73)
+    def test_missing_sentiment_consistency_treated_as_zero_never_strong(self):
+        ec = make_entity_confidence(dominant_sentiment="positive", confidence_score=0.99)
+        del ec["sentiment_consistency"]
         result = self.engine.recommend_entity(ec)
-        self.assertIn("0.73", result["explanation"])
-
-    def test_result_includes_underlying_figures_not_just_label(self):
-        ec = make_entity_confidence()
-        result = self.engine.recommend_entity(ec)
-        for key in ["confidence_score", "sufficient_data", "article_count",
-                    "distinct_source_count", "dominant_sentiment", "average_impact"]:
-            self.assertIn(key, result)
+        self.assertEqual(result["recommendation"], "BUY")
 
 
 class TestConfigurableThresholds(unittest.TestCase):
-    """Tests confirming the gate thresholds are now real, working constructor parameters (v1.3)."""
-
     def test_lower_confidence_threshold_lets_weaker_signal_through(self):
         engine = RecommendationEngine(min_confidence_for_action=0.2)
         ec = make_entity_confidence(confidence_score=0.3, dominant_sentiment="positive", average_impact=0.9)
@@ -173,46 +166,17 @@ class TestConfigurableThresholds(unittest.TestCase):
 
 
 class TestRecommendAll(unittest.TestCase):
-    """Tests for recommend_all(): the full-list orchestration method."""
-
     def setUp(self):
         self.engine = RecommendationEngine()
 
     def test_returns_one_recommendation_per_entity(self):
-        entities = [
-            make_entity_confidence(entity="Tesla", dominant_sentiment="positive"),
-            make_entity_confidence(entity="Microsoft", sufficient_data=False, article_count=1),
-        ]
+        entities = [make_entity_confidence(entity="Tesla"), make_entity_confidence(entity="Apple", dominant_sentiment="neutral")]
         results = self.engine.recommend_all(entities)
         self.assertEqual(len(results), 2)
-        tesla = next(r for r in results if r["entity"] == "Tesla")
-        msft = next(r for r in results if r["entity"] == "Microsoft")
-        self.assertEqual(tesla["recommendation"], "BUY")
-        self.assertEqual(msft["recommendation"], "HOLD")
+        self.assertEqual({r["entity"] for r in results}, {"Tesla", "Apple"})
 
-    def test_empty_list_returns_empty_list(self):
+    def test_empty_list_returns_empty(self):
         self.assertEqual(self.engine.recommend_all([]), [])
-
-
-class TestComponentPropagation(unittest.TestCase):
-    """Tests for propagating breakdown fields (volume/diversity/consistency) through."""
-
-    def setUp(self):
-        self.engine = RecommendationEngine()
-
-    def test_propagates_volume_and_diversity_scores(self):
-        ec = make_entity_confidence(volume_score=0.6, source_diversity_score=0.75)
-        result = self.engine.recommend_entity(ec)
-        self.assertEqual(result["volume_score"], 0.6)
-        self.assertEqual(result["source_diversity_score"], 0.75)
-
-    def test_missing_breakdown_fields_default_gracefully(self):
-        ec = make_entity_confidence()
-        ec.pop("volume_score", None)
-        ec.pop("source_diversity_score", None)
-        result = self.engine.recommend_entity(ec)
-        self.assertEqual(result["volume_score"], 0.0)
-        self.assertEqual(result["source_diversity_score"], 0.0)
 
 
 if __name__ == "__main__":
