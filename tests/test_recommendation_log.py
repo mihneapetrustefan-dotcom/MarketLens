@@ -346,5 +346,91 @@ class TestAccuracyHistoryDaily(unittest.TestCase):
         self.assertEqual(self.log.load_accuracy_history_daily(), [])
 
 
+class TestCalibrationReport(unittest.TestCase):
+    """Tests for the v1.7 confidence calibration report."""
+
+    def setUp(self):
+        self.log = RecommendationLog(":memory:")
+
+    def tearDown(self):
+        self.log.close()
+
+    def _insert_and_check(self, confidence_score, was_correct):
+        self.log._conn.execute(
+            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, time_horizon, generated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("Entity", "TCK", "BUY", confidence_score, "short-term", "2026-07-01T09:00:00+00:00"),
+        )
+        self.log._conn.commit()
+        row_id = self.log._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.log.mark_checked(row_id, was_correct)
+
+    def test_empty_history_returns_empty_list(self):
+        self.assertEqual(self.log.load_calibration_report(), [])
+
+    def test_single_bucket_hit_rate(self):
+        self._insert_and_check(0.55, True)
+        self._insert_and_check(0.58, False)
+        report = self.log.load_calibration_report()
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]["bucket_label"], "0.5-0.6")
+        self.assertEqual(report[0]["count"], 2)
+        self.assertEqual(report[0]["correct"], 1)
+        self.assertEqual(report[0]["hit_rate"], 0.5)
+
+    def test_multiple_buckets_ordered_low_to_high(self):
+        self._insert_and_check(0.55, True)
+        self._insert_and_check(0.95, True)
+        self._insert_and_check(0.72, False)
+        report = self.log.load_calibration_report()
+        labels = [b["bucket_label"] for b in report]
+        self.assertEqual(labels, ["0.5-0.6", "0.7-0.8", "0.9-1.0"])
+
+    def test_below_min_confidence_excluded(self):
+        self._insert_and_check(0.3, True)  # below default min_confidence=0.5
+        self.assertEqual(self.log.load_calibration_report(), [])
+
+    def test_skipped_rows_excluded(self):
+        self.log._conn.execute(
+            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, time_horizon, generated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("Entity", "TCK", "BUY", 0.7, "short-term", "2026-07-01T09:00:00+00:00"),
+        )
+        self.log._conn.commit()
+        row_id = self.log._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.log.mark_checked(row_id, None)  # skipped
+        self.assertEqual(self.log.load_calibration_report(), [])
+
+    def test_empty_bucket_never_shown_as_zero(self):
+        self._insert_and_check(0.55, True)
+        self._insert_and_check(0.95, True)
+        report = self.log.load_calibration_report()
+        # No entries in between (0.6-0.9) should exist at all — not
+        # shown as an empty/0% bucket.
+        labels = [b["bucket_label"] for b in report]
+        self.assertNotIn("0.6-0.7", labels)
+        self.assertNotIn("0.7-0.8", labels)
+        self.assertNotIn("0.8-0.9", labels)
+
+    def test_custom_bucket_size(self):
+        self._insert_and_check(0.55, True)
+        self._insert_and_check(0.62, False)
+        report = self.log.load_calibration_report(bucket_size=0.05)
+        self.assertEqual(len(report), 2)
+
+    def test_well_calibrated_scenario_shows_increasing_hit_rate(self):
+        # A well-calibrated system: higher confidence bucket has a
+        # higher actual hit rate.
+        self._insert_and_check(0.55, True)
+        self._insert_and_check(0.55, False)
+        self._insert_and_check(0.55, False)  # 0.5-0.6 bucket: 1/3 = 33%
+        self._insert_and_check(0.95, True)
+        self._insert_and_check(0.95, True)
+        self._insert_and_check(0.95, False)  # 0.9-1.0 bucket: 2/3 = 67%
+
+        report = self.log.load_calibration_report()
+        low_bucket = next(b for b in report if b["bucket_label"] == "0.5-0.6")
+        high_bucket = next(b for b in report if b["bucket_label"] == "0.9-1.0")
+        self.assertLess(low_bucket["hit_rate"], high_bucket["hit_rate"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
