@@ -170,6 +170,83 @@ class TestLoadActionableDueForCheck(unittest.TestCase):
         due = self.log.load_actionable_due_for_check(self.horizon_days)
         self.assertEqual(len(due), 1)
 
+    def test_already_checked_row_is_never_returned_again(self):
+        self._insert_raw("Nvidia", "BUY", "short-term", days_ago=6)
+        due = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(len(due), 1)
+
+        self.log.mark_checked(due[0]["id"], True)
+
+        due_again = self.log.load_actionable_due_for_check(self.horizon_days)
+        self.assertEqual(due_again, [])
+
+
+class TestMarkCheckedAndLatestOutcome(unittest.TestCase):
+    """
+    The core fix for the real-world 'inconsistent verified badge'
+    problem: each row is checked exactly once, and the Dashboard's
+    badge reflects the entity's MOST RECENT checked row specifically —
+    not whichever historical row happened to come due that day.
+    """
+
+    def setUp(self):
+        self.log = RecommendationLog(":memory:")
+
+    def tearDown(self):
+        self.log.close()
+
+    def _insert_raw(self, entity, recommendation, generated_at_iso, time_horizon="short-term"):
+        self.log._conn.execute(
+            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, time_horizon, generated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (entity, "TCK", recommendation, 0.7, time_horizon, generated_at_iso),
+        )
+        self.log._conn.commit()
+        return self.log._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    def test_mark_checked_persists_correct_outcome(self):
+        row_id = self._insert_raw("Nvidia", "BUY", "2026-08-01T09:00:00+00:00")
+        self.log.mark_checked(row_id, True)
+        row = dict(self.log._conn.execute("SELECT * FROM recommendations WHERE id = ?", (row_id,)).fetchone())
+        self.assertEqual(row["was_correct"], 1)
+        self.assertIsNotNone(row["checked_at"])
+
+    def test_mark_checked_with_none_leaves_was_correct_null_but_sets_checked_at(self):
+        row_id = self._insert_raw("Nvidia", "BUY", "2026-08-01T09:00:00+00:00")
+        self.log.mark_checked(row_id, None)
+        row = dict(self.log._conn.execute("SELECT * FROM recommendations WHERE id = ?", (row_id,)).fetchone())
+        self.assertIsNone(row["was_correct"])
+        self.assertIsNotNone(row["checked_at"])  # still marked, so it's not retried forever
+
+    def test_latest_outcome_reflects_most_recently_generated_checked_row(self):
+        old_id = self._insert_raw("Nvidia", "BUY", "2026-07-01T09:00:00+00:00")
+        new_id = self._insert_raw("Nvidia", "BUY", "2026-08-01T09:00:00+00:00")
+        self.log.mark_checked(old_id, False)   # older call: was wrong
+        self.log.mark_checked(new_id, True)    # newer call: was right
+
+        latest = self.log.load_latest_verified_outcome_per_entity()
+        self.assertTrue(latest["Nvidia"])  # reflects the NEWER row, not the older one
+
+    def test_unchecked_entity_absent_from_latest_outcome_dict(self):
+        self._insert_raw("Tesla", "BUY", "2026-08-01T09:00:00+00:00")  # never marked checked
+        latest = self.log.load_latest_verified_outcome_per_entity()
+        self.assertNotIn("Tesla", latest)
+
+    def test_skipped_row_never_counted_as_an_outcome(self):
+        row_id = self._insert_raw("Tesla", "BUY", "2026-08-01T09:00:00+00:00")
+        self.log.mark_checked(row_id, None)  # skipped, not a real outcome
+        latest = self.log.load_latest_verified_outcome_per_entity()
+        self.assertNotIn("Tesla", latest)
+
+    def test_multiple_entities_tracked_independently(self):
+        nvda_id = self._insert_raw("Nvidia", "BUY", "2026-08-01T09:00:00+00:00")
+        tsla_id = self._insert_raw("Tesla", "SELL", "2026-08-01T09:00:00+00:00")
+        self.log.mark_checked(nvda_id, True)
+        self.log.mark_checked(tsla_id, False)
+
+        latest = self.log.load_latest_verified_outcome_per_entity()
+        self.assertTrue(latest["Nvidia"])
+        self.assertFalse(latest["Tesla"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
