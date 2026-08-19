@@ -246,6 +246,10 @@ def main() -> int:
         "RecommendationLog.load_accuracy_history_daily", [],
         rec_log.load_accuracy_history_daily,
     )
+    calibration_report = _safe_stage(
+        "RecommendationLog.load_calibration_report", [],
+        rec_log.load_calibration_report,
+    )
     print(f"Backtest: {backtest_result['summary']['checked']} recommendation(s) checked, "
           f"hit rate {backtest_result['summary']['hit_rate']}")
 
@@ -330,6 +334,7 @@ def main() -> int:
         watchlist=load_watchlist(),
         upgrade_downgrade_results=upgrade_downgrade_results,
         accuracy_history=accuracy_history,
+        calibration_report=calibration_report,
     )
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
