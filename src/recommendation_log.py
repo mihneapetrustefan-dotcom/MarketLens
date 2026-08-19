@@ -78,31 +78,47 @@ class RecommendationLog:
                 recommendation      TEXT NOT NULL,
                 confidence_score    REAL,
                 time_horizon        TEXT,
-                generated_at        TEXT NOT NULL
+                generated_at        TEXT NOT NULL,
+                checked_at          TEXT,
+                was_correct         INTEGER
             )
         """)
         self._conn.commit()
-        self._migrate_add_time_horizon_column()
+        self._migrate_schema()
 
-    def _migrate_add_time_horizon_column(self) -> None:
+    def _migrate_schema(self) -> None:
         """
-        Safely add the `time_horizon` column to a `recommendations`
-        table created by an OLDER version of this module (a real,
-        already-deployed database won't have it yet). Checked via
-        PRAGMA table_info first, since `ALTER TABLE ADD COLUMN` fails
-        outright if the column already exists — this makes the
-        migration safe to run on every startup, on a brand-new
-        database (where CREATE TABLE above already included the
-        column, so this is a no-op) or an existing one alike. Every
-        row logged before this migration simply has `time_horizon =
-        NULL`, which load_actionable_due_for_check() treats as "use
-        the default holding period" — no data is lost or altered.
+        Safely add any column introduced by a NEWER version of this
+        module to a `recommendations` table created by an OLDER one (a
+        real, already-deployed database won't have it yet). Checked
+        via PRAGMA table_info first, since `ALTER TABLE ADD COLUMN`
+        fails outright if the column already exists — safe to run on
+        every startup, on a brand-new database (where CREATE TABLE
+        above already includes every column, so this is a no-op) or an
+        existing one alike. Every row logged before a given migration
+        simply gets NULL for that column — no data is lost or altered.
+
+        v1.4 ADDITIONS — checked_at / was_correct: previously, Backtest
+        Engine results were never written back to the log — every run
+        recomputed outcomes for whichever historical rows happened to
+        be "due" that day from scratch, and the Dashboard's "verified"
+        badge ended up reflecting whichever row that was — possibly a
+        much older logged call than the entity's CURRENT recommendation,
+        which looked like inconsistent/wrong results in practice. These
+        two columns let each row's outcome be checked exactly ONCE and
+        remembered permanently (see mark_checked() and
+        load_latest_verified_outcome_per_entity()).
         """
         existing_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(recommendations)")}
-        if "time_horizon" not in existing_columns:
-            self._conn.execute("ALTER TABLE recommendations ADD COLUMN time_horizon TEXT")
+        needed_columns = {"time_horizon": "TEXT", "checked_at": "TEXT", "was_correct": "INTEGER"}
+        migrated_any = False
+        for column, sql_type in needed_columns.items():
+            if column not in existing_columns:
+                self._conn.execute(f"ALTER TABLE recommendations ADD COLUMN {column} {sql_type}")
+                migrated_any = True
+                logger.info("RecommendationLog: migrated schema — added '%s' column", column)
+        if migrated_any:
             self._conn.commit()
-            logger.info("RecommendationLog: migrated schema — added 'time_horizon' column")
 
     def log_recommendations(
         self,
@@ -168,12 +184,22 @@ class RecommendationLog:
         default_holding_period_days: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Load BUY/SELL recommendations whose OWN appropriate holding
-        period — based on EACH row's stored time_horizon — has fully
-        elapsed. This is what makes a "long-term" call get checked
-        after a long-term horizon and a "short-term" call get checked
-        after a short one, instead of grading every recommendation on
-        the same fixed clock regardless of what it actually claimed.
+        Load BUY/SELL (or STRONG_BUY/STRONG_SELL) recommendations that
+        have NEVER been checked yet (`checked_at IS NULL`) and whose
+        OWN appropriate holding period — based on EACH row's stored
+        time_horizon — has fully elapsed. This is what makes a
+        "long-term" call get checked after a long-term horizon and a
+        "short-term" call get checked after a short one, instead of
+        grading every recommendation on the same fixed clock regardless
+        of what it actually claimed.
+
+        WHY `checked_at IS NULL` MATTERS (v1.4): without this, the same
+        historical row would be re-checked on every single run forever
+        — wasteful, and (worse) it meant the Dashboard's "verified"
+        badge for an entity could end up reflecting whichever
+        historical row happened to be due on a given day, not
+        necessarily its most recent one. Each row is now checked
+        EXACTLY ONCE (see mark_checked()).
 
         Args:
             holding_period_days_by_horizon: e.g.
@@ -182,10 +208,7 @@ class RecommendationLog:
                 before that recommendation is considered checkable.
             default_holding_period_days: used when a row's
                 time_horizon is NULL (recommendations logged before
-                this column existed) or not present in the mapping —
-                same 5-day behavior as the original, single-cutoff
-                method, so old pending rows aren't disrupted by this
-                change.
+                that column existed) or not present in the mapping.
 
         Returns:
             The list of recommendation rows that are due for a
@@ -193,7 +216,8 @@ class RecommendationLog:
         """
         now = datetime.now(timezone.utc)
         cursor = self._conn.execute(
-            "SELECT * FROM recommendations WHERE recommendation IN ('BUY', 'SELL', 'STRONG_BUY', 'STRONG_SELL')"
+            "SELECT * FROM recommendations "
+            "WHERE recommendation IN ('BUY', 'SELL', 'STRONG_BUY', 'STRONG_SELL') AND checked_at IS NULL"
         )
 
         due = []
@@ -208,6 +232,60 @@ class RecommendationLog:
             if now - generated_at >= timedelta(days=days):
                 due.append(rec)
         return due
+
+    def mark_checked(self, row_id: int, was_correct: Optional[bool], checked_at: Optional[str] = None) -> None:
+        """
+        Persist a Backtest Engine outcome back onto the SPECIFIC
+        recommendation row it belongs to, so it is never re-checked
+        again, and so the outcome stays permanently traceable to
+        exactly which logged call it refers to.
+
+        Args:
+            row_id: the `id` of the row in the `recommendations` table
+                (present in every dict returned by
+                load_actionable_due_for_check()).
+            was_correct: True/False if Backtest Engine could check it,
+                None if it had to be skipped (e.g. no ticker, no price
+                data available) — a skipped row still gets `checked_at`
+                set (so it's not retried forever) but `was_correct`
+                stays NULL, so it never falsely claims an outcome.
+            checked_at: ISO timestamp; defaults to the current UTC time.
+        """
+        checked_at = checked_at or datetime.now(timezone.utc).isoformat()
+        was_correct_int = None if was_correct is None else int(was_correct)
+        self._conn.execute(
+            "UPDATE recommendations SET checked_at = ?, was_correct = ? WHERE id = ?",
+            (checked_at, was_correct_int, row_id),
+        )
+        self._conn.commit()
+
+    def load_latest_verified_outcome_per_entity(self) -> Dict[str, bool]:
+        """
+        For each entity, return the outcome of its MOST RECENTLY
+        LOGGED recommendation that has actually been checked (i.e.
+        `was_correct IS NOT NULL`) — this is what the Dashboard's
+        "verified" badge should reflect: one specific, identifiable
+        prior call per entity, not whichever historical row happened
+        to come due for checking on a given day (the confusing
+        behavior this method replaces).
+
+        Returns:
+            entity -> True/False. An entity with no checked history at
+            all is simply absent from the dict (not included as None)
+            — the same convention Dashboard's verified_track_record
+            parameter already expects.
+        """
+        cursor = self._conn.execute(
+            "SELECT entity, was_correct, generated_at FROM recommendations "
+            "WHERE was_correct IS NOT NULL ORDER BY generated_at ASC"
+        )
+        latest: Dict[str, bool] = {}
+        for row in cursor.fetchall():
+            # Ascending order means the LAST time we see a given entity
+            # in this loop is its most recently generated checked row
+            # — a plain overwrite naturally keeps only that one.
+            latest[row["entity"]] = bool(row["was_correct"])
+        return latest
 
     def close(self) -> None:
         """Close the underlying SQLite connection cleanly."""
