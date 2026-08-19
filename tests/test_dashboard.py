@@ -446,6 +446,39 @@ class TestPortfolioSection(unittest.TestCase):
         self.assertIn("Niciun istoric de portofoliu", html)
 
 
+class TestAccuracyChart(unittest.TestCase):
+    """Tests for the v1.6 hit-rate-over-time chart."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_accuracy_history_renders_chart(self):
+        history = [
+            {"checked_at": "2026-08-01T09:00:00+00:00", "cumulative_hit_rate": 1.0, "cumulative_checked": 1},
+            {"checked_at": "2026-08-02T09:00:00+00:00", "cumulative_hit_rate": 0.667, "cumulative_checked": 3},
+        ]
+        html = self.generator.generate_report([], accuracy_history=history)
+        self.assertIn('id="accuracyChart"', html)
+        self.assertIn("2026-08-01", html)
+
+    def test_hit_rate_converted_to_percentage_in_chart_data(self):
+        history = [{"checked_at": "2026-08-01T09:00:00+00:00", "cumulative_hit_rate": 0.75, "cumulative_checked": 4}]
+        html = self.generator.generate_report([], accuracy_history=history)
+        self.assertIn("75.0", html)
+
+    def test_no_accuracy_history_shows_empty_state(self):
+        html = self.generator.generate_report([], accuracy_history=None)
+        self.assertIn("Niciun istoric de precizie", html)
+
+    def test_empty_accuracy_history_list_shows_empty_state(self):
+        html = self.generator.generate_report([], accuracy_history=[])
+        self.assertIn("Niciun istoric de precizie", html)
+
+    def test_missing_accuracy_history_param_does_not_crash(self):
+        html = self.generator.generate_report([])
+        self.assertIn("Rată de succes în timp", html)
+
+
 class TestPriceSparkline(unittest.TestCase):
     def setUp(self):
         self.generator = DashboardGenerator()
