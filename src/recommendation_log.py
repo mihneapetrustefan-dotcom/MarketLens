@@ -287,6 +287,60 @@ class RecommendationLog:
             latest[row["entity"]] = bool(row["was_correct"])
         return latest
 
+    def load_accuracy_history(self) -> List[Dict[str, Any]]:
+        """
+        Compute the CUMULATIVE hit rate over time, using every checked
+        recommendation's own checked_at timestamp — no separate
+        snapshot log needed, since checked_at/was_correct already
+        persist this granularly on each row (see mark_checked()).
+
+        WHY THIS MATTERS: previously the hit rate was only ever shown
+        as a single current number — there was no way to SEE whether
+        it's actually improving as the system accumulates a longer,
+        fairer (post-v1.1 per-horizon) track record, versus just being
+        told to trust that it is.
+
+        Returns:
+            A list of {"checked_at", "cumulative_hit_rate",
+            "cumulative_checked"}, one entry per distinct check event,
+            ordered chronologically — "as of this point in time, what
+            was the hit rate across everything checked so far".
+            Skipped (never-actually-checked) rows are excluded, same
+            as load_latest_verified_outcome_per_entity().
+        """
+        cursor = self._conn.execute(
+            "SELECT checked_at, was_correct FROM recommendations "
+            "WHERE was_correct IS NOT NULL ORDER BY checked_at ASC"
+        )
+
+        history = []
+        correct_so_far = 0
+        checked_so_far = 0
+        for row in cursor.fetchall():
+            checked_so_far += 1
+            if row["was_correct"]:
+                correct_so_far += 1
+            history.append({
+                "checked_at": row["checked_at"],
+                "cumulative_hit_rate": round(correct_so_far / checked_so_far, 3),
+                "cumulative_checked": checked_so_far,
+            })
+        return history
+
+    def load_accuracy_history_daily(self) -> List[Dict[str, Any]]:
+        """
+        Same as load_accuracy_history(), but bucketed to one point per
+        CALENDAR DAY (the cumulative hit rate as of the last check
+        that day) — far more readable on a chart than one point per
+        individual check once hundreds of checks accumulate.
+        """
+        full_history = self.load_accuracy_history()
+        daily: Dict[str, Dict[str, Any]] = {}
+        for entry in full_history:
+            day = str(entry["checked_at"])[:10]  # YYYY-MM-DD
+            daily[day] = entry  # later same-day entries overwrite earlier ones — last-of-day wins
+        return list(daily.values())
+
     def close(self) -> None:
         """Close the underlying SQLite connection cleanly."""
         self._conn.close()
