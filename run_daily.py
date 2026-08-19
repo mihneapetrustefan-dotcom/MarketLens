@@ -226,12 +226,9 @@ def main() -> int:
         print("No upgrade/downgrade changes today — no alert needed")
 
     # --- 6. Backtest previously-logged recommendations old enough to check ---
-    backtest_engine = BacktestEngine()
-    old_enough = _safe_stage(
-        "RecommendationLog.load_actionable_due_for_check", [],
-        rec_log.load_actionable_due_for_check,
-        backtest_engine.holding_period_days_by_horizon, backtest_engine.holding_period_days,
-    )
+    backtest_engine = BacktestEngine(holding_period_days=5)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=backtest_engine.holding_period_days)).isoformat()
+    old_enough = _safe_stage("RecommendationLog.load_actionable_before", [], rec_log.load_actionable_before, cutoff)
     empty_backtest = {
         "results": [],
         "summary": {"total_recommendations": 0, "checked": 0, "skipped": 0,
@@ -241,15 +238,8 @@ def main() -> int:
         backtest_result = _safe_stage("Backtest Engine", empty_backtest, backtest_engine.run_backtest, old_enough)
     else:
         backtest_result = empty_backtest
-         def _persist_backtest_results():
-        for r in backtest_result["results"]:
-            rec_log.mark_checked(r["id"], r.get("was_correct"))
-    _safe_stage("RecommendationLog.mark_checked (batch)", None, _persist_backtest_results)
-
-    verified_track_record = _safe_stage(
-        "RecommendationLog.load_latest_verified_outcome_per_entity", {},
-        rec_log.load_latest_verified_outcome_per_entity,
-    )
+    verified_track_record = {
+        r["entity"]: r["was_correct"] for r in backtest_result["results"] if r.get("outcome") == "checked"
     }
     print(f"Backtest: {backtest_result['summary']['checked']} recommendation(s) checked, "
           f"hit rate {backtest_result['summary']['hit_rate']}")
