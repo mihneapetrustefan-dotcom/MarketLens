@@ -250,6 +250,23 @@ class DashboardGenerator:
         </script>
         """
 
+    def _render_hold_gap(self, hold_gap: Optional[Dict[str, Any]]) -> str:
+        """
+        Render a small "how close to actionable" indicator for a HOLD
+        blocked by a specific numeric gate (confidence or impact).
+        Returns an empty string for anything else (BUY/SELL/STRONG_*,
+        or a HOLD from insufficient data, which has no hold_gap).
+        """
+        if not hold_gap:
+            return ""
+        label = "încredere" if hold_gap["blocked_by"] == "confidence" else "impact"
+        gap = hold_gap["gap"]
+        # A small gap (close to crossing the threshold) is highlighted
+        # more attentively than a large one — both are shown, but a
+        # near-miss is visually distinct from "nowhere close".
+        color = "#e8c547" if gap <= 0.1 else "#8c8470"
+        return f'<div class="hold-gap" style="color:{color};">la {gap} de prag ({label})</div>'
+
     def _render_recommendation_card(
         self,
         rec: Dict[str, Any],
@@ -268,6 +285,7 @@ class DashboardGenerator:
         entity_articles = (entity_articles_map or {}).get(rec["entity"])
         representative = self._representative_article(rec, entity_articles)
         sparkline = self._render_price_sparkline(rec["entity"], (price_history_map or {}).get(rec["entity"]))
+        hold_gap_html = self._render_hold_gap(rec.get("hold_gap"))
         pin_class = " pinned" if pinned else ""
         pin_icon = '<span class="pin-icon">*</span>' if pinned else ""
         # "STRONG_BUY" -> "★ STRONG BUY" for display — the underlying
@@ -283,6 +301,7 @@ class DashboardGenerator:
             <div>
               <div class="rc-name">{pin_icon}{self._escape(rec['entity'])}</div>
               <div class="rc-tags">{horizon_badge}{change_badge}{verified_badge}</div>
+              {hold_gap_html}
             </div>
             <span class="rc-verdict" style="background:{color}22; color:{color};">{self._escape(verdict_label)}</span>
           </div>
@@ -660,6 +679,7 @@ class DashboardGenerator:
   .rc-name {{ font-family:'Playfair Display', serif; font-size:18px; font-weight:700; color:#f5f1e6; }}
   .pin-icon {{ color:#d4b545; margin-right:5px; }}
   .rc-tags {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }}
+  .hold-gap {{ font-size:10px; margin-top:4px; font-style:italic; }}
   .badge-pill {{ font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; background:none; color:#8c8470; border:1px solid #33301f; padding:2px 7px; border-radius:0; }}
   .badge-pill.change-up {{ background:none; color:#3ecf7e; border-color:#254a35; }}
   .badge-pill.change-down {{ background:none; color:#d4695a; border-color:#4a2a28; }}
