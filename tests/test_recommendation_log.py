@@ -248,5 +248,103 @@ class TestMarkCheckedAndLatestOutcome(unittest.TestCase):
         self.assertFalse(latest["Tesla"])
 
 
+class TestAccuracyHistory(unittest.TestCase):
+    """Tests for the v1.6 cumulative hit-rate-over-time tracking."""
+
+    def setUp(self):
+        self.log = RecommendationLog(":memory:")
+
+    def tearDown(self):
+        self.log.close()
+
+    def _insert_and_check(self, entity, was_correct, checked_at):
+        row_id = self.log._conn.execute(
+            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, time_horizon, generated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (entity, "TCK", "BUY", 0.7, "short-term", "2026-07-01T09:00:00+00:00"),
+        )
+        self.log._conn.commit()
+        row_id = self.log._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.log.mark_checked(row_id, was_correct, checked_at=checked_at)
+
+    def test_empty_history_returns_empty_list(self):
+        self.assertEqual(self.log.load_accuracy_history(), [])
+
+    def test_cumulative_rate_after_one_correct_check(self):
+        self._insert_and_check("Nvidia", True, "2026-08-01T09:00:00+00:00")
+        history = self.log.load_accuracy_history()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["cumulative_hit_rate"], 1.0)
+        self.assertEqual(history[0]["cumulative_checked"], 1)
+
+    def test_cumulative_rate_updates_correctly_across_checks(self):
+        self._insert_and_check("Nvidia", True, "2026-08-01T09:00:00+00:00")
+        self._insert_and_check("Tesla", False, "2026-08-02T09:00:00+00:00")
+        self._insert_and_check("Apple", True, "2026-08-03T09:00:00+00:00")
+
+        history = self.log.load_accuracy_history()
+        self.assertEqual(len(history), 3)
+        self.assertEqual(history[0]["cumulative_hit_rate"], 1.0)       # 1/1
+        self.assertEqual(history[1]["cumulative_hit_rate"], 0.5)       # 1/2
+        self.assertAlmostEqual(history[2]["cumulative_hit_rate"], 0.667, places=2)  # 2/3
+
+    def test_history_is_chronologically_ordered(self):
+        self._insert_and_check("C", True, "2026-08-03T09:00:00+00:00")
+        self._insert_and_check("A", True, "2026-08-01T09:00:00+00:00")
+        self._insert_and_check("B", True, "2026-08-02T09:00:00+00:00")
+
+        history = self.log.load_accuracy_history()
+        dates = [h["checked_at"] for h in history]
+        self.assertEqual(dates, sorted(dates))
+
+    def test_skipped_rows_excluded_from_history(self):
+        row_id = self.log._conn.execute(
+            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, time_horizon, generated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("Legacy Co", "TCK", "BUY", 0.7, "short-term", "2026-07-01T09:00:00+00:00"),
+        )
+        self.log._conn.commit()
+        row_id = self.log._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.log.mark_checked(row_id, None)  # skipped, not a real outcome
+
+        self.assertEqual(self.log.load_accuracy_history(), [])
+
+
+class TestAccuracyHistoryDaily(unittest.TestCase):
+    """Tests for the day-bucketed variant used for charting."""
+
+    def setUp(self):
+        self.log = RecommendationLog(":memory:")
+
+    def tearDown(self):
+        self.log.close()
+
+    def _insert_and_check(self, entity, was_correct, checked_at):
+        self.log._conn.execute(
+            "INSERT INTO recommendations (entity, ticker, recommendation, confidence_score, time_horizon, generated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (entity, "TCK", "BUY", 0.7, "short-term", "2026-07-01T09:00:00+00:00"),
+        )
+        self.log._conn.commit()
+        row_id = self.log._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.log.mark_checked(row_id, was_correct, checked_at=checked_at)
+
+    def test_multiple_checks_same_day_collapse_to_one_point(self):
+        self._insert_and_check("Nvidia", True, "2026-08-01T09:00:00+00:00")
+        self._insert_and_check("Tesla", False, "2026-08-01T15:00:00+00:00")
+        self._insert_and_check("Apple", True, "2026-08-01T20:00:00+00:00")
+
+        daily = self.log.load_accuracy_history_daily()
+        self.assertEqual(len(daily), 1)  # all 3 same calendar day -> 1 point
+        self.assertEqual(daily[0]["cumulative_checked"], 3)  # reflects the LAST check that day
+
+    def test_checks_across_different_days_produce_separate_points(self):
+        self._insert_and_check("Nvidia", True, "2026-08-01T09:00:00+00:00")
+        self._insert_and_check("Tesla", False, "2026-08-02T09:00:00+00:00")
+
+        daily = self.log.load_accuracy_history_daily()
+        self.assertEqual(len(daily), 2)
+
+    def test_empty_history_returns_empty_list(self):
+        self.assertEqual(self.log.load_accuracy_history_daily(), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
