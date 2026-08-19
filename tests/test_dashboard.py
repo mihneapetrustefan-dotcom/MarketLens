@@ -479,6 +479,45 @@ class TestAccuracyChart(unittest.TestCase):
         self.assertIn("Rată de succes în timp", html)
 
 
+class TestCalibrationChart(unittest.TestCase):
+    """Tests for the v1.7 confidence calibration chart."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_calibration_report_renders_chart(self):
+        report = [
+            {"bucket_label": "0.5-0.6", "bucket_min": 0.5, "bucket_max": 0.6, "count": 4, "correct": 1, "hit_rate": 0.25},
+            {"bucket_label": "0.9-1.0", "bucket_min": 0.9, "bucket_max": 1.0, "count": 6, "correct": 5, "hit_rate": 0.833},
+        ]
+        html = self.generator.generate_report([], calibration_report=report)
+        self.assertIn('id="calibrationChart"', html)
+        self.assertIn("0.5-0.6", html)
+        self.assertIn("0.9-1.0", html)
+
+    def test_hit_rate_converted_to_percentage(self):
+        report = [{"bucket_label": "0.7-0.8", "bucket_min": 0.7, "bucket_max": 0.8, "count": 4, "correct": 3, "hit_rate": 0.75}]
+        html = self.generator.generate_report([], calibration_report=report)
+        self.assertIn("75.0", html)
+
+    def test_counts_shown_alongside_chart(self):
+        report = [{"bucket_label": "0.5-0.6", "bucket_min": 0.5, "bucket_max": 0.6, "count": 12, "correct": 4, "hit_rate": 0.333}]
+        html = self.generator.generate_report([], calibration_report=report)
+        self.assertIn("12 verificări", html)
+
+    def test_no_calibration_report_shows_empty_state(self):
+        html = self.generator.generate_report([], calibration_report=None)
+        self.assertIn("Niciun raport de calibrare", html)
+
+    def test_empty_calibration_report_list_shows_empty_state(self):
+        html = self.generator.generate_report([], calibration_report=[])
+        self.assertIn("Niciun raport de calibrare", html)
+
+    def test_missing_calibration_report_param_does_not_crash(self):
+        html = self.generator.generate_report([])
+        self.assertIn("Calibrarea încrederii", html)
+
+
 class TestPriceSparkline(unittest.TestCase):
     def setUp(self):
         self.generator = DashboardGenerator()
