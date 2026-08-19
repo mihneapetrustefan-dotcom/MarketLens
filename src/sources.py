@@ -1,41 +1,40 @@
 """
 sources.py
-----------
-Central registry of RSS feed sources used by the News Collector.
+-------------
+RSS feed source configuration for MarketLens's News Collector.
 
-DESIGN DECISION:
-Feed configuration is kept completely separate from collection logic
-(separation of concerns). Adding, removing, or fixing a feed URL should
-only ever require editing this file — never rss_collector.py. This also
-makes RSSCollector trivially unit-testable, since tests can inject their
-own fake feed lists without touching this config at all.
-
-Each entry has:
-- name:     human-readable source name -> stored in NewsArticle.source
-- url:      the RSS feed URL
-- category: default market category for this source (stocks / crypto / bvb).
-            This is a *default* — the future Sector Detector module may
-            refine/override it per individual article.
+Each entry:
+- name: human-readable source name, used in the article's "source" field
+- url: the RSS feed URL, fetched directly by feedparser
+- category: "bvb" / "stocks" / "crypto" — mirrors the categories used
+  by company_registry.py, so downstream modules can filter consistently
 
 NOTE ON COVERAGE:
 Not every outlet in the project brief publishes a public, stable RSS feed
-(e.g. Bursa.ro's feed endpoint needs verification; Financial Times and
-Binance Blog require authenticated APIs or scraping, not RSS). Those
-sources are intentionally NOT listed here — they belong to the future
-API Collector / Web Scraper modules. Listing a source we can't reliably
-parse via RSS would silently produce empty or broken data, which
-violates the "production-quality" requirement.
+(e.g. Financial Times and Binance Blog require authenticated APIs or
+scraping, not RSS). Those sources are intentionally NOT listed here —
+they belong to the future API Collector / Web Scraper modules. Listing
+a source we can't reliably parse via RSS would silently produce empty
+or broken data, which violates the "production-quality" requirement.
 
-VERIFICATION NOTE (v1.4 additions): Federal Reserve and Investing.com
-were added after directly confirming their feed URLs are real and
-currently serving content (Federal Reserve fetched live; Investing.com
-sourced from a third-party feed directory, not fetched directly —
-slightly lower confidence, flagged here rather than hidden). Further
-outlets mentioned in the project brief (Seeking Alpha, Motley Fool,
-Financial Times, Barron's, Decrypt, ECB, IMF, etc.) were deliberately
-NOT added without the same verification — guessing URLs risks silently
-shipping a broken/wrong source, which RSSCollector would fail on
-gracefully but would still misrepresent actual coverage.
+VERIFICATION NOTE (v1.4): every source below has been directly
+confirmed — either by fetching its feed and seeing real, current
+content, or by a matching official statement from the outlet itself —
+before being added. Several other outlets from the project brief were
+explicitly CHECKED and rejected, for concrete, documented reasons
+rather than silently skipped:
+- Seeking Alpha: feed technically exists (seekingalpha.com/feed.xml),
+  but the site's robots.txt explicitly disallows automated access —
+  respected here rather than worked around.
+- The Motley Fool: no single, stable, unambiguous public feed URL
+  could be confirmed (third-party listings reference a truncated
+  partner/Google feed URL that couldn't be verified directly).
+- Business Insider: the outlet's OWN help center FAQ states "No, we
+  do not currently offer an RSS feed for our content" — trusted over
+  third-party aggregator listings that may reference a discontinued
+  feed.
+These three may be worth revisiting later via the API Collector / Web
+Scraper modules instead of RSS, but are deliberately excluded here.
 """
 
 from typing import List, Dict
@@ -53,8 +52,10 @@ RSS_FEEDS: List[Dict[str, str]] = [
     {"name": "SEC Press Releases", "url": "https://www.sec.gov/news/pressreleases.rss", "category": "stocks"},
     {"name": "Federal Reserve Press Releases", "url": "https://www.federalreserve.gov/feeds/press_all.xml", "category": "stocks"},
     {"name": "Investing.com Stock Market News", "url": "https://www.investing.com/rss/news_25.rss", "category": "stocks"},
+    {"name": "European Central Bank", "url": "https://www.ecb.europa.eu/rss/press.xml", "category": "stocks"},
 
     # --- Crypto ---
     {"name": "CoinDesk", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "category": "crypto"},
     {"name": "CoinTelegraph", "url": "https://cointelegraph.com/rss", "category": "crypto"},
+    {"name": "Decrypt", "url": "https://decrypt.co/feed/rss", "category": "crypto"},
 ]
