@@ -21,10 +21,21 @@ need real fundamental data (earnings, P/E, analyst targets) that this
 platform does not yet collect — this module is intentionally scoped
 to what can be verified honestly with what MarketLens has today.
 
+CHANGE LOG (v1.1) — WHY THE HOLDING PERIOD IS NOW PER-HORIZON:
+Previously every recommendation was checked after the SAME fixed
+holding period (5 days), regardless of whether it was tagged
+short-term or long-term. That meant a "long-term BUY" — a thesis that
+was never meant to play out in under a week — got marked "wrong"
+whenever the price simply dipped on short-term noise, well before its
+actual timeframe had elapsed. The hit rate this produced reflected
+short-term volatility, not whether the underlying call was sound.
+Each recommendation is now checked after ITS OWN declared
+time_horizon's appropriate holding period instead.
+
 DEPENDENCY NOTE: `yfinance` (and its dependency `pandas`) is imported
 INSIDE fetch_price_history(), not at module level, so importing this
 module — and running its unit tests — never requires yfinance to be
-installed. It's only needed when actually fetching real prices in Colab.
+installed.
 """
 
 import logging
@@ -42,17 +53,50 @@ class BacktestEngine:
     movement, and aggregates the results into a hit-rate summary.
     """
 
-    def __init__(self, holding_period_days: int = 5):
+    # Default holding period per declared time_horizon — how long to
+    # wait before a recommendation with that horizon is fairly judged.
+    # A "long-term" call gets ~45 days to play out; a "short-term" one
+    # only needs ~5 (roughly a trading week). Overridable per instance.
+    DEFAULT_HOLDING_PERIOD_BY_HORIZON: Dict[str, int] = {
+        "short-term": 5,
+        "mixed": 15,
+        "long-term": 45,
+    }
+
+    def __init__(
+        self,
+        holding_period_days: int = 5,
+        holding_period_days_by_horizon: Optional[Dict[str, int]] = None,
+    ):
         """
         Args:
-            holding_period_days: how many calendar days after a
-                recommendation to check the price again. 5 days
-                (roughly a trading week) is a reasonable default
-                horizon for a short-term directional call; exposed as
-                a parameter so the same engine can be re-run at
-                different horizons (e.g. 5 vs 30 days) to compare.
+            holding_period_days: FALLBACK number of days to wait
+                before checking a recommendation, used when its
+                time_horizon is missing (older, pre-migration log
+                rows) or not present in
+                holding_period_days_by_horizon. Also the value used if
+                a recommendation was never tagged with a horizon at
+                all. Default 5 — unchanged from the original behavior,
+                so anything without a recorded horizon is judged
+                exactly as before.
+            holding_period_days_by_horizon: per-horizon override, e.g.
+                {"short-term": 5, "mixed": 15, "long-term": 45}.
+                Defaults to DEFAULT_HOLDING_PERIOD_BY_HORIZON. This is
+                what lets a "long-term" BUY be judged on a long-term
+                clock instead of the same short window as everything
+                else.
         """
         self.holding_period_days = holding_period_days
+        self.holding_period_days_by_horizon = (
+            dict(holding_period_days_by_horizon)
+            if holding_period_days_by_horizon is not None
+            else dict(self.DEFAULT_HOLDING_PERIOD_BY_HORIZON)
+        )
+
+    def _holding_period_for(self, recommendation: Dict[str, Any]) -> int:
+        """Resolve the holding period to use for one recommendation, based on its own time_horizon."""
+        horizon = recommendation.get("time_horizon")
+        return self.holding_period_days_by_horizon.get(horizon, self.holding_period_days)
 
     def fetch_price_history(self, ticker: str, start_date, end_date):
         """
@@ -101,18 +145,24 @@ class BacktestEngine:
 
     def check_recommendation(self, recommendation: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Check ONE past recommendation against real price history.
+        Check ONE past recommendation against real price history,
+        using the holding period appropriate to ITS OWN time_horizon
+        (see _holding_period_for).
 
         Args:
             recommendation: a dict with at least "entity", "ticker",
                 "recommendation" (BUY/SELL), and "generated_at" (ISO
                 timestamp) — the shape produced by
-                RecommendationLog.load_actionable_before().
+                RecommendationLog.load_actionable_due_for_check() (or
+                the older load_actionable_before()). "time_horizon" is
+                used if present, else the instance's fallback default
+                applies.
 
         Returns:
             The input dict, extended with either:
             - `outcome: "checked"`, plus `entry_price`, `exit_price`,
-              `actual_change_pct`, `was_correct`; or
+              `actual_change_pct`, `was_correct`,
+              `holding_period_days_used`; or
             - `outcome: "skipped"`, plus `skipped_reason` explaining
               why (never raises — a single unbacktestable
               recommendation must never stop the whole batch).
@@ -131,7 +181,8 @@ class BacktestEngine:
         except (KeyError, ValueError, TypeError):
             return {**recommendation, "outcome": "skipped", "skipped_reason": "Invalid or missing generated_at timestamp"}
 
-        exit_date = generated_at + timedelta(days=self.holding_period_days)
+        holding_period_days = self._holding_period_for(recommendation)
+        exit_date = generated_at + timedelta(days=holding_period_days)
         if exit_date > datetime.now(timezone.utc):
             return {**recommendation, "outcome": "skipped", "skipped_reason": "Holding period has not fully elapsed yet"}
 
@@ -160,6 +211,7 @@ class BacktestEngine:
             "exit_price": round(exit_price, 2),
             "actual_change_pct": actual_change_pct,
             "was_correct": was_correct,
+            "holding_period_days_used": holding_period_days,
             "outcome": "checked",
         }
 
