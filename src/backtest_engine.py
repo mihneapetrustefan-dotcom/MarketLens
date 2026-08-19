@@ -173,8 +173,8 @@ class BacktestEngine:
         if not ticker:
             return {**recommendation, "outcome": "skipped", "skipped_reason": "No known ticker for this entity"}
 
-        if rec_type not in ("BUY", "SELL"):
-            return {**recommendation, "outcome": "skipped", "skipped_reason": "Only BUY/SELL recommendations can be backtested"}
+        if rec_type not in ("BUY", "SELL", "STRONG_BUY", "STRONG_SELL"):
+            return {**recommendation, "outcome": "skipped", "skipped_reason": "Only BUY/SELL (or STRONG_BUY/STRONG_SELL) recommendations can be backtested"}
 
         try:
             generated_at = datetime.fromisoformat(str(recommendation["generated_at"]).replace("Z", "+00:00"))
@@ -203,7 +203,12 @@ class BacktestEngine:
             return {**recommendation, "outcome": "skipped", "skipped_reason": "Could not find matching trading days in price history"}
 
         actual_change_pct = round((exit_price - entry_price) / entry_price * 100, 2)
-        was_correct = actual_change_pct > 0 if rec_type == "BUY" else actual_change_pct < 0
+        # STRONG_BUY is still, directionally, a BUY call (price should
+        # rise) — same for STRONG_SELL vs SELL. The "strong" prefix
+        # reflects how confident the call was, not a different
+        # direction, so it's judged by the exact same rule.
+        is_buy_direction = rec_type in ("BUY", "STRONG_BUY")
+        was_correct = actual_change_pct > 0 if is_buy_direction else actual_change_pct < 0
 
         return {
             **recommendation,
