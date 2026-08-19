@@ -316,6 +316,7 @@ def main() -> int:
         sector_scores=sector_scores,
         upgrade_downgrade_map=upgrade_downgrade_map,
         portfolio_result=portfolio_result,
+        accuracy_history=accuracy_history,
         daily_summary_text=daily_summary_text,
         entity_sector_map=dict(COMPANY_SECTOR_MAP),
         verified_track_record=verified_track_record,
