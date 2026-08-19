@@ -1,10 +1,28 @@
 name: MarketLens Daily Pipeline
 
-# Rulează automat în fiecare zi, la 07:00 UTC, și poate fi pornit
-# și manual din tab-ul "Actions" al repository-ului (buton "Run workflow").
+# Rulează de 5 ori pe zi, aliniat cu orele bursei americane (Eastern
+# Time), plus la miezul nopții. Orele de mai jos sunt calculate pentru
+# EST (ora standard de iarnă, UTC-5) — vara (EDT, UTC-4), din cauza
+# schimbării orei, rulările vor cădea cu o oră mai devreme față de
+# intenția inițială (ex. "înainte de deschidere" va cădea la 8:00 ET
+# în loc de 9:00 ET). GitHub Actions nu ajustează automat cron-ul la
+# ora de vară — dacă vrei precizie exactă tot anul, cron-ul de mai jos
+# trebuie actualizat manual de 2 ori pe an.
+#
+#   1. Înainte de deschidere (9:00 ET / 14:00 UTC)
+#   2. Prânz (12:00 ET / 17:00 UTC)
+#   3. Ora 15:00 (15:00 ET / 20:00 UTC)
+#   4. Imediat după închidere (16:15 ET / 21:15 UTC)
+#   5. Miezul nopții (00:00 ET / 05:00 UTC)
+#
+# Poate fi pornit și manual din tab-ul "Actions" (buton "Run workflow").
 on:
   schedule:
-    - cron: '0 7 * * *'
+    - cron: '0 14 * * *'
+    - cron: '0 17 * * *'
+    - cron: '0 20 * * *'
+    - cron: '15 21 * * *'
+    - cron: '0 5 * * *'
   workflow_dispatch: {}
 
 # "contents: write" e necesar ca job-ul să poată face commit + push
@@ -12,9 +30,12 @@ on:
 permissions:
   contents: write
 
-# Grup de concurență COMUN cu weekly_backfill.yml — cele două workflow-uri
-# scriu în aceleași fișiere (data/, docs/), deci GitHub le pune la coadă
-# în loc să le lase să ruleze în paralel și să se ciocnească la push.
+# Grup de concurență COMUN cu weekly_backfill.yml — cele două
+# workflow-uri scriu în aceleași fișiere (data/, docs/), deci GitHub
+# le pune la coadă în loc să le lase să ruleze în paralel și să se
+# ciocnească la push. Cu 5 rulări/zi, asta contează chiar mai mult
+# acum — o rulare care începe cât timp alta e încă activă așteaptă
+# cuminte la coadă, în loc să eșueze.
 concurrency:
   group: marketlens-data-write
   cancel-in-progress: false
@@ -41,6 +62,8 @@ jobs:
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
         run: python run_daily.py
 
       - name: Commit and push updated data + report
@@ -48,6 +71,6 @@ jobs:
           git config user.name "marketlens-bot"
           git config user.email "actions@github.com"
           git add data/ docs/
-          git diff --staged --quiet || git commit -m "Actualizare automată zilnică $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git diff --staged --quiet || git commit -m "Actualizare automată $(date -u +'%Y-%m-%d %H:%M UTC')"
           git pull --rebase origin main
           git push
