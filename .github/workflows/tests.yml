@@ -23,3 +23,7 @@ jobs:
 
       - name: Run full test suite
         run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Run full test suite
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Check company registry for collisions
+        run: PYTHONPATH=src python src/check_registry_collisions.py
