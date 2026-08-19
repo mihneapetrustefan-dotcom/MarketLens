@@ -12,8 +12,7 @@ permissions:
   contents: write
 
 # Grup de concurență COMUN cu daily.yml — vezi explicația din acel
-# fișier. Cu 5 rulări/zi pe daily.yml plus asta, concurența devine
-# chiar mai importantă — GitHub pune totul la coadă automat.
+# fișier.
 concurrency:
   group: marketlens-data-write
   cancel-in-progress: false
@@ -50,5 +49,13 @@ jobs:
           git config user.email "actions@github.com"
           git add data/ docs/
           git diff --staged --quiet || git commit -m "Actualizare (backfill istoric) $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git pull --rebase origin main
-          git push
+
+          if git pull --rebase origin main; then
+            git push
+          else
+            echo "Conflict la rebase — pastram versiunea proaspat generata de aceasta rulare."
+            git rebase --abort || true
+            git fetch origin main
+            git merge -X ours origin/main --no-edit -m "Merge automat (rezolvare conflict pe fisiere regenerate)"
+            git push
+          fi
