@@ -58,6 +58,7 @@ from market_data import MarketDataFetcher, normalize_ticker_for_yfinance
 from risk_score import RiskScoreCalculator
 from portfolio_simulator import PortfolioSimulator
 from portfolio_history import PortfolioHistory
+from event_fusion import EventFusion
 from sector_aggregator import SectorAggregator
 from daily_summary import DailySummaryGenerator
 from dashboard import DashboardGenerator
@@ -250,6 +251,9 @@ def main() -> int:
         "RecommendationLog.load_calibration_report", [],
         rec_log.load_calibration_report,
     )
+    fused_events = _safe_stage(
+        "Event Fusion", [], EventFusion().fuse_events, all_articles,
+    )
     print(f"Backtest: {backtest_result['summary']['checked']} recommendation(s) checked, "
           f"hit rate {backtest_result['summary']['hit_rate']}")
 
@@ -335,6 +339,7 @@ def main() -> int:
         upgrade_downgrade_results=upgrade_downgrade_results,
         accuracy_history=accuracy_history,
         calibration_report=calibration_report,
+        events=fused_events,
     )
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
