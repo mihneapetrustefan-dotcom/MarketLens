@@ -518,6 +518,55 @@ class TestCalibrationChart(unittest.TestCase):
         self.assertIn("Calibrarea încrederii", html)
 
 
+class TestEventsSection(unittest.TestCase):
+    """Tests for the v1.8 fused-events section (Event Fusion integration)."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def make_event(self, entity="Nvidia", event_type="EARNINGS", source_count=3,
+                    confirmed=True, rep_title="Nvidia reports record revenue",
+                    rep_source="Reuters", rep_url="http://a/1"):
+        return {
+            "entity": entity, "event_type": event_type, "source_count": source_count,
+            "confirmed_by_multiple_sources": confirmed,
+            "representative_title": rep_title, "representative_source": rep_source,
+            "representative_url": rep_url,
+        }
+
+    def test_confirmed_event_is_shown(self):
+        events = [self.make_event()]
+        html = self.generator.generate_report([], events=events)
+        self.assertIn("Nvidia", html)
+        self.assertIn("EARNINGS", html)
+        self.assertIn("3 surse independente", html)
+
+    def test_single_source_event_is_not_shown(self):
+        events = [self.make_event(source_count=1, confirmed=False)]
+        html = self.generator.generate_report([], events=events)
+        self.assertIn("Niciun eveniment confirmat", html)
+
+    def test_representative_article_link_included(self):
+        events = [self.make_event()]
+        html = self.generator.generate_report([], events=events)
+        self.assertIn("http://a/1", html)
+        self.assertIn("Nvidia reports record revenue", html)
+
+    def test_no_events_shows_empty_state(self):
+        html = self.generator.generate_report([], events=None)
+        self.assertIn("Niciun eveniment confirmat", html)
+
+    def test_events_sorted_by_source_count_descending(self):
+        low = self.make_event(entity="Apple", source_count=2)
+        high = self.make_event(entity="Tesla", source_count=5)
+        html = self.generator.generate_report([], events=[low, high])
+        self.assertLess(html.index("Tesla"), html.index("Apple"))
+
+    def test_missing_events_param_does_not_crash(self):
+        html = self.generator.generate_report([])
+        self.assertIn("Evenimente confirmate", html)
+
+
 class TestPriceSparkline(unittest.TestCase):
     def setUp(self):
         self.generator = DashboardGenerator()
