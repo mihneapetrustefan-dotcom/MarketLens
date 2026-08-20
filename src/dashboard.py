@@ -605,6 +605,48 @@ class DashboardGenerator:
             )
         return "".join(lines)
 
+    def _render_events_section(self, events: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render fused Events (see event_fusion.py) that are CONFIRMED
+        by 2+ independent sources — multi-source confirmation is
+        itself a real credibility signal, worth surfacing separately
+        from the ordinary per-entity cards. Single-source events aren't
+        hidden data, they just don't add anything beyond what that
+        entity's own card in Sectoare already shows, so they're omitted
+        here to keep this section meaningful rather than noisy.
+        """
+        if not events:
+            return '<p class="empty-state">Niciun eveniment confirmat de mai multe surse încă.</p>'
+
+        confirmed = [e for e in events if e.get("confirmed_by_multiple_sources")]
+        if not confirmed:
+            return '<p class="empty-state">Niciun eveniment confirmat de mai multe surse încă.</p>'
+
+        # Most well-corroborated events first; capped so this section
+        # stays scannable even with heavy news days.
+        confirmed = sorted(confirmed, key=lambda e: e.get("source_count", 0), reverse=True)[:15]
+
+        lines = []
+        for e in confirmed:
+            entity = self._escape(e.get("entity"))
+            event_type = self._escape(e.get("event_type"))
+            source_count = e.get("source_count", 0)
+            rep_title = self._escape(e.get("representative_title") or "")
+            rep_source = self._escape(e.get("representative_source") or "")
+            rep_url = e.get("representative_url")
+            label = f'"{rep_title}" — {rep_source}' if rep_source else f'"{rep_title}"'
+            if rep_url:
+                link = f'<a class="source-link" href="{self._escape(rep_url)}" target="_blank" rel="noopener noreferrer">{label}</a>'
+            else:
+                link = f'<span class="source-link-inactive">{label}</span>'
+            lines.append(f"""
+            <div class="change-line">
+              <b>{entity}</b> · {event_type} · confirmat de {source_count} surse independente
+              <div style="margin-top:4px;">{link}</div>
+            </div>
+            """)
+        return "".join(lines)
+
     def _render_masthead(
         self,
         generated_at: str,
@@ -628,6 +670,7 @@ class DashboardGenerator:
           {watchlist_link}
           <a href="#sectoare">Sectoare <span class="count">{len(sector_names)}</span></a>
           <a href="#portofoliu">Portofoliu</a>
+          <a href="#evenimente">Evenimente</a>
           <a href="#piata">Date de piață</a>
           <a href="#schimbari">Schimbări <span class="count">{changes_count}</span></a>
           <span class="count">{total_entities} entități</span>
@@ -654,6 +697,7 @@ class DashboardGenerator:
         upgrade_downgrade_results: Optional[List[Dict[str, Any]]] = None,
         accuracy_history: Optional[List[Dict[str, Any]]] = None,
         calibration_report: Optional[List[Dict[str, Any]]] = None,
+        events: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Build the full HTML report as a single string.
@@ -851,6 +895,9 @@ class DashboardGenerator:
 
     <div class="section-title">Calibrarea încrederii <span class="section-hint">(înseamnă cu adevărat ceva scorul de încredere?)</span></div>
     <div class="chart-frame">{self._render_calibration_chart(calibration_report)}</div>
+
+    <div class="section-title" id="evenimente">Evenimente confirmate <span class="section-hint">(aceeași știre, raportată independent de mai multe surse)</span></div>
+    {self._render_events_section(events)}
 
     <div class="section-title" id="piata">Date de piață <span class="section-hint">(fapte reale — fără verdict de subevaluare/supraevaluare)</span></div>
     {self._render_market_data_table(market_data, risk_data)}
