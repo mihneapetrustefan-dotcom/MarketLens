@@ -60,6 +60,8 @@ from portfolio_simulator import PortfolioSimulator
 from portfolio_history import PortfolioHistory
 from event_fusion import EventFusion
 from fred_connector import FredConnector
+from economic_calendar import EconomicCalendar
+from source_credibility import summarize_sources
 from market_instruments import MARKET_INSTRUMENTS
 from sector_aggregator import SectorAggregator
 from daily_summary import DailySummaryGenerator
@@ -318,6 +320,16 @@ def main() -> int:
         macro_indicators = []
         print("FRED not configured (FRED_API_KEY secret not set) — skipping")
 
+    # --- 7d. Economic calendar (known upcoming FOMC meetings) ---
+    fomc_meetings = _safe_stage(
+        "Economic Calendar", [], EconomicCalendar().get_upcoming_fomc_meetings,
+    )
+
+    # --- 7e. Source credibility transparency breakdown ---
+    source_summary = _safe_stage(
+        "Source Credibility", [], summarize_sources, all_articles,
+    )
+
     # --- 8. Portfolio simulation (+ persisted history), sector macro view, daily summary text ---
     portfolio_result = _safe_stage(
         "Portfolio Simulator",
@@ -364,6 +376,8 @@ def main() -> int:
         events=fused_events,
         macro_snapshots=macro_snapshots,
         macro_indicators=macro_indicators,
+        fomc_meetings=fomc_meetings,
+        source_summary=source_summary,
     )
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
