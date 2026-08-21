@@ -567,6 +567,49 @@ class TestEventsSection(unittest.TestCase):
         self.assertIn("Evenimente confirmate", html)
 
 
+class TestMacroSection(unittest.TestCase):
+    """Tests for the v1.9 macro (Indices/Commodities) and FRED indicators sections."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_macro_snapshot_rendered(self):
+        macro = {"S&P 500": {"current_price": 5820.5, "daily_change_pct": 0.8}}
+        html = self.generator.generate_report([], macro_snapshots=macro)
+        self.assertIn("S&amp;P 500", html)
+        self.assertIn("5820.5", html)
+
+    def test_macro_negative_change_uses_red(self):
+        macro = {"Aur": {"current_price": 2400.0, "daily_change_pct": -1.2}}
+        html = self.generator.generate_report([], macro_snapshots=macro)
+        self.assertIn("#d4695a", html)
+
+    def test_macro_error_entry_shown_in_empty_state_cell(self):
+        macro = {"Petrol brut (WTI)": {"error": "no data"}}
+        html = self.generator.generate_report([], macro_snapshots=macro)
+        self.assertIn("no data", html)
+
+    def test_no_macro_snapshots_shows_empty_state(self):
+        html = self.generator.generate_report([], macro_snapshots=None)
+        self.assertIn("Nicio dată macro disponibilă", html)
+
+    def test_macro_indicators_rendered(self):
+        indicators = [{"series_id": "UNRATE", "label": "Rata șomajului (SUA)", "value": 4.1, "date": "2026-07-01"}]
+        html = self.generator.generate_report([], macro_indicators=indicators)
+        self.assertIn("Rata șomajului", html)
+        self.assertIn("4.1", html)
+        self.assertIn("2026-07-01", html)
+
+    def test_no_macro_indicators_shows_empty_state(self):
+        html = self.generator.generate_report([], macro_indicators=None)
+        self.assertIn("Niciun indicator macroeconomic", html)
+
+    def test_missing_macro_params_do_not_crash(self):
+        html = self.generator.generate_report([])
+        self.assertIn("Prezentare macro", html)
+        self.assertIn("Indicatori macroeconomici", html)
+
+
 class TestPriceSparkline(unittest.TestCase):
     def setUp(self):
         self.generator = DashboardGenerator()
