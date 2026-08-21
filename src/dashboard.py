@@ -491,6 +491,53 @@ class DashboardGenerator:
         )
         return f'<div>{items}</div>'
 
+    def _render_economic_calendar(self, fomc_meetings: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render upcoming FOMC (Federal Reserve) meeting dates — see
+        economic_calendar.py for why this is deliberately scoped to
+        ONLY this one, precisely-known recurring event, rather than a
+        full commercial-style economic calendar.
+        """
+        if not fomc_meetings:
+            return '<p class="empty-state">Niciun eveniment programat disponibil.</p>'
+
+        items = []
+        for m in fomc_meetings:
+            start = m.get("start")
+            end = m.get("end")
+            days_until = m.get("days_until")
+            when = f"{self._escape(start)} – {self._escape(end)}" if start != end else self._escape(start)
+            countdown = f"peste {days_until} zile" if days_until and days_until > 0 else "în curs / azi"
+            items.append(f"""
+            <div class="change-line">
+              <b>Ședință FOMC (Fed)</b> — {when}
+              <span style="color:#8c8470; margin-left:8px;">({countdown})</span>
+            </div>
+            """)
+        return "".join(items)
+
+    def _render_source_credibility(self, source_summary: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render the source-tier transparency breakdown — see
+        source_credibility.py for why this is a TRANSPARENCY layer
+        (where did coverage come from), not a "fake news" verdict.
+        """
+        if not source_summary:
+            return '<p class="empty-state">Nicio distribuție pe surse disponibilă încă.</p>'
+
+        blocks = []
+        for tier in source_summary:
+            source_list = ", ".join(
+                f'{self._escape(s["name"])} ({s["article_count"]})' for s in tier.get("sources", [])
+            )
+            blocks.append(f"""
+            <div class="change-line">
+              <b>{self._escape(tier.get('tier_label'))}</b> — {tier.get('article_count')} articole
+              <div style="font-size:11px; color:#8c8470; margin-top:4px;">{source_list}</div>
+            </div>
+            """)
+        return "".join(blocks)
+
     def _render_portfolio_summary(self, portfolio_result: Optional[Dict[str, Any]]) -> str:
         """Render the hypothetical portfolio simulation summary cards."""
         if not portfolio_result or not portfolio_result.get("trades_simulated"):
@@ -755,6 +802,8 @@ class DashboardGenerator:
         events: Optional[List[Dict[str, Any]]] = None,
         macro_snapshots: Optional[Dict[str, Dict[str, Any]]] = None,
         macro_indicators: Optional[List[Dict[str, Any]]] = None,
+        fomc_meetings: Optional[List[Dict[str, Any]]] = None,
+        source_summary: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Build the full HTML report as a single string.
@@ -964,6 +1013,12 @@ class DashboardGenerator:
 
     <div class="section-title">Indicatori macroeconomici <span class="section-hint">(date reale, publicate de Fed St. Louis — FRED)</span></div>
     {self._render_macro_indicators(macro_indicators)}
+
+    <div class="section-title">Calendar economic <span class="section-hint">(ședințe Fed cunoscute, anunțate oficial)</span></div>
+    {self._render_economic_calendar(fomc_meetings)}
+
+    <div class="section-title">Credibilitate surse <span class="section-hint">(transparență — de unde vine acoperirea, nu un verdict de adevăr)</span></div>
+    {self._render_source_credibility(source_summary)}
 
     <div class="section-title" id="schimbari">Schimbări recente</div>
     {self._render_changes_section(upgrade_downgrade_results)}
