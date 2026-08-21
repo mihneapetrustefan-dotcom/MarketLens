@@ -610,6 +610,58 @@ class TestMacroSection(unittest.TestCase):
         self.assertIn("Indicatori macroeconomici", html)
 
 
+class TestEconomicCalendarSection(unittest.TestCase):
+    """Tests for the v2.0 economic calendar (FOMC meetings) section."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_upcoming_meeting_rendered(self):
+        meetings = [{"start": "2026-09-15", "end": "2026-09-16", "statement_date": "2026-09-16", "days_until": 25}]
+        html = self.generator.generate_report([], fomc_meetings=meetings)
+        self.assertIn("2026-09-15", html)
+        self.assertIn("FOMC", html)
+        self.assertIn("peste 25 zile", html)
+
+    def test_single_day_meeting_shown_without_dash(self):
+        meetings = [{"start": "2026-09-15", "end": "2026-09-15", "statement_date": "2026-09-15", "days_until": 25}]
+        html = self.generator.generate_report([], fomc_meetings=meetings)
+        self.assertIn("2026-09-15", html)
+
+    def test_no_meetings_shows_empty_state(self):
+        html = self.generator.generate_report([], fomc_meetings=None)
+        self.assertIn("Niciun eveniment programat", html)
+
+    def test_missing_param_does_not_crash(self):
+        html = self.generator.generate_report([])
+        self.assertIn("Calendar economic", html)
+
+
+class TestSourceCredibilitySection(unittest.TestCase):
+    """Tests for the v2.0 source credibility transparency section."""
+
+    def setUp(self):
+        self.generator = DashboardGenerator()
+
+    def test_tier_summary_rendered(self):
+        summary = [{
+            "tier": "wire_and_major_press", "tier_label": "Agenții de presă și presă financiară majoră",
+            "article_count": 42, "sources": [{"name": "Reuters", "article_count": 30}, {"name": "CNBC", "article_count": 12}],
+        }]
+        html = self.generator.generate_report([], source_summary=summary)
+        self.assertIn("Agenții de presă", html)
+        self.assertIn("42 articole", html)
+        self.assertIn("Reuters (30)", html)
+
+    def test_no_summary_shows_empty_state(self):
+        html = self.generator.generate_report([], source_summary=None)
+        self.assertIn("Nicio distribuție pe surse", html)
+
+    def test_missing_param_does_not_crash(self):
+        html = self.generator.generate_report([])
+        self.assertIn("Credibilitate surse", html)
+
+
 class TestPriceSparkline(unittest.TestCase):
     def setUp(self):
         self.generator = DashboardGenerator()
