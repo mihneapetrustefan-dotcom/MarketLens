@@ -50,5 +50,9 @@ _ADDITIONAL_TICKERS: List[Dict[str, Any]] = [
     {"ticker": "USDJPY", "name": "US Dollar / Japanese Yen", "category": "forex"},
     {"ticker": "EURRON", "name": "Euro / Romanian Leu", "category": "forex"},
     {"ticker": "USDRON", "name": "US Dollar / Romanian Leu", "category": "forex"},
+    {"ticker": "USDCHF", "name": "US Dollar / Swiss Franc", "category": "forex"},
+    {"ticker": "AUDUSD", "name": "Australian Dollar / US Dollar", "category": "forex"},
+    {"ticker": "USDCAD", "name": "US Dollar / Canadian Dollar", "category": "forex"},
+    {"ticker": "NZDUSD", "name": "New Zealand Dollar / US Dollar", "category": "forex"},
 ]
 TICKER_REGISTRY: List[Dict[str, Any]] = _FROM_COMPANIES + _ADDITIONAL_TICKERS
