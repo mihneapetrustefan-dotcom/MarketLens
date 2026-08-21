@@ -59,6 +59,8 @@ from risk_score import RiskScoreCalculator
 from portfolio_simulator import PortfolioSimulator
 from portfolio_history import PortfolioHistory
 from event_fusion import EventFusion
+from fred_connector import FredConnector
+from market_instruments import MARKET_INSTRUMENTS
 from sector_aggregator import SectorAggregator
 from daily_summary import DailySummaryGenerator
 from dashboard import DashboardGenerator
@@ -296,6 +298,26 @@ def main() -> int:
         "Market Data / Risk Score", ({}, {}, {}, {}), _build_market_data,
     )
 
+    # --- 7b. Macro instruments (Indices/Commodities) — pure factual
+    # price data, no news-based sentiment/recommendation attached
+    # (these aren't news-detected entities, see market_instruments.py).
+    def _build_macro_data():
+        market_fetcher = MarketDataFetcher()
+        macro_tickers = {m["yfinance_ticker"]: m["name"] for m in MARKET_INSTRUMENTS}
+        raw = market_fetcher.get_snapshots_batch(list(macro_tickers.keys()))
+        return {macro_tickers[ticker]: snap for ticker, snap in raw.items()}
+
+    macro_snapshots = _safe_stage("Macro Instruments (Indices/Commodities)", {}, _build_macro_data)
+
+    # --- 7c. Real macroeconomic indicators via FRED (optional) ---
+    fred = FredConnector()
+    if fred.is_configured():
+        macro_indicators = _safe_stage("FRED Connector", [], fred.get_all_latest)
+        print(f"Collected {len(macro_indicators)} macro indicator(s) from FRED")
+    else:
+        macro_indicators = []
+        print("FRED not configured (FRED_API_KEY secret not set) — skipping")
+
     # --- 8. Portfolio simulation (+ persisted history), sector macro view, daily summary text ---
     portfolio_result = _safe_stage(
         "Portfolio Simulator",
@@ -340,6 +362,8 @@ def main() -> int:
         accuracy_history=accuracy_history,
         calibration_report=calibration_report,
         events=fused_events,
+        macro_snapshots=macro_snapshots,
+        macro_indicators=macro_indicators,
     )
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
