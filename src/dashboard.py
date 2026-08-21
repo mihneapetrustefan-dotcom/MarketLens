@@ -436,6 +436,61 @@ class DashboardGenerator:
         </table>
         """
 
+    def _render_macro_table(self, macro_snapshots: Optional[Dict[str, Dict[str, Any]]]) -> str:
+        """
+        Render a factual price table for Indices/Commodities/Forex —
+        same "facts, no verdict" philosophy as the company market-data
+        table. No BUY/SELL logic applies here (see market_instruments.py
+        — these deliberately aren't news-detected entities), just the
+        current snapshot from real market data.
+        """
+        if not macro_snapshots:
+            return '<p class="empty-state">Nicio dată macro disponibilă.</p>'
+
+        rows = []
+        for name, snap in macro_snapshots.items():
+            if snap.get("error"):
+                rows.append(f'<tr><td>{self._escape(name)}</td><td colspan="2" class="empty-state">{self._escape(snap["error"])}</td></tr>')
+                continue
+            change = snap.get("daily_change_pct")
+            color = "#3ecf7e" if (change or 0) >= 0 else "#d4695a"
+            rows.append(f"""
+            <tr>
+              <td>{self._escape(name)}</td>
+              <td>{self._escape(snap.get('current_price'))}</td>
+              <td style="color:{color};">{self._escape(change)}%</td>
+            </tr>
+            """)
+
+        return f"""
+        <table>
+          <thead><tr><th>Instrument</th><th>Preț curent</th><th>Variație zilnică</th></tr></thead>
+          <tbody>{"".join(rows)}</tbody>
+        </table>
+        """
+
+    def _render_macro_indicators(self, macro_indicators: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Render real macroeconomic indicators (GDP, inflation,
+        unemployment, interest rates — via FRED) as plain facts, each
+        with the date it was actually published (economic data is
+        often published with a lag, unlike a live stock price).
+        """
+        if not macro_indicators:
+            return '<p class="empty-state">Niciun indicator macroeconomic disponibil (necesită cheie FRED_API_KEY configurată).</p>'
+
+        items = "".join(
+            f"""
+            <div class="index-box-like" style="display:inline-block; background:#1c1810; border:1px solid #33301f; border-radius:6px; padding:10px 16px; margin:0 8px 8px 0;">
+              <div style="font-size:10px; color:#8c8470; text-transform:uppercase;">{self._escape(ind.get('label'))}</div>
+              <div style="font-size:18px; font-weight:700; color:#f5f1e6;">{self._escape(ind.get('value'))}</div>
+              <div style="font-size:10px; color:#8c8470;">la {self._escape(ind.get('date'))}</div>
+            </div>
+            """
+            for ind in macro_indicators
+        )
+        return f'<div>{items}</div>'
+
     def _render_portfolio_summary(self, portfolio_result: Optional[Dict[str, Any]]) -> str:
         """Render the hypothetical portfolio simulation summary cards."""
         if not portfolio_result or not portfolio_result.get("trades_simulated"):
@@ -698,6 +753,8 @@ class DashboardGenerator:
         accuracy_history: Optional[List[Dict[str, Any]]] = None,
         calibration_report: Optional[List[Dict[str, Any]]] = None,
         events: Optional[List[Dict[str, Any]]] = None,
+        macro_snapshots: Optional[Dict[str, Dict[str, Any]]] = None,
+        macro_indicators: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Build the full HTML report as a single string.
@@ -901,6 +958,12 @@ class DashboardGenerator:
 
     <div class="section-title" id="piata">Date de piață <span class="section-hint">(fapte reale — fără verdict de subevaluare/supraevaluare)</span></div>
     {self._render_market_data_table(market_data, risk_data)}
+
+    <div class="section-title">Prezentare macro <span class="section-hint">(indici, mărfuri — fapte reale, fără verdict)</span></div>
+    {self._render_macro_table(macro_snapshots)}
+
+    <div class="section-title">Indicatori macroeconomici <span class="section-hint">(date reale, publicate de Fed St. Louis — FRED)</span></div>
+    {self._render_macro_indicators(macro_indicators)}
 
     <div class="section-title" id="schimbari">Schimbări recente</div>
     {self._render_changes_section(upgrade_downgrade_results)}
