@@ -260,4 +260,4 @@ class CorporateAction:
     details: Optional[str] = None
 
     def __post_init__(self):
-        self.effective_date = _require_utc(self.effective_date, "ef
+        self.effective_date = _require_utc(self.effective_date, "effective_date")
