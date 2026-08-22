@@ -114,4 +114,4 @@ if __name__ == "__main__":
     summary = run_migration(db_path)
     for key, count in summary.items():
         print(f"  {key}: {count}")
-    print("Migration complete. Existing tables (articles, recommendations, portfolio_sna
+    print("Migration complete. Existing tables (articles, recommendations, portfolio_snapshots) were not touched.")
