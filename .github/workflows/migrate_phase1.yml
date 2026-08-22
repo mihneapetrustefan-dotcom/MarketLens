@@ -1,0 +1,30 @@
+name: Phase 1 - Migrate Registries to Canonical Tables
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Phase 1 migration
+        run: python scripts/migrate_registries_to_canonical.py
+
+      - name: Commit updated database
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Phase 1: populate canonical tables from existing registries"
+          git push
