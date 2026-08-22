@@ -199,4 +199,4 @@ class NewsSourceRepository:
 
     def list_all(self) -> List[NewsSource]:
         rows = self._conn.execute("SELECT * FROM news_sources ORDER BY name").fetchall()
-        return [NewsSource(source_id=r[0], name=r[1], source_type=SourceType(r[2]), url=r[3
+        return [NewsSource(source_id=r[0], name=r[1], source_type=SourceType(r[2]), url=r[3], active=bool(r[4])) for r in rows]
