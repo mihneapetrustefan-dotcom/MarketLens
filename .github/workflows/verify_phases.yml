@@ -1,0 +1,27 @@
+name: Verify Phases 0-5
+
+# Rulare MANUALĂ — verifică cap-coadă că toate cele 5 faze sunt corect
+# implementate ȘI corect conectate între ele, pe date reale.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full existing test suite
+        run: PYTHONPATH=src python -m unittest discover -s . -p "test_*.py" -v
+
+      - name: Run end-to-end phase verification
+        run: python scripts/verify_phases.py
