@@ -88,7 +88,7 @@
   
         <div class="masthead">
           <div class="brand">The MarketLens Journal</div>
-          <div class="sub">2026-08-25 06:07 UTC · 388 companii urmărite</div>
+          <div class="sub">2026-08-25 10:53 UTC · 388 companii urmărite</div>
         </div>
         <div class="nav-strip">
           <a href="#rezumat">Rezumat</a>
@@ -104,16 +104,16 @@
 
   <div class="main">
     <div id="rezumat"></div>
-    <div class="hero-number">317 BUY · 32 SELL · 39 HOLD</div>
-    <div class="hero-summary">Today: 284 BUY and 32 SELL recommendation(s) across 388 tracked entities. Upgraded since last check: AstraZeneca. Most-covered sector: Technology (8431 articles, positive sentiment).</div>
+    <div class="hero-number">318 BUY · 32 SELL · 38 HOLD</div>
+    <div class="hero-summary">Today: 285 BUY and 32 SELL recommendation(s) across 388 tracked entities. Upgraded since last check: Purcari Wineries. Most-covered sector: Technology (8442 articles, positive sentiment).</div>
 
     <div class="kpi-row">
       <div class="kpi"><div class="n" style="color:#2ecc71">33</div><div class="l">Strong Buy</div></div>
-      <div class="kpi"><div class="n" style="color:#3ecf7e">284</div><div class="l">Buy</div></div>
-      <div class="kpi"><div class="n">39</div><div class="l">Hold</div></div>
+      <div class="kpi"><div class="n" style="color:#3ecf7e">285</div><div class="l">Buy</div></div>
+      <div class="kpi"><div class="n">38</div><div class="l">Hold</div></div>
       <div class="kpi"><div class="n" style="color:#d4695a">32</div><div class="l">Sell</div></div>
       <div class="kpi"><div class="n" style="color:#e63946">0</div><div class="l">Strong Sell</div></div>
-      <div class="kpi"><div class="n">50762</div><div class="l">Articole</div></div>
+      <div class="kpi"><div class="n">50875</div><div class="l">Articole</div></div>
       <div class="kpi"><div class="n">398</div><div class="l">Surse</div></div>
     </div>
 
@@ -126,8 +126,8 @@
         <div class="sector-block" id="sector-technology">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Technology</span>
-            <span class="sector-meta">8431 articole · 252 surse</span>
-            <span class="sentiment-tag">positive · consistență 71%</span>
+            <span class="sector-meta">8442 articole · 252 surse</span>
+            <span class="sentiment-tag">positive · consistență 72%</span>
           </div>
           <div class="rec-cards">
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #2ecc71;" data-search="arista networks">
@@ -1102,6 +1102,60 @@
           </details>
         </div>
         
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="nvidia">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Nvidia</div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill verified-bad">gresit verificat</span></div>
+              
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <canvas id="spark-nvidia" height="26" class="sparkline"></canvas>
+        <script>
+          (function() {
+            var el = document.getElementById('spark-nvidia');
+            if (el && window.Chart) {
+              new Chart(el, {
+                type: 'line',
+                data: {
+                  labels: ["2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24"],
+                  datasets: [{
+                    data: [211.8, 212.5, 207.4, 202.81, 203.28, 207.29, 212.06, 208.76, 206.84, 196.51, 197.01, 190.01, 195.04, 200.75, 206.64, 211.94, 219.22, 218.99, 223.96, 217.55, 217.5, 224.09, 225.3, 225.16, 225.01, 219.74, 217.56, 216.85, 214.72, 208.48],
+                    borderColor: '#f0645f',
+                    borderWidth: 1.5,
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 0,
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                  scales: { x: { display: false }, y: { display: false } },
+                  elements: { point: { radius: 0 } }
+                }
+              });
+            }
+          })();
+        </script>
+        
+          
+        <div class="conf-track"><div class="conf-fill" style="width:80%; background:#3ecf7e;"></div></div>
+        <div class="conf-label">0.795</div>
+        
+          <details class="argument">
+            <summary><span class="icon">i</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              Sentiment predominant pozitiv, încredere 0.795.
+              
+              <a class="source-link" href="https://news.google.com/rss/articles/CBMiqgFBVV95cUxPLVFaelBsanR4QU83b2ZuODJrc1dVc2dXaGlMci1GemFKcEwyRzZXQVl3UEduOHh4eHd1bExYZmQweUo3cU9rT1J1ZDh0NGJJZThGVUZxSlJZc3dITVM0WGdRNTRHV0JuaFNneWVkNW43bzRNbkQwdHB6Ny1nZGFRNmJWZ1cwOTFGaDRTTk9Tbk5UeExKUlE5OG5EOFZ2QmpvLTRQSXBDY3kwQQ?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Nvidia initiated, Teradyne downgraded: Wall Street&#x27;s top analyst calls - Yahoo Finance" — Google News: Teradyne</a>
+            </div>
+          </details>
+        </div>
+        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="adobe">
           <div class="rc-top">
             <div>
@@ -1264,60 +1318,6 @@
           </details>
         </div>
         
-        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="nvidia">
-          <div class="rc-top">
-            <div>
-              <div class="rc-name">Nvidia</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill verified-bad">gresit verificat</span></div>
-              
-            </div>
-            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
-          </div>
-          
-        <canvas id="spark-nvidia" height="26" class="sparkline"></canvas>
-        <script>
-          (function() {
-            var el = document.getElementById('spark-nvidia');
-            if (el && window.Chart) {
-              new Chart(el, {
-                type: 'line',
-                data: {
-                  labels: ["2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24"],
-                  datasets: [{
-                    data: [211.8, 212.5, 207.4, 202.81, 203.28, 207.29, 212.06, 208.76, 206.84, 196.51, 197.01, 190.01, 195.04, 200.75, 206.64, 211.94, 219.22, 218.99, 223.96, 217.55, 217.5, 224.09, 225.3, 225.16, 225.01, 219.74, 217.56, 216.85, 214.72, 208.48],
-                    borderColor: '#f0645f',
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                  }]
-                },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                  scales: { x: { display: false }, y: { display: false } },
-                  elements: { point: { radius: 0 } }
-                }
-              });
-            }
-          })();
-        </script>
-        
-          
-        <div class="conf-track"><div class="conf-fill" style="width:79%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.786</div>
-        
-          <details class="argument">
-            <summary><span class="icon">i</span> Vezi argumentul</summary>
-            <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.786.
-              
-              <a class="source-link" href="https://news.google.com/rss/articles/CBMiqgFBVV95cUxPLVFaelBsanR4QU83b2ZuODJrc1dVc2dXaGlMci1GemFKcEwyRzZXQVl3UEduOHh4eHd1bExYZmQweUo3cU9rT1J1ZDh0NGJJZThGVUZxSlJZc3dITVM0WGdRNTRHV0JuaFNneWVkNW43bzRNbkQwdHB6Ny1nZGFRNmJWZ1cwOTFGaDRTTk9Tbk5UeExKUlE5OG5EOFZ2QmpvLTRQSXBDY3kwQQ?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Nvidia initiated, Teradyne downgraded: Wall Street&#x27;s top analyst calls - Yahoo Finance" — Google News: Teradyne</a>
-            </div>
-          </details>
-        </div>
-        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="microsoft">
           <div class="rc-top">
             <div>
@@ -1367,7 +1367,7 @@
             <div class="argument-body">
               Sentiment predominant pozitiv, încredere 0.784.
               
-              <a class="source-link" href="https://finance.yahoo.com/markets/stocks/articles/jim-cramer-left-impressed-microsoft-235426446.html" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Jim Cramer Was Left Impressed By Microsoft Corporation (NASDAQ:MSFT)’s Conference Call" — Yahoo Finance</a>
+              <a class="source-link" href="https://www.zf.ro/business-hi-tech/bogdan-putinica-fostul-sef-microsoft-europa-centrala-est-lansat-impreuna-alex-balint-inginer-software-experienta-roluri-complexe-microsoft-amazon-stripe-start-up-ul-outcome1-vinde-companiilor-mici-23223915" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Bogdan Putinică, fostul şef al Microsoft pentru Europa Centrală şi de Est, a lansat împreună cu Alex Balint, un inginer software cu experienţă în roluri complexe la Microsoft, Amazon şi Stripe, start-up-ul Outcome1.AI, care vinde companiilor mici şi mijlocii „angajaţi digitali” cu un abonament lunar" — Ziarul Financiar</a>
             </div>
           </details>
         </div>
@@ -2098,6 +2098,60 @@
           </details>
         </div>
         
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #f0645f;" data-search="oracle">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Oracle</div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill verified-bad">gresit verificat</span></div>
+              
+            </div>
+            <span class="rc-verdict" style="background:#f0645f22; color:#f0645f;">SELL</span>
+          </div>
+          
+        <canvas id="spark-oracle" height="26" class="sparkline"></canvas>
+        <script>
+          (function() {
+            var el = document.getElementById('spark-oracle');
+            if (el && window.Chart) {
+              new Chart(el, {
+                type: 'line',
+                data: {
+                  labels: ["2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24"],
+                  datasets: [{
+                    data: [127.94, 132.49, 124.21, 126.41, 121.38, 127.05, 125.84, 120.04, 114.99, 119.9, 119.96, 117.74, 127.56, 129.87, 141.85, 145.74, 144.39, 143.47, 147.02, 151.05, 145.48, 153.28, 156.22, 150.52, 146.65, 142.79, 143.81, 142.07, 146.47, 142.45],
+                    borderColor: '#3ecf7e',
+                    borderWidth: 1.5,
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 0,
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                  scales: { x: { display: false }, y: { display: false } },
+                  elements: { point: { radius: 0 } }
+                }
+              });
+            }
+          })();
+        </script>
+        
+          
+        <div class="conf-track"><div class="conf-fill" style="width:73%; background:#3ecf7e;"></div></div>
+        <div class="conf-label">0.729</div>
+        
+          <details class="argument">
+            <summary><span class="icon">i</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              Sentiment predominant negativ, încredere 0.729.
+              
+              <a class="source-link" href="https://finance.yahoo.com/technology/ai/articles/oracle-vs-amazon-better-ai-201300850.html" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Oracle vs. Amazon: Which Is the Better AI Cloud Stock to Own for the Next 5 Years?" — Yahoo Finance</a>
+            </div>
+          </details>
+        </div>
+        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="meta platforms">
           <div class="rc-top">
             <div>
@@ -2148,60 +2202,6 @@
               Sentiment predominant pozitiv, încredere 0.728.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMimgFBVV95cUxNRVhBMndiRlR5bnVsVllRSUVENHVLd24tZzBPR1ZnVW81clBRMWJ5WTFwM1NEbXJ6bVEwQTlEczRrVVRaaTFnclNKZFdrWVRxOWN2dHVTSnBYUEZkdXVRbTg0c1RVZGx0Zlc0b2R4NXRYNzRySS0zM0s4LWphbVlldmFfUEhyRU5HajNSUDYtWWVxbWlHY21Fb3hR?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Meta Platforms Stock Drops 17% YTD: Should You Buy, Sell or Hold it? - Yahoo Finance" — Google News: Meta Platforms</a>
-            </div>
-          </details>
-        </div>
-        
-        <div class="rec-card" style="box-shadow: inset 3px 0 0 #f0645f;" data-search="oracle">
-          <div class="rc-top">
-            <div>
-              <div class="rc-name">Oracle</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill verified-bad">gresit verificat</span></div>
-              
-            </div>
-            <span class="rc-verdict" style="background:#f0645f22; color:#f0645f;">SELL</span>
-          </div>
-          
-        <canvas id="spark-oracle" height="26" class="sparkline"></canvas>
-        <script>
-          (function() {
-            var el = document.getElementById('spark-oracle');
-            if (el && window.Chart) {
-              new Chart(el, {
-                type: 'line',
-                data: {
-                  labels: ["2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24"],
-                  datasets: [{
-                    data: [127.94, 132.49, 124.21, 126.41, 121.38, 127.05, 125.84, 120.04, 114.99, 119.9, 119.96, 117.74, 127.56, 129.87, 141.85, 145.74, 144.39, 143.47, 147.02, 151.05, 145.48, 153.28, 156.22, 150.52, 146.65, 142.79, 143.81, 142.07, 146.47, 142.45],
-                    borderColor: '#3ecf7e',
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                  }]
-                },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                  scales: { x: { display: false }, y: { display: false } },
-                  elements: { point: { radius: 0 } }
-                }
-              });
-            }
-          })();
-        </script>
-        
-          
-        <div class="conf-track"><div class="conf-fill" style="width:73%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.728</div>
-        
-          <details class="argument">
-            <summary><span class="icon">i</span> Vezi argumentul</summary>
-            <div class="argument-body">
-              Sentiment predominant negativ, încredere 0.728.
-              
-              <a class="source-link" href="https://finance.yahoo.com/technology/ai/articles/oracle-vs-amazon-better-ai-201300850.html" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Oracle vs. Amazon: Which Is the Better AI Cloud Stock to Own for the Next 5 Years?" — Yahoo Finance</a>
             </div>
           </details>
         </div>
@@ -2487,13 +2487,13 @@
           </div>
           
           
-        <div class="conf-track"><div class="conf-fill" style="width:67%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.666</div>
+        <div class="conf-track"><div class="conf-fill" style="width:66%; background:#e8c547;"></div></div>
+        <div class="conf-label">0.665</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.666.
+              Sentiment predominant pozitiv, încredere 0.665.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiygFBVV95cUxOZlkwbE50ZlRvX2s5ZVp1cUJyczlYSzNiYWxRU29vNWl1OXlzRjFnaVFoOUxmcng5ZVhXSlpyZ0JFZEYtVjNxMFJRS2VCOEZGeDJhX2VzME84ZW1SaHJoVVFMbmZISWJnV2ZoWWw2TER0OHVNNFkxdnIxMlExekNaQ0xwZzFIQUI0NGZhLXlXMUhfQWFZemJTR1poNVdzbWNqU3VuZ1lrRGV0ejhJaHVIY1VaWlotcVl5RjJxaWZobHl4aXNLdzR2Mjdn?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Juniper Networks stock steadies as HPE’s $14 billion takeover clears final hurdles - Ad-hoc-news.de" — Google News: Juniper Networks</a>
             </div>
@@ -2620,12 +2620,12 @@
           
           
         <div class="conf-track"><div class="conf-fill" style="width:65%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.65</div>
+        <div class="conf-label">0.649</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.65.
+              Sentiment predominant pozitiv, încredere 0.649.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiwwFBVV95cUxPaEd0dGJLdXJRV3VINGpnSURGSi1ETFhZQkVZaGI5ckJBc0ZQREZXM2Q4SkRQNlRfYnQwYkFyQVNCMHZERi1kZ29DdFF5aEtaUFpvSUMxNElnUEI3RUZSN0s0MGZzd05hNDJPN2wyVmtUNG82MDc4bDItT2ttVGF6QnhNRERfRHZJWXZFMm5BVWpVNTRnTWdsM2dsRmVBcHBaMkg0Q2t5ci1ULTUxc05Nd2c4c0xBZ1hheF9KaFpJYkttQkE?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "ANSYS stock reflects cash-and-stock merger terms with Synopsys - Ad-hoc-news.de" — Google News: ANSYS</a>
             </div>
@@ -3015,19 +3015,19 @@
             <div>
               <div class="rc-name">Bittnet Systems</div>
               <div class="rc-tags"><span class="badge-pill">mixed</span></div>
-              <div class="hold-gap" style="color:#8c8470;">la 0.254 de prag (încredere)</div>
+              <div class="hold-gap" style="color:#8c8470;">la 0.255 de prag (încredere)</div>
             </div>
             <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
           </div>
           
           
-        <div class="conf-track"><div class="conf-fill" style="width:25%; background:#8a8f98;"></div></div>
-        <div class="conf-label">0.246</div>
+        <div class="conf-track"><div class="conf-fill" style="width:24%; background:#8a8f98;"></div></div>
+        <div class="conf-label">0.245</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Încredere 0.246 sub pragul de 0.5 necesar pentru o acțiune (la 0.254 distanță).
+              Încredere 0.245 sub pragul de 0.5 necesar pentru o acțiune (la 0.255 distanță).
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiqgFBVV95cUxON0NBR0toTFZDb2hvUERrYVFBTlNpMk4yR19GQ0g5MnVTX2JBZlJmNVR0bGYzWi1URFdPbEN6QWYzVzVsU3ZCalN0SEphUnVmeEVsdG1WY1AzMXZ3QmVGRU1xNTZRSGZFazRSdHJ2T2xDWXZDbmZRaEdPT0c2dl8xYkx6c0xvYUhvRHhUQ1J5dVVyTnpHcmV4WDIxMGF2T09JZVoyd3Jwazl0Zw?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Enterprise value to EBITDA forward of Bittnet Systems SA – BVB:BNET - TradingView" — Google News: Bittnet Systems</a>
             </div>
@@ -3039,7 +3039,7 @@
         <div class="sector-block" id="sector-financial-services">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Financial Services</span>
-            <span class="sector-meta">5121 articole · 256 surse</span>
+            <span class="sector-meta">5123 articole · 256 surse</span>
             <span class="sentiment-tag">positive · consistență 77%</span>
           </div>
           <div class="rec-cards">
@@ -3079,14 +3079,14 @@
           
           
         <div class="conf-track"><div class="conf-fill" style="width:89%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.89</div>
+        <div class="conf-label">0.891</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.89. Semnal puternic: încredere ≥ 0.85 și consistență ≥ 0.85 — dovezi aproape unanime.
+              Sentiment predominant pozitiv, încredere 0.891. Semnal puternic: încredere ≥ 0.85 și consistență ≥ 0.85 — dovezi aproape unanime.
               
-              <a class="source-link" href="https://www.zf.ro/zf-24/christian-tour-primul-tur-operator-listat-la-bvb-a-raportat-in-s1-venituri-de-185-mil-lei-si-profit-net-de-6-3-mil-lei-desi-numarul-pasagerilor-a-scazut-cu-11-6-23223818" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Christian Tour, primul tur-operator listat la BVB, a raportat în S1 venituri de 185 mil. lei şi profit net de 6,3 mil. lei, deşi numărul pasagerilor a scăzut cu 11,6%" — Ziarul Financiar</a>
+              <a class="source-link" href="https://economedia.ro/christian-tour-in-discutii-cu-trei-potentiale-tinte-de-achizitii-conform-conducerii-companiei-firma-de-turism-vrea-sa-incheie-prima-tranzactie-in-2026.html" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Christian Tour, în discuții cu trei potențiale ținte de achiziții, conform conducerii companiei. Firma de turism vrea să încheie prima tranzacție în 2026" — Economedia</a>
             </div>
           </details>
         </div>
@@ -3907,12 +3907,12 @@
         
           
         <div class="conf-track"><div class="conf-fill" style="width:79%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.789</div>
+        <div class="conf-label">0.79</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.789.
+              Sentiment predominant pozitiv, încredere 0.79.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMizwFBVV95cUxNYkFUeThxdUt1V2tuNG5nNHdwVDAtTS04Y21zSWhMZmlwTkNETzRmZVRfTG1OcHZRdjJkcGN4OWdiN19TTmppcEhRYmhsamxVUjgxS2hBSktZYkZaMUdBSXg3VlVscktJLUtOdFVyRXZVMTN6RFR6YkZmMFd1aTBmWUREcEVnWVVmVzNqeUhMOU9hZWw2YUpoV0lJSDBLbzdxYks3VHZaS1piSTZPMTJuUm9BaUQ4dER3Q3FTb1BqU0ZQQjJMUkk2dTJzdmNiZjQ?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "BlackRock Inc. Makes New $1.65 Billion Investment in Sun Communities, Inc. $SUI - MarketBeat" — Google News: Sui</a>
             </div>
@@ -5245,7 +5245,7 @@
           
           
         <div class="conf-track"><div class="conf-fill" style="width:54%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.54</div>
+        <div class="conf-label">0.538</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
@@ -5262,7 +5262,7 @@
         <div class="sector-block" id="sector-cryptocurrency">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Cryptocurrency</span>
-            <span class="sector-meta">5014 articole · 115 surse</span>
+            <span class="sector-meta">5021 articole · 115 surse</span>
             <span class="sentiment-tag">positive · consistență 69%</span>
           </div>
           <div class="rec-cards">
@@ -5284,9 +5284,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.09, 0.09, 0.09, 0.09, 0.09, 0.08, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.08, 0.08, 0.08, 0.08, 0.09, 0.1, 0.11, 0.11, 0.11, 0.11],
+                    data: [0.09, 0.09, 0.09, 0.09, 0.09, 0.08, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.08, 0.08, 0.08, 0.08, 0.09, 0.1, 0.11, 0.11, 0.11, 0.11, 0.1],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5338,9 +5338,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [346.33, 341.49, 353.06, 360.45, 358.34, 363.85, 364.1, 362.28, 350.67, 365.91, 369.52, 377.9, 377.06, 394.69, 396.81, 377.19, 392.43, 393.51, 399.43, 410.36, 409.8, 415.66, 412.44, 421.97, 408.69, 412.13, 432.58, 421.83, 451.84],
+                    data: [346.33, 341.49, 353.06, 360.45, 358.34, 363.85, 364.1, 362.28, 350.67, 365.91, 369.52, 377.9, 377.06, 394.69, 396.81, 377.19, 392.43, 393.51, 399.43, 410.36, 409.8, 415.66, 412.44, 421.97, 408.69, 412.13, 432.58, 421.83, 441.41, 449.35],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5392,9 +5392,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    data: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5446,9 +5446,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [8.36, 8.43, 8.32, 8.46, 8.16, 8.06, 8.37, 8.17, 8.14, 8.15, 8.18, 8.18, 8.3, 8.18, 8.29, 8.77, 8.67, 8.87, 8.97, 9.46, 9.38, 9.54, 9.54, 10.54, 10.69, 12.0, 11.66, 11.53, 11.81],
+                    data: [8.36, 8.43, 8.32, 8.46, 8.16, 8.06, 8.37, 8.17, 8.14, 8.15, 8.18, 8.18, 8.3, 8.18, 8.29, 8.77, 8.67, 8.87, 8.97, 9.46, 9.38, 9.54, 9.54, 10.54, 10.69, 12.0, 11.66, 11.53, 11.62, 11.57],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5500,9 +5500,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [1.68, 1.65, 1.62, 1.68, 1.66, 1.67, 1.72, 1.73, 1.73, 1.7, 1.66, 1.59, 1.61, 1.6, 1.6, 1.62, 1.64, 1.64, 1.64, 1.62, 1.6, 1.64, 1.59, 1.73, 1.77, 1.97, 1.88, 2.02, 1.99],
+                    data: [1.68, 1.65, 1.62, 1.68, 1.66, 1.67, 1.72, 1.73, 1.73, 1.7, 1.66, 1.59, 1.61, 1.6, 1.6, 1.62, 1.64, 1.64, 1.64, 1.62, 1.6, 1.64, 1.59, 1.73, 1.77, 1.97, 1.88, 2.02, 1.95, 1.92],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5554,9 +5554,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.05, 0.05, 0.05, 0.05],
+                    data: [0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.05, 0.05, 0.05, 0.05, 0.05],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5608,9 +5608,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [1890.61, 1919.95, 1908.52, 1917.37, 1860.35, 1843.42, 1882.52, 1858.26, 1868.39, 1906.53, 1902.06, 1913.28, 1915.53, 1908.68, 1871.28, 1881.37, 1878.14, 1883.99, 1880.65, 1880.91, 1873.94, 1912.2, 1916.46, 2251.46, 2326.38, 2515.28, 2424.25, 2463.82, 2508.04],
+                    data: [1890.61, 1919.95, 1908.52, 1917.37, 1860.35, 1843.42, 1882.52, 1858.26, 1868.39, 1906.53, 1902.06, 1913.28, 1915.53, 1908.68, 1871.28, 1881.37, 1878.14, 1883.99, 1880.65, 1880.91, 1873.94, 1912.2, 1916.46, 2251.46, 2326.38, 2515.28, 2424.25, 2463.82, 2481.83, 2482.36],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5656,7 +5656,7 @@
           
           
         <div class="conf-track"><div class="conf-fill" style="width:84%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.839</div>
+        <div class="conf-label">0.84</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
@@ -5686,9 +5686,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    data: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5722,60 +5722,6 @@
           </details>
         </div>
         
-        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="bitcoin">
-          <div class="rc-top">
-            <div>
-              <div class="rc-name">Bitcoin</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill verified-ok">correct verificat</span></div>
-              
-            </div>
-            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
-          </div>
-          
-        <canvas id="spark-bitcoin" height="26" class="sparkline"></canvas>
-        <script>
-          (function() {
-            var el = document.getElementById('spark-bitcoin');
-            if (el && window.Chart) {
-              new Chart(el, {
-                type: 'line',
-                data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
-                  datasets: [{
-                    data: [63724.9, 63871.36, 63908.17, 64725.31, 62813.75, 62763.32, 63482.0, 63460.9, 64055.95, 64597.5, 64262.11, 64880.19, 64904.69, 64844.89, 63910.59, 63551.88, 63402.43, 63402.17, 62975.59, 63024.32, 62818.65, 64506.25, 64680.71, 69266.19, 73032.76, 78335.19, 77083.41, 77755.27, 80690.57],
-                    borderColor: '#3ecf7e',
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                  }]
-                },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                  scales: { x: { display: false }, y: { display: false } },
-                  elements: { point: { radius: 0 } }
-                }
-              });
-            }
-          })();
-        </script>
-        
-          
-        <div class="conf-track"><div class="conf-fill" style="width:83%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.832</div>
-        
-          <details class="argument">
-            <summary><span class="icon">i</span> Vezi argumentul</summary>
-            <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.832.
-              
-              <a class="source-link" href="https://news.google.com/rss/articles/CBMicEFVX3lxTE95ZXNsRWdLUzA2Tk9MYjhuUXhKblZtTjZ0XzJUbWdWaHdKMVZnQ0tUV0FqWjlzZXpicEFBYTBnakRHcXRadUl5TTlCOWpxTGsyV2xhZFQwX1NGNWRVazdKaGxpLUtlQV9YUEVVU0U2N2g?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Dogecoin Surges 4.5% Amid Broader Crypto Rally and BTC Short Squeeze - CoinMarketCap" — Google News: Dogecoin</a>
-            </div>
-          </details>
-        </div>
-        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="coinbase">
           <div class="rc-top">
             <div>
@@ -5800,6 +5746,60 @@
           </details>
         </div>
         
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="bitcoin">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Bitcoin</div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill verified-ok">correct verificat</span></div>
+              
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <canvas id="spark-bitcoin" height="26" class="sparkline"></canvas>
+        <script>
+          (function() {
+            var el = document.getElementById('spark-bitcoin');
+            if (el && window.Chart) {
+              new Chart(el, {
+                type: 'line',
+                data: {
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
+                  datasets: [{
+                    data: [63724.9, 63871.36, 63908.17, 64725.31, 62813.75, 62763.32, 63482.0, 63460.9, 64055.95, 64597.5, 64262.11, 64880.19, 64904.69, 64844.89, 63910.59, 63551.88, 63402.43, 63402.17, 62975.59, 63024.32, 62818.65, 64506.25, 64680.71, 69266.19, 73032.76, 78335.19, 77083.41, 77755.27, 78964.48, 79344.29],
+                    borderColor: '#3ecf7e',
+                    borderWidth: 1.5,
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 0,
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                  scales: { x: { display: false }, y: { display: false } },
+                  elements: { point: { radius: 0 } }
+                }
+              });
+            }
+          })();
+        </script>
+        
+          
+        <div class="conf-track"><div class="conf-fill" style="width:83%; background:#3ecf7e;"></div></div>
+        <div class="conf-label">0.828</div>
+        
+          <details class="argument">
+            <summary><span class="icon">i</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              Sentiment predominant pozitiv, încredere 0.828.
+              
+              <a class="source-link" href="https://news.google.com/rss/articles/CBMicEFVX3lxTE95ZXNsRWdLUzA2Tk9MYjhuUXhKblZtTjZ0XzJUbWdWaHdKMVZnQ0tUV0FqWjlzZXpicEFBYTBnakRHcXRadUl5TTlCOWpxTGsyV2xhZFQwX1NGNWRVazdKaGxpLUtlQV9YUEVVU0U2N2g?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Dogecoin Surges 4.5% Amid Broader Crypto Rally and BTC Short Squeeze - CoinMarketCap" — Google News: Dogecoin</a>
+            </div>
+          </details>
+        </div>
+        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="bitcoin cash">
           <div class="rc-top">
             <div>
@@ -5818,9 +5818,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [211.72, 214.05, 211.14, 217.02, 210.01, 207.92, 212.52, 213.12, 213.21, 214.32, 212.5, 214.75, 215.97, 214.53, 213.11, 213.64, 212.39, 206.52, 204.61, 203.47, 203.67, 205.12, 203.46, 213.38, 222.99, 287.44, 276.81, 274.24, 277.88],
+                    data: [211.72, 214.05, 211.14, 217.02, 210.01, 207.92, 212.52, 213.12, 213.21, 214.32, 212.5, 214.75, 215.97, 214.53, 213.11, 213.64, 212.39, 206.52, 204.61, 203.47, 203.67, 205.12, 203.46, 213.38, 222.99, 287.44, 276.81, 274.24, 270.7, 270.73],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5872,9 +5872,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.16, 0.16, 0.16, 0.17, 0.17, 0.17, 0.19, 0.19, 0.19, 0.19, 0.2, 0.2, 0.2, 0.19, 0.19, 0.19, 0.18, 0.18, 0.18, 0.18, 0.17, 0.17, 0.17, 0.19, 0.2, 0.23, 0.23, 0.23, 0.23],
+                    data: [0.16, 0.16, 0.16, 0.17, 0.17, 0.17, 0.19, 0.19, 0.19, 0.19, 0.2, 0.2, 0.2, 0.19, 0.19, 0.19, 0.18, 0.18, 0.18, 0.18, 0.17, 0.17, 0.17, 0.19, 0.2, 0.23, 0.23, 0.23, 0.22, 0.22],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5926,9 +5926,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.08, 0.09, 0.09, 0.09, 0.09],
+                    data: [0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.08, 0.09, 0.09, 0.09, 0.09, 0.09],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -5980,9 +5980,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [4.72, 4.62, 4.6, 5.0, 4.86, 4.87, 5.07, 4.95, 4.89, 4.86, 4.57, 4.5, 4.41, 4.29, 4.38, 4.66, 4.62, 4.61, 4.27, 4.17, 4.08, 4.08, 4.08, 4.58, 4.77, 5.06, 4.94, 5.36, 5.91],
+                    data: [4.72, 4.62, 4.6, 5.0, 4.86, 4.87, 5.07, 4.95, 4.89, 4.86, 4.57, 4.5, 4.41, 4.29, 4.38, 4.66, 4.62, 4.61, 4.27, 4.17, 4.08, 4.08, 4.08, 4.58, 4.77, 5.06, 4.94, 5.36, 5.67, 5.87],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6034,9 +6034,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [2.1, 2.12, 2.06, 2.07, 2.07, 2.02, 2.07, 2.11, 2.09, 2.09, 2.09, 2.1, 2.2, 2.17, 2.28, 2.24, 2.16, 2.17, 2.24, 2.23, 2.26, 2.26, 2.2, 2.3, 2.39, 2.52, 2.34, 2.44, 2.48],
+                    data: [2.1, 2.12, 2.06, 2.07, 2.07, 2.02, 2.07, 2.11, 2.09, 2.09, 2.09, 2.1, 2.2, 2.17, 2.28, 2.24, 2.16, 2.17, 2.24, 2.23, 2.26, 2.26, 2.2, 2.3, 2.39, 2.52, 2.34, 2.44, 2.41, 2.43],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6088,9 +6088,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [46.0, 46.13, 45.41, 45.54, 44.24, 44.18, 44.63, 44.25, 44.83, 45.27, 45.4, 45.57, 45.98, 45.4, 45.11, 45.47, 44.85, 44.81, 43.77, 44.07, 44.12, 44.52, 44.32, 46.73, 47.83, 53.13, 52.5, 52.3, 52.62],
+                    data: [46.0, 46.13, 45.41, 45.54, 44.24, 44.18, 44.63, 44.25, 44.83, 45.27, 45.4, 45.57, 45.98, 45.4, 45.11, 45.47, 44.85, 44.81, 43.77, 44.07, 44.12, 44.52, 44.32, 46.73, 47.83, 53.13, 52.5, 52.3, 51.62, 51.49],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6160,7 +6160,7 @@
           
           
         <div class="conf-track"><div class="conf-fill" style="width:78%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.776</div>
+        <div class="conf-label">0.777</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
@@ -6196,6 +6196,60 @@
           </details>
         </div>
         
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="solana">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Solana</div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span></div>
+              
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+        <canvas id="spark-solana" height="26" class="sparkline"></canvas>
+        <script>
+          (function() {
+            var el = document.getElementById('spark-solana');
+            if (el && window.Chart) {
+              new Chart(el, {
+                type: 'line',
+                data: {
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
+                  datasets: [{
+                    data: [74.14, 73.7, 73.6, 74.47, 72.79, 71.87, 73.45, 73.47, 73.72, 73.96, 72.58, 73.64, 75.97, 76.21, 75.95, 76.2, 75.53, 76.18, 75.33, 75.27, 74.54, 75.94, 77.03, 85.37, 87.64, 93.65, 93.91, 95.44, 98.56, 99.67],
+                    borderColor: '#3ecf7e',
+                    borderWidth: 1.5,
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 0,
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                  scales: { x: { display: false }, y: { display: false } },
+                  elements: { point: { radius: 0 } }
+                }
+              });
+            }
+          })();
+        </script>
+        
+          
+        <div class="conf-track"><div class="conf-fill" style="width:77%; background:#3ecf7e;"></div></div>
+        <div class="conf-label">0.774</div>
+        
+          <details class="argument">
+            <summary><span class="icon">i</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              Sentiment predominant pozitiv, încredere 0.774.
+              
+              <a class="source-link" href="https://www.coindesk.com/markets/2026/08/25/bitcoin-tops-usd80-000-solana-jumps-8-but-rally-now-runs-into-overbought-warning" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Bitcoin tops $80,000, solana jumps 8% but rally now runs into overbought warning" — CoinDesk</a>
+            </div>
+          </details>
+        </div>
+        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="hedera">
           <div class="rc-top">
             <div>
@@ -6214,9 +6268,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.06, 0.07, 0.07, 0.07, 0.07, 0.08, 0.08, 0.08, 0.08],
+                    data: [0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.07, 0.06, 0.07, 0.07, 0.07, 0.07, 0.08, 0.08, 0.08, 0.08, 0.08],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6268,9 +6322,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [1.07, 1.07, 1.07, 1.08, 1.06, 1.06, 1.08, 1.07, 1.07, 1.06, 1.03, 1.02, 1.04, 1.03, 1.01, 1.02, 1.0, 1.01, 1.0, 1.0, 0.99, 1.0, 1.0, 1.1, 1.27, 1.45, 1.46, 1.52, 1.52],
+                    data: [1.07, 1.07, 1.07, 1.08, 1.06, 1.06, 1.08, 1.07, 1.07, 1.06, 1.03, 1.02, 1.04, 1.03, 1.01, 1.02, 1.0, 1.01, 1.0, 1.0, 0.99, 1.0, 1.0, 1.1, 1.27, 1.45, 1.46, 1.52, 1.48, 1.48],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6328,60 +6382,6 @@
           </details>
         </div>
         
-        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="solana">
-          <div class="rc-top">
-            <div>
-              <div class="rc-name">Solana</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span></div>
-              
-            </div>
-            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
-          </div>
-          
-        <canvas id="spark-solana" height="26" class="sparkline"></canvas>
-        <script>
-          (function() {
-            var el = document.getElementById('spark-solana');
-            if (el && window.Chart) {
-              new Chart(el, {
-                type: 'line',
-                data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
-                  datasets: [{
-                    data: [74.14, 73.7, 73.6, 74.47, 72.79, 71.87, 73.45, 73.47, 73.72, 73.96, 72.58, 73.64, 75.97, 76.21, 75.95, 76.2, 75.53, 76.18, 75.33, 75.27, 74.54, 75.94, 77.03, 85.37, 87.64, 93.65, 93.91, 95.44, 101.66],
-                    borderColor: '#3ecf7e',
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                  }]
-                },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                  scales: { x: { display: false }, y: { display: false } },
-                  elements: { point: { radius: 0 } }
-                }
-              });
-            }
-          })();
-        </script>
-        
-          
-        <div class="conf-track"><div class="conf-fill" style="width:76%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.764</div>
-        
-          <details class="argument">
-            <summary><span class="icon">i</span> Vezi argumentul</summary>
-            <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.764.
-              
-              <a class="source-link" href="https://www.coindesk.com/markets/2026/08/25/bitcoin-tops-usd80-000-solana-jumps-8-but-rally-now-runs-into-overbought-warning" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Bitcoin tops $80,000, solana jumps 8% but rally now runs into overbought warning" — CoinDesk</a>
-            </div>
-          </details>
-        </div>
-        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="polkadot">
           <div class="rc-top">
             <div>
@@ -6400,9 +6400,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.76, 0.76, 0.76, 0.77, 0.76, 0.78, 0.8, 0.82, 0.86, 0.84, 0.82, 0.82, 0.81, 0.8, 0.8, 0.79, 0.77, 0.77, 0.76, 0.76, 0.76, 0.76, 0.75, 0.79, 0.85, 0.94, 0.92, 0.93, 0.92],
+                    data: [0.76, 0.76, 0.76, 0.77, 0.76, 0.78, 0.8, 0.82, 0.86, 0.84, 0.82, 0.82, 0.81, 0.8, 0.8, 0.79, 0.77, 0.77, 0.76, 0.76, 0.76, 0.76, 0.75, 0.79, 0.85, 0.94, 0.92, 0.93, 0.9, 0.9],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6454,9 +6454,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
+                    data: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6532,9 +6532,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [565.73, 570.49, 571.4, 592.01, 586.43, 574.96, 587.57, 588.8, 592.81, 593.22, 591.65, 592.2, 600.42, 601.77, 598.69, 616.5, 609.68, 610.04, 607.58, 607.1, 602.48, 605.17, 603.53, 626.47, 654.91, 686.97, 695.7, 701.85, 716.44],
+                    data: [565.73, 570.49, 571.4, 592.01, 586.43, 574.96, 587.57, 588.8, 592.81, 593.22, 591.65, 592.2, 600.42, 601.77, 598.69, 616.5, 609.68, 610.04, 607.58, 607.1, 602.48, 605.17, 603.53, 626.47, 654.91, 686.97, 695.7, 701.85, 703.64, 699.85],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6610,9 +6610,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [97.85, 100.73, 96.05, 99.44, 93.68, 90.52, 92.0, 92.28, 90.41, 89.74, 89.59, 89.93, 91.23, 90.55, 89.13, 88.24, 88.08, 87.8, 86.33, 86.11, 85.89, 89.25, 87.49, 95.26, 99.17, 122.43, 126.42, 141.62, 132.01],
+                    data: [97.85, 100.73, 96.05, 99.44, 93.68, 90.52, 92.0, 92.28, 90.41, 89.74, 89.59, 89.93, 91.23, 90.55, 89.13, 88.24, 88.08, 87.8, 86.33, 86.11, 85.89, 89.25, 87.49, 95.26, 99.17, 122.43, 126.42, 141.62, 132.46, 129.02],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6664,9 +6664,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.33, 0.33, 0.32, 0.33, 0.32, 0.32, 0.33, 0.34, 0.34, 0.34, 0.34, 0.33, 0.33, 0.32, 0.32, 0.31, 0.3, 0.31, 0.31, 0.3, 0.3, 0.3, 0.3, 0.32, 0.34, 0.39, 0.38, 0.38, 0.38],
+                    data: [0.33, 0.33, 0.32, 0.33, 0.32, 0.32, 0.33, 0.34, 0.34, 0.34, 0.34, 0.33, 0.33, 0.32, 0.32, 0.31, 0.3, 0.31, 0.31, 0.3, 0.3, 0.3, 0.3, 0.32, 0.34, 0.39, 0.38, 0.38, 0.37, 0.37],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6718,9 +6718,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.09, 0.1, 0.09, 0.09, 0.09],
+                    data: [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.09, 0.1, 0.09, 0.09, 0.09, 0.09],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6772,9 +6772,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01],
+                    data: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6813,19 +6813,19 @@
             <div>
               <div class="rc-name">Cosmos</div>
               <div class="rc-tags"><span class="badge-pill">long-term</span></div>
-              <div class="hold-gap" style="color:#e8c547;">la 0.005 de prag (impact)</div>
+              <div class="hold-gap" style="color:#e8c547;">la 0.004 de prag (impact)</div>
             </div>
             <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
           </div>
           
           
         <div class="conf-track"><div class="conf-fill" style="width:66%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.658</div>
+        <div class="conf-label">0.659</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Impact mediu 0.295 sub pragul de 0.3 — știrile nu par suficient de semnificative pentru o acțiune (la 0.005 distanță).
+              Impact mediu 0.296 sub pragul de 0.3 — știrile nu par suficient de semnificative pentru o acțiune (la 0.004 distanță).
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMi0wFBVV95cUxPT2pmRzdTX3AyWjNOdGZFVWpReHZJM3A2MXIxa1BOa1hFMHhvdzBuWW91ZmVhWjhyWjBLeVd4dWJPWHBuU2pmenRpa2RDLWZrT0FyWXVjTXROMFk1YmxaUkpDMDEzRHAzS1haMzJjTWRUYzdpeFF4cERkcllydDV3M3IwU3hNRlRSSHd2bWNGek1oX1dmNXpPZFlreUlDV2Ntb0dtRHUxcHJSQkFUMEN3aXgySFdISUFsWmpTS3UwNXp0eEI4NXc4MjM1R21aWmhnblJv?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "From $100K Loss Per Car To Cosmos — Lucid’s High-Stakes Bet On Cheaper EVs - Stocktwits" — Google News: Cosmos</a>
             </div>
@@ -6850,9 +6850,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.21, 0.21, 0.21, 0.21, 0.21, 0.2, 0.2, 0.21, 0.21, 0.21, 0.21, 0.21, 0.23, 0.24, 0.26, 0.27, 0.27, 0.25, 0.24, 0.24, 0.25, 0.24, 0.24, 0.25, 0.29, 0.34, 0.34, 0.33, 0.34],
+                    data: [0.21, 0.21, 0.21, 0.21, 0.21, 0.2, 0.2, 0.21, 0.21, 0.21, 0.21, 0.21, 0.23, 0.24, 0.26, 0.27, 0.27, 0.25, 0.24, 0.24, 0.25, 0.24, 0.24, 0.25, 0.29, 0.34, 0.34, 0.33, 0.34, 0.33],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6904,9 +6904,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.32, 0.32, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.34, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.34, 0.34, 0.34, 0.34, 0.34],
+                    data: [0.32, 0.32, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.34, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.33, 0.34, 0.34, 0.34, 0.34, 0.34, 0.34],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -6928,12 +6928,12 @@
         
           
         <div class="conf-track"><div class="conf-fill" style="width:62%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.625</div>
+        <div class="conf-label">0.62</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.625.
+              Sentiment predominant pozitiv, încredere 0.62.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMidkFVX3lxTE51ckEyVmJKdDdvTWdkb2t1aEstS0RCbU5JUkFfMEl3ZktDS2tkU3hYeFZFeU00QUxoaEM4eUZ6MnRndTcyZ2VTaWt2UmRQODhCZFJaNUtoeTRjVkVtQ2JuQmxRUmZpR1VNazY2azhfV3F1VXZPTFE?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Tether Mints $3B USDT on Tron, Triple Recent Issuances, as Binance Sees $928M Inflow - CryptoQuant" — Google News: Tron</a>
             </div>
@@ -6951,13 +6951,13 @@
           </div>
           
           
-        <div class="conf-track"><div class="conf-fill" style="width:62%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.617</div>
+        <div class="conf-track"><div class="conf-fill" style="width:61%; background:#e8c547;"></div></div>
+        <div class="conf-label">0.611</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.617.
+              Sentiment predominant pozitiv, încredere 0.611.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiZ0FVX3lxTFBPb3JVMnpOMW5QWVVJWW9HVERlSWVUYzFoY3dTNUcxUEhMVnJkeXZKLTNzdFVnWGR3amVXZ1lDSVdRZzdEMHJSRzNHbDJKOGtTVmFVT016SGFqUEVSSkY1UGJad3J4SDA?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "The Graph Price Prediction 2026, 2027, 2030 &amp; Beyond: Yearly Forecast - Binance" — Google News: The Graph</a>
             </div>
@@ -6982,9 +6982,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.69, 0.71, 0.68, 0.71, 0.71, 0.7, 0.72, 0.72, 0.72, 0.72, 0.7, 0.68, 0.71, 0.7, 0.7, 0.71, 0.67, 0.68, 0.68, 0.68, 0.67, 0.67, 0.63, 0.67, 0.74, 0.81, 0.76, 0.77, 0.77],
+                    data: [0.69, 0.71, 0.68, 0.71, 0.71, 0.7, 0.72, 0.72, 0.72, 0.72, 0.7, 0.68, 0.71, 0.7, 0.7, 0.71, 0.67, 0.68, 0.68, 0.68, 0.67, 0.67, 0.63, 0.67, 0.74, 0.81, 0.76, 0.77, 0.75, 0.74],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -7036,9 +7036,9 @@
               new Chart(el, {
                 type: 'line',
                 data: {
-                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-25"],
+                  labels: ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"],
                   datasets: [{
-                    data: [0.12, 0.12, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.12, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.1, 0.1, 0.1, 0.11, 0.11, 0.12, 0.12, 0.12, 0.12],
+                    data: [0.12, 0.12, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.12, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.1, 0.1, 0.1, 0.11, 0.11, 0.12, 0.12, 0.12, 0.12, 0.12],
                     borderColor: '#3ecf7e',
                     borderWidth: 1.5,
                     fill: false,
@@ -7059,13 +7059,13 @@
         </script>
         
           
-        <div class="conf-track"><div class="conf-fill" style="width:56%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.556</div>
+        <div class="conf-track"><div class="conf-fill" style="width:55%; background:#e8c547;"></div></div>
+        <div class="conf-label">0.553</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.556.
+              Sentiment predominant pozitiv, încredere 0.553.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiWkFVX3lxTFBRNVFORElnSGpKZWNwMjFNUDU2X0loMnlXNWRzb0JiSjNab1VFcUV1VU1SQzIyRE82UkxKQmF1M0dkM21vOURqX2lnZGdrZlRlWTBINnRTaVZ1Zw?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "dYdX Price Today in India | DYDX to INR Live Price &amp; Chart - Binance" — Google News: dYdX</a>
             </div>
@@ -7077,19 +7077,19 @@
             <div>
               <div class="rc-name">Fantom</div>
               <div class="rc-tags"><span class="badge-pill">long-term</span></div>
-              <div class="hold-gap" style="color:#8c8470;">la 0.154 de prag (încredere)</div>
+              <div class="hold-gap" style="color:#8c8470;">la 0.155 de prag (încredere)</div>
             </div>
             <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
           </div>
           
           
-        <div class="conf-track"><div class="conf-fill" style="width:35%; background:#8a8f98;"></div></div>
-        <div class="conf-label">0.346</div>
+        <div class="conf-track"><div class="conf-fill" style="width:34%; background:#8a8f98;"></div></div>
+        <div class="conf-label">0.345</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Încredere 0.346 sub pragul de 0.5 necesar pentru o acțiune (la 0.154 distanță).
+              Încredere 0.345 sub pragul de 0.5 necesar pentru o acțiune (la 0.155 distanță).
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiuwFBVV95cUxNamtmT1ZETmNvcml1ODNLY1FfeDZ5bXRGbWJUSkJ3cGxGcWNJdWlFRGNDSGk4a3pYbVRtdzFpc1ZDYTZIbzBEZ1MyUEtoSXE5SHpBMmZIUnRPYWtxc21IenhWZmY2NEcydFdxem9JM0tkWVFQcUlIWUpXZ0RvclJ1SzhqNG0xNTRYal80TDdvRWdBbmN1bzFadnA2Z2FKQWU0M0lGOWR1UWR3RlU5SGlGTE5TNkJqM2dPVnpn?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Fantom (FTM) Surges 8% Amidst USDC.e Stablecoin Launch and Network Upgrade - CoinMarketCap" — Google News: Fantom</a>
             </div>
@@ -7125,7 +7125,7 @@
         <div class="sector-block" id="sector-healthcare">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Healthcare</span>
-            <span class="sector-meta">4476 articole · 96 surse</span>
+            <span class="sector-meta">4477 articole · 96 surse</span>
             <span class="sentiment-tag">positive · consistență 74%</span>
           </div>
           <div class="rec-cards">
@@ -8042,7 +8042,7 @@
             <div class="argument-body">
               Sentiment predominant negativ, încredere 0.748.
               
-              <a class="source-link" href="https://finance.yahoo.com/healthcare/articles/novo-nordisk-expands-ai-push-234353024.html" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Novo Nordisk Expands Its AI Push With AWS, But Can It Accelerate Drug Discovery?" — Yahoo Finance</a>
+              <a class="source-link" href="https://www.investing.com/news/stock-market-news/jp-morgan-raises-novo-nordisk-target-on-stronger-ozempic-wegovy-sales-4874872" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "J.P. Morgan raises Novo Nordisk target on stronger Ozempic, Wegovy sales" — Investing.com Stock Market News</a>
             </div>
           </details>
         </div>
@@ -8183,7 +8183,7 @@
           <div class="rc-top">
             <div>
               <div class="rc-name">AstraZeneca</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span><span class="badge-pill change-up">upgrade</span></div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span></div>
               
             </div>
             <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
@@ -10534,12 +10534,12 @@
           
           
         <div class="conf-track"><div class="conf-fill" style="width:68%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.685</div>
+        <div class="conf-label">0.684</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant negativ, încredere 0.685.
+              Sentiment predominant negativ, încredere 0.684.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiqwFBVV95cUxPRkQydzJLWU9LenNsaGZ2T3MxdV9TRFRucE15ZlFqY09TWkhJZmo2eWtCemk0VEhIVlIxMUZMTlFuRVgzN0lMTm9UcHZaQXhWcjFGd3lTemhxaEZVTGdNTGtBME9lN09Gd2xIdk96OWFJa25yUzVYVTZtTmQ2MnYxcU9Ic3pybVBKMzYxZ0lJcGRGdklkcGJsRHNvckNwZHpFVmtfWFFzM2h6TVE?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Vrancart recorded an individual loss of 8.4 million lei in S1/2026, but has reduced losses compared to last year. Operating revenues decreased by 19%. - Informat.ro" — Google News: Vrancart</a>
             </div>
@@ -10689,13 +10689,13 @@
           </div>
           
           
-        <div class="conf-track"><div class="conf-fill" style="width:62%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.615</div>
+        <div class="conf-track"><div class="conf-fill" style="width:61%; background:#e8c547;"></div></div>
+        <div class="conf-label">0.614</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.615.
+              Sentiment predominant pozitiv, încredere 0.614.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMizAFBVV95cUxPdHljUVlVajBxVFRVQko5dkUwSkxEQzdYVzBFX0pGdHpGeHhtQXpSV1hIbzNZdHYxQkxhYXJhU3BLcUhoUVV5N0hRXzlDNGljS3FQQUpid3dXR2NJZG9jUmFHUjZaT09lSjd2YmlRXzhuZVV6S0lwY1lhZ1dyMXdzVlk5MkZQblNBbmpOcHpMakdFVmFYTDlYNU1TQ3lzSllWZjRkMDJiMEgzcWV1UWgxaU9HSlBETnVZT0VtN1RaWnBNRGp2NzlZQ2xfQkU?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "S.C. Romcarbon S.A. Reports Earnings Results for the Half Year Ended June 30, 2026 - marketscreener.com" — Google News: Romcarbon</a>
             </div>
@@ -10755,7 +10755,7 @@
         <div class="sector-block" id="sector-retail---e-commerce">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Retail &amp; E-commerce</span>
-            <span class="sector-meta">2947 articole · 285 surse</span>
+            <span class="sector-meta">2950 articole · 285 surse</span>
             <span class="sentiment-tag">positive · consistență 61%</span>
           </div>
           <div class="rec-cards">
@@ -11102,7 +11102,7 @@
             <div class="argument-body">
               Sentiment predominant pozitiv, încredere 0.767.
               
-              <a class="source-link" href="https://news.google.com/rss/articles/CBMimAFBVV95cUxPQ3JoV09qb19ZRkZuTmxoVTBxVnRqVWljUXA5T2VuUkhWd3VNUFhKaGZSRzFoOWhBVl9ZU1FRV0V2TXF6Ry14S2NsVXRFOHJDLVlGLWJkWUZYWVhlbEVTUWdhQkEzaVRSWFlDZkQ5cjVRVURSNGljcEpBS01XcGJwaHc3UDhRZHFVWGFRb3l6VVlnNzZaODRvSA?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Alphabet and Amazon Are Investing $420 Billion in Artificial Intelligence (AI) Infrastructure: 4 Hardware Stocks Set to Profit - The Motley Fool" — Google News: Alphabet</a>
+              <a class="source-link" href="https://www.zf.ro/business-hi-tech/bogdan-putinica-fostul-sef-microsoft-europa-centrala-est-lansat-impreuna-alex-balint-inginer-software-experienta-roluri-complexe-microsoft-amazon-stripe-start-up-ul-outcome1-vinde-companiilor-mici-23223915" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Bogdan Putinică, fostul şef al Microsoft pentru Europa Centrală şi de Est, a lansat împreună cu Alex Balint, un inginer software cu experienţă în roluri complexe la Microsoft, Amazon şi Stripe, start-up-ul Outcome1.AI, care vinde companiilor mici şi mijlocii „angajaţi digitali” cu un abonament lunar" — Ziarul Financiar</a>
             </div>
           </details>
         </div>
@@ -11430,7 +11430,7 @@
         <div class="sector-block" id="sector-consumer-goods">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Consumer Goods</span>
-            <span class="sector-meta">2629 articole · 54 surse</span>
+            <span class="sector-meta">2631 articole · 54 surse</span>
             <span class="sentiment-tag">positive · consistență 64%</span>
           </div>
           <div class="rec-cards">
@@ -12022,30 +12022,6 @@
           </details>
         </div>
         
-        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="sphera franchise group">
-          <div class="rc-top">
-            <div>
-              <div class="rc-name">Sphera Franchise Group</div>
-              <div class="rc-tags"><span class="badge-pill">long-term</span></div>
-              
-            </div>
-            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
-          </div>
-          
-          
-        <div class="conf-track"><div class="conf-fill" style="width:73%; background:#3ecf7e;"></div></div>
-        <div class="conf-label">0.729</div>
-        
-          <details class="argument">
-            <summary><span class="icon">i</span> Vezi argumentul</summary>
-            <div class="argument-body">
-              Sentiment predominant pozitiv, încredere 0.729.
-              
-              <a class="source-link" href="https://www.zf.ro/burse-fonduri-mutuale/cum-a-inchis-bursa-indicele-bet-urca-miercuri-si-bifeaza-un-nou-record-absolut-de-la-o-crestere-de-10-in-deschidere-cris-tim-termina-ziua-pe-minus-actiunile-sphera-plus-9-23220375" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Cum a închis bursa: Indicele BET urcă miercuri şi bifează un nou record absolut. De la o creştere de 10% în deschidere, Cris-Tim termină ziua pe minus. Acţiunile Sphera, plus 9%" — Ziarul Financiar</a>
-            </div>
-          </details>
-        </div>
-        
         <div class="rec-card" style="box-shadow: inset 3px 0 0 #f0645f;" data-search="chipotle mexican grill">
           <div class="rc-top">
             <div>
@@ -12096,6 +12072,30 @@
               Sentiment predominant negativ, încredere 0.728.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMi2wFBVV95cUxObWlVY3FLSlJuemVucVlVcGlNdzlxam9nVkhmcnV3bDZMUGwxbUFlcHFlSFJCRXpYWlhOMUcwX0t6aU1nMWZhbklLSU5yT0VUeVYyVmpEWldqQnFCMElFZlBGNWY3cURjS2ZYUXZWam0yLUdYRjJKajBRQ1hSc2VzSTRaUWFDRUREOGJjckNBamtRcWZUNldqVW5xY3lHSUFpM1RZS1JoeGoyc3dCZnd5YjRSeWszVVhYM1NaV3Q1MHVsQmVlWDktZzYwYmxHRGF2THZyV1pnRGl1YmM?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Bank of New York Mellon Corp Acquires New Shares in Chipotle Mexican Grill, Inc. $CMG - MarketBeat" — Google News: Chipotle Mexican Grill</a>
+            </div>
+          </details>
+        </div>
+        
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="sphera franchise group">
+          <div class="rc-top">
+            <div>
+              <div class="rc-name">Sphera Franchise Group</div>
+              <div class="rc-tags"><span class="badge-pill">long-term</span></div>
+              
+            </div>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
+          </div>
+          
+          
+        <div class="conf-track"><div class="conf-fill" style="width:73%; background:#3ecf7e;"></div></div>
+        <div class="conf-label">0.727</div>
+        
+          <details class="argument">
+            <summary><span class="icon">i</span> Vezi argumentul</summary>
+            <div class="argument-body">
+              Sentiment predominant pozitiv, încredere 0.727.
+              
+              <a class="source-link" href="https://www.zf.ro/burse-fonduri-mutuale/cum-a-inchis-bursa-indicele-bet-urca-miercuri-si-bifeaza-un-nou-record-absolut-de-la-o-crestere-de-10-in-deschidere-cris-tim-termina-ziua-pe-minus-actiunile-sphera-plus-9-23220375" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Cum a închis bursa: Indicele BET urcă miercuri şi bifează un nou record absolut. De la o creştere de 10% în deschidere, Cris-Tim termină ziua pe minus. Acţiunile Sphera, plus 9%" — Ziarul Financiar</a>
             </div>
           </details>
         </div>
@@ -12586,26 +12586,26 @@
           </details>
         </div>
         
-        <div class="rec-card" style="box-shadow: inset 3px 0 0 #8a8f98;" data-search="purcari wineries">
+        <div class="rec-card" style="box-shadow: inset 3px 0 0 #3ecf7e;" data-search="purcari wineries">
           <div class="rc-top">
             <div>
               <div class="rc-name">Purcari Wineries</div>
-              <div class="rc-tags"><span class="badge-pill">short-term</span></div>
+              <div class="rc-tags"><span class="badge-pill">mixed</span><span class="badge-pill change-up">upgrade</span></div>
               
             </div>
-            <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
+            <span class="rc-verdict" style="background:#3ecf7e22; color:#3ecf7e;">BUY</span>
           </div>
           
           
-        <div class="conf-track"><div class="conf-fill" style="width:15%; background:#8a8f98;"></div></div>
-        <div class="conf-label">0.148</div>
+        <div class="conf-track"><div class="conf-fill" style="width:50%; background:#e8c547;"></div></div>
+        <div class="conf-label">0.505</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Date insuficiente pentru o decizie (1 articol(e) — sub pragul minim necesar).
+              Sentiment predominant pozitiv, încredere 0.505.
               
-              <a class="source-link" href="https://www.zf.ro/zf-24/grupul-german-miele-il-numeste-pe-bogdan-bayer-fost-director-comercial-la-purcari-wineries-in-functia-de-country-manager-pentru-romania-bulgaria-si-serbia-23214848" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Grupul german Miele îl numeşte pe Bogdan Bayer, fost director comercial la Purcari Wineries, în funcţia de Country Manager pentru România, Bulgaria şi Serbia" — Ziarul Financiar</a>
+              <a class="source-link" href="https://www.zf.ro/zf-24/producatorul-de-vin-purcari-wineries-a-raportat-in-primul-semestru-al-anului-venituri-de-182-2-milioane-lei-in-scadere-cu-7-si-un-profit-net-de-15-milioane-lei-in-scadere-cu-4-23223854" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Producătorul de vin Purcari Wineries a raportat în primul semestru al anului venituri de 182,2 milioane lei, în scădere cu 7%, şi un profit net de 15 milioane lei, în scădere cu 4%" — Ziarul Financiar</a>
             </div>
           </details>
         </div>
@@ -12615,7 +12615,7 @@
         <div class="sector-block" id="sector-automotive">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Automotive</span>
-            <span class="sector-meta">2428 articole · 72 surse</span>
+            <span class="sector-meta">2429 articole · 72 surse</span>
             <span class="sentiment-tag">positive · consistență 57%</span>
           </div>
           <div class="rec-cards">
@@ -12824,7 +12824,7 @@
             <div class="argument-body">
               Sentiment predominant pozitiv, încredere 0.793.
               
-              <a class="source-link" href="https://news.google.com/rss/articles/CBMizAFBVV95cUxOczVQbnhMWmRrNTFzWW1hRkp2VWhNcXliZHNQMGZ4VFBIekdpVVpoQnpVUmxQbG9ja0h2YnBZX1FXSG10WW43YmxnM0tKS0hvWjJ5dmtyT2xfMVZDS0hXdEl6ajA2Zl93bmhKQ2FFS0NFT3o4d1FKZk9LLWoxOTFuS2hiRlhCNGttSWNOY01QNkVvZ2c2YlFtUnRPVkFDTHpQckdaTzJUa3hGd2t5S21xanFJc0c5Rm16OXNzdmpVTkJCZ20waUN3Q1NyZkY?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "XPENG Q2 2026 Earnings Preview: Recent $XPEV Insider Trading, Hedge Fund Activity, and More - Quiver Quantitative" — Google News: XPeng</a>
+              <a class="source-link" href="https://www.wsj.com/livecoverage/stock-market-today-dow-sp-500-nasdaq-08-25-2026/card/stocks-to-watch-strategy-nvidia-xpeng-Kx8tq1ymH3vYIpb8wZai?siteid=yhoof2&amp;yptr=yahoo" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Stocks to Watch: Strategy, Nvidia, XPeng" — Yahoo Finance</a>
             </div>
           </details>
         </div>
@@ -13530,7 +13530,7 @@
         <div class="sector-block" id="sector-energy">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Energy</span>
-            <span class="sector-meta">2250 articole · 66 surse</span>
+            <span class="sector-meta">2251 articole · 66 surse</span>
             <span class="sentiment-tag">positive · consistență 82%</span>
           </div>
           <div class="rec-cards">
@@ -14506,12 +14506,12 @@
           
           
         <div class="conf-track"><div class="conf-fill" style="width:65%; background:#e8c547;"></div></div>
-        <div class="conf-label">0.654</div>
+        <div class="conf-label">0.652</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Sentiment predominant negativ, încredere 0.654.
+              Sentiment predominant negativ, încredere 0.652.
               
               <a class="source-link" href="https://news.google.com/rss/articles/CBMiuwFBVV95cUxOa2dIc0c1ckgzMnU0UUpDbXpxSDk1YnhacEZXYXFtUXN5MXNFS3ZGNEN1dlBKSjFmUFNIZUZiUndhbnRDVmpTT2Nudzc0M21zVDk0ck9ycS1qYW5XMnV4ZUk3RXZSa09LSWlxWHVWQmI4Y05KbjVPOHptOUczQjZwZ01jTEJyNVVnVUlKdTlzd0IxV19aZUhpSTNDcUJkYmgyOXAyejAxa0NOVzBHc1F6ZFBESm92cUdlYTEw?oc=5" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Coterra Energy stock drops after sharp S&amp;P 500 slide - Ad-hoc-news.de" — Google News: Coterra Energy</a>
             </div>
@@ -14577,19 +14577,19 @@
             <div>
               <div class="rc-name">Conpet</div>
               <div class="rc-tags"><span class="badge-pill">mixed</span></div>
-              <div class="hold-gap" style="color:#8c8470;">la 0.208 de prag (încredere)</div>
+              <div class="hold-gap" style="color:#8c8470;">la 0.209 de prag (încredere)</div>
             </div>
             <span class="rc-verdict" style="background:#8a8f9822; color:#8a8f98;">HOLD</span>
           </div>
           
           
         <div class="conf-track"><div class="conf-fill" style="width:29%; background:#8a8f98;"></div></div>
-        <div class="conf-label">0.292</div>
+        <div class="conf-label">0.291</div>
         
           <details class="argument">
             <summary><span class="icon">i</span> Vezi argumentul</summary>
             <div class="argument-body">
-              Încredere 0.292 sub pragul de 0.5 necesar pentru o acțiune (la 0.208 distanță).
+              Încredere 0.291 sub pragul de 0.5 necesar pentru o acțiune (la 0.209 distanță).
               
               <a class="source-link" href="https://www.zf.ro/burse-fonduri-mutuale/sase-companii-de-pe-bursa-locala-premier-energy-cris-tim-aquila-sphera-antibiotice-si-conpet-ar-putea-intra-in-indicii-ftse-geis-la-revizuirea-din-septembrie-estimeaza-analistii-bt-capital-partners-23219358" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: "Şase companii de pe bursa locală - Premier Energy, Cris-Tim, Aquila, Sphera, Antibiotice şi Conpet - ar putea intra în indicii FTSE GEIS la revizuirea din septembrie, estimează analiştii BT Capital Partners" — Ziarul Financiar</a>
             </div>
@@ -14601,7 +14601,7 @@
         <div class="sector-block" id="sector-semiconductors">
           <div class="sector-header" style="background:#0f3d24;">
             <span class="sector-name">Semiconductors</span>
-            <span class="sector-meta">2146 articole · 68 surse</span>
+            <span class="sector-meta">2147 articole · 68 surse</span>
             <span class="sentiment-tag">positive · consistență 79%</span>
           </div>
           <div class="rec-cards">
@@ -19139,10 +19139,10 @@
               new Chart(document.getElementById('portfolioChart'), {
                 type: 'line',
                 data: {
-                  labels: ["2026-08-05", "2026-08-05", "2026-08-06", "2026-08-08", "2026-08-08", "2026-08-08", "2026-08-09", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-18", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-20", "2026-08-20", "2026-08-20", "2026-08-20", "2026-08-20", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-24", "2026-08-24", "2026-08-24", "2026-08-24", "2026-08-24", "2026-08-25"],
+                  labels: ["2026-08-05", "2026-08-05", "2026-08-06", "2026-08-08", "2026-08-08", "2026-08-08", "2026-08-09", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-18", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-19", "2026-08-20", "2026-08-20", "2026-08-20", "2026-08-20", "2026-08-20", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-21", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-22", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-23", "2026-08-24", "2026-08-24", "2026-08-24", "2026-08-24", "2026-08-24", "2026-08-25", "2026-08-25"],
                   datasets: [{
                     label: 'Randament portofoliu simulat (%)',
-                    data: [null, null, null, null, null, null, null, null, null, 0.54, null, 0.46, 0.46, 0.62, 0.65, 0.65, 0.61, null, null, 0.42, 0.41, 0.42, 0.42, 0.41, 0.41, 0.41, 0.47, 0.47, 0.45, 0.49, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    data: [null, null, null, null, null, null, null, null, null, 0.54, null, 0.46, 0.46, 0.62, 0.65, 0.65, 0.61, null, null, 0.42, 0.41, 0.42, 0.42, 0.41, 0.41, 0.41, 0.47, 0.47, 0.45, 0.49, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     borderColor: '#4a90d9',
                     backgroundColor: 'rgba(74,144,217,0.15)',
                     fill: true,
@@ -19263,7 +19263,7 @@
               <td>-0.51%</td>
               <td>-16.76%</td>
               <td>66.09%</td>
-              <td>44.23957</td>
+              <td>44.029655</td>
               <td>Medium (32.33%)</td>
             </tr>
             
@@ -19293,7 +19293,7 @@
               <td>1.04%</td>
               <td>-6.02%</td>
               <td>68.44%</td>
-              <td>28.889954</td>
+              <td>29.23971</td>
               <td>Medium (28.82%)</td>
             </tr>
             
@@ -19323,7 +19323,7 @@
               <td>-2.05%</td>
               <td>-22.48%</td>
               <td>69.54%</td>
-              <td>40.145737</td>
+              <td>39.352585</td>
               <td>Medium (34.04%)</td>
             </tr>
             
@@ -19333,18 +19333,18 @@
               <td>-1.2%</td>
               <td>-13.84%</td>
               <td>126.12%</td>
-              <td>30.786999</td>
+              <td>31.131468</td>
               <td>High (86.67%)</td>
             </tr>
             
             <tr>
               <td>OP</td>
-              <td>0.10811</td>
-              <td>16.84%</td>
-              <td>-87.34%</td>
-              <td>33.88%</td>
+              <td>0.10488</td>
+              <td>-2.52%</td>
+              <td>-87.72%</td>
+              <td>29.88%</td>
               <td></td>
-              <td>High (61.48%)</td>
+              <td>High (61.44%)</td>
             </tr>
             
             <tr>
@@ -19379,12 +19379,12 @@
             
             <tr>
               <td>XMR</td>
-              <td>451.86438</td>
-              <td>27.27%</td>
-              <td>-43.44%</td>
-              <td>76.69%</td>
+              <td>449.3319</td>
+              <td>1.55%</td>
+              <td>-43.76%</td>
+              <td>75.7%</td>
               <td></td>
-              <td>High (43.37%)</td>
+              <td>High (40.01%)</td>
             </tr>
             
             <tr>
@@ -19411,7 +19411,7 @@
               <td>ICE</td>
               <td>162.99</td>
               <td>1.08%</td>
-              <td>-10.27%</td>
+              <td>-9.05%</td>
               <td>33.83%</td>
               <td>22.732218</td>
               <td>Medium (21.39%)</td>
@@ -19440,11 +19440,11 @@
             <tr>
               <td>ARB</td>
               <td>0.0006290288</td>
-              <td>-16.91%</td>
+              <td>0.0%</td>
               <td>-46.47%</td>
               <td>0.81%</td>
               <td></td>
-              <td>High (44.08%)</td>
+              <td>High (43.32%)</td>
             </tr>
             
             <tr>
@@ -19459,12 +19459,12 @@
             
             <tr>
               <td>LINK</td>
-              <td>11.813</td>
-              <td>39.57%</td>
-              <td>-54.38%</td>
-              <td>68.22%</td>
+              <td>11.567</td>
+              <td>-0.46%</td>
+              <td>-55.33%</td>
+              <td>64.72%</td>
               <td></td>
-              <td>High (57.35%)</td>
+              <td>High (56.46%)</td>
             </tr>
             
             <tr>
@@ -19473,7 +19473,7 @@
               <td>0.71%</td>
               <td>-7.95%</td>
               <td>31.78%</td>
-              <td>11.196411</td>
+              <td>11.275101</td>
               <td>Medium (27.52%)</td>
             </tr>
             
@@ -19489,12 +19489,12 @@
             
             <tr>
               <td>NEAR</td>
-              <td>1.987</td>
-              <td>5.55%</td>
-              <td>-40.4%</td>
-              <td>129.83%</td>
+              <td>1.9176</td>
+              <td>-1.71%</td>
+              <td>-42.48%</td>
+              <td>121.81%</td>
               <td></td>
-              <td>High (56.56%)</td>
+              <td>High (56.8%)</td>
             </tr>
             
             <tr>
@@ -19532,7 +19532,7 @@
               <td>794.65</td>
               <td>-6.51%</td>
               <td>-30.6%</td>
-              <td>400.79%</td>
+              <td>385.37%</td>
               <td>3311.0417</td>
               <td>High (90.72%)</td>
             </tr>
@@ -19579,12 +19579,12 @@
             
             <tr>
               <td>SEI</td>
-              <td>0.04856</td>
-              <td>6.94%</td>
-              <td>-86.39%</td>
-              <td>26.7%</td>
+              <td>0.04764</td>
+              <td>1.47%</td>
+              <td>-86.65%</td>
+              <td>24.3%</td>
               <td></td>
-              <td>High (46.67%)</td>
+              <td>High (46.72%)</td>
             </tr>
             
             <tr>
@@ -19633,18 +19633,18 @@
               <td>0.59%</td>
               <td>-1.94%</td>
               <td>46.96%</td>
-              <td>24.928398</td>
+              <td>25.069578</td>
               <td>Medium (23.8%)</td>
             </tr>
             
             <tr>
               <td>ETH</td>
-              <td>2508.12</td>
-              <td>33.63%</td>
-              <td>-47.35%</td>
-              <td>66.49%</td>
+              <td>2481.44</td>
+              <td>-0.04%</td>
+              <td>-47.91%</td>
+              <td>64.71%</td>
               <td></td>
-              <td>High (61.2%)</td>
+              <td>High (60.14%)</td>
             </tr>
             
             <tr>
@@ -19673,7 +19673,7 @@
               <td>1.17%</td>
               <td>-14.97%</td>
               <td>35.39%</td>
-              <td>24.571802</td>
+              <td>24.831135</td>
               <td>Medium (28.45%)</td>
             </tr>
             
@@ -19723,7 +19723,7 @@
               <td>-1.13%</td>
               <td>-1.86%</td>
               <td>55.84%</td>
-              <td>17.827541</td>
+              <td>17.63889</td>
               <td>Medium (28.98%)</td>
             </tr>
             
@@ -19749,12 +19749,12 @@
             
             <tr>
               <td>SHIB</td>
-              <td>5.66e-06</td>
-              <td>36.86%</td>
-              <td>-62.27%</td>
-              <td>41.5%</td>
+              <td>5.48e-06</td>
+              <td>0.33%</td>
+              <td>-63.47%</td>
+              <td>37.0%</td>
               <td></td>
-              <td>High (170.99%)</td>
+              <td>High (176.82%)</td>
             </tr>
             
             <tr>
@@ -19765,16 +19765,6 @@
               <td>273.19%</td>
               <td>81.30851</td>
               <td>High (94.85%)</td>
-            </tr>
-            
-            <tr>
-              <td>BTC</td>
-              <td>80728.82</td>
-              <td>24.11%</td>
-              <td>-36.03%</td>
-              <td>39.8%</td>
-              <td></td>
-              <td>Medium (37.88%)</td>
             </tr>
             
             <tr>
@@ -19793,7 +19783,7 @@
               <td>0.5%</td>
               <td>-1.38%</td>
               <td>123.87%</td>
-              <td>12.5006895</td>
+              <td>12.56133</td>
               <td>Medium (37.59%)</td>
             </tr>
             
@@ -19813,7 +19803,7 @@
               <td>0.4%</td>
               <td>-12.94%</td>
               <td>15.93%</td>
-              <td>20.407137</td>
+              <td>20.444242</td>
               <td>Medium (24.76%)</td>
             </tr>
             
@@ -19831,9 +19821,9 @@
               <td>CCI</td>
               <td>76.4</td>
               <td>1.18%</td>
-              <td>-26.59%</td>
+              <td>-25.24%</td>
               <td>9.58%</td>
-              <td>30.806452</td>
+              <td>31.183674</td>
               <td>Medium (31.72%)</td>
             </tr>
             
@@ -19868,23 +19858,33 @@
             </tr>
             
             <tr>
+              <td>BTC</td>
+              <td>79327.16</td>
+              <td>0.44%</td>
+              <td>-37.14%</td>
+              <td>37.37%</td>
+              <td></td>
+              <td>Medium (36.19%)</td>
+            </tr>
+            
+            <tr>
               <td>GM</td>
               <td>86.98</td>
               <td>-1.08%</td>
               <td>-5.3%</td>
               <td>60.1%</td>
-              <td>39.18018</td>
+              <td>38.830357</td>
               <td>Medium (33.94%)</td>
             </tr>
             
             <tr>
               <td>BCH</td>
-              <td>277.39</td>
-              <td>30.84%</td>
-              <td>-58.48%</td>
-              <td>53.05%</td>
+              <td>270.73</td>
+              <td>0.01%</td>
+              <td>-59.48%</td>
+              <td>49.37%</td>
               <td></td>
-              <td>High (91.75%)</td>
+              <td>High (90.42%)</td>
             </tr>
             
             <tr>
@@ -19903,7 +19903,7 @@
               <td>-1.34%</td>
               <td>-12.99%</td>
               <td>142.97%</td>
-              <td>59.53233</td>
+              <td>58.47211</td>
               <td>High (43.83%)</td>
             </tr>
             
@@ -19913,7 +19913,7 @@
               <td>-2.01%</td>
               <td>-15.72%</td>
               <td>293.02%</td>
-              <td>902.4792</td>
+              <td>34.489647</td>
               <td>High (84.45%)</td>
             </tr>
             
@@ -19923,7 +19923,7 @@
               <td>-1.97%</td>
               <td>-30.51%</td>
               <td>15.99%</td>
-              <td>20.927536</td>
+              <td>20.536888</td>
               <td>Medium (33.39%)</td>
             </tr>
             
@@ -19933,7 +19933,7 @@
               <td>0.41%</td>
               <td>-25.96%</td>
               <td>8.82%</td>
-              <td>18.279697</td>
+              <td>18.341505</td>
               <td>Medium (29.52%)</td>
             </tr>
             
@@ -19959,22 +19959,22 @@
             
             <tr>
               <td>ADA</td>
-              <td>0.2269</td>
-              <td>34.79%</td>
-              <td>-76.18%</td>
-              <td>63.6%</td>
+              <td>0.2197</td>
+              <td>-0.69%</td>
+              <td>-76.94%</td>
+              <td>58.41%</td>
               <td></td>
-              <td>High (65.12%)</td>
+              <td>High (65.16%)</td>
             </tr>
             
             <tr>
               <td>DOGE</td>
-              <td>0.09267</td>
-              <td>34.05%</td>
-              <td>-69.68%</td>
-              <td>36.33%</td>
+              <td>0.09059</td>
+              <td>0.71%</td>
+              <td>-70.36%</td>
+              <td>33.27%</td>
               <td></td>
-              <td>High (53.35%)</td>
+              <td>High (54.02%)</td>
             </tr>
             
             <tr>
@@ -19993,18 +19993,18 @@
               <td>0.44%</td>
               <td>-0.95%</td>
               <td>101.43%</td>
-              <td>66.742615</td>
+              <td>67.02542</td>
               <td>Low (13.77%)</td>
             </tr>
             
             <tr>
               <td>INJ</td>
-              <td>5.892</td>
-              <td>13.87%</td>
-              <td>-60.34%</td>
-              <td>117.61%</td>
+              <td>5.894</td>
+              <td>3.83%</td>
+              <td>-60.33%</td>
+              <td>117.68%</td>
               <td></td>
-              <td>High (76.14%)</td>
+              <td>High (72.02%)</td>
             </tr>
             
             <tr>
@@ -20012,8 +20012,8 @@
               <td>145.55</td>
               <td>-2.86%</td>
               <td>-46.45%</td>
-              <td>121.37%</td>
-              <td>68.98105</td>
+              <td>120.06%</td>
+              <td>67.07373</td>
               <td>High (86.37%)</td>
             </tr>
             
@@ -20033,7 +20033,7 @@
               <td>0.7%</td>
               <td>-16.09%</td>
               <td>25.27%</td>
-              <td>18.987062</td>
+              <td>19.092937</td>
               <td>Medium (33.43%)</td>
             </tr>
             
@@ -20053,7 +20053,7 @@
               <td>2.15%</td>
               <td>-14.39%</td>
               <td>57.25%</td>
-              <td>204.17647</td>
+              <td>208.26</td>
               <td>High (56.62%)</td>
             </tr>
             
@@ -20083,7 +20083,7 @@
               <td>1.04%</td>
               <td>-1.24%</td>
               <td>57.53%</td>
-              <td>31.347878</td>
+              <td>31.638472</td>
               <td>Medium (23.07%)</td>
             </tr>
             
@@ -20093,7 +20093,7 @@
               <td>-5.24%</td>
               <td>-45.57%</td>
               <td>458.9%</td>
-              <td>17.067032</td>
+              <td>16.179115</td>
               <td>High (102.27%)</td>
             </tr>
             
@@ -20123,7 +20123,7 @@
               <td>-2.73%</td>
               <td>-22.52%</td>
               <td>46.75%</td>
-              <td>30.037834</td>
+              <td>29.238876</td>
               <td>Medium (33.4%)</td>
             </tr>
             
@@ -20133,7 +20133,7 @@
               <td>-1.65%</td>
               <td>-34.54%</td>
               <td>213.45%</td>
-              <td>42.54745</td>
+              <td>41.848747</td>
               <td>High (77.14%)</td>
             </tr>
             
@@ -20142,7 +20142,7 @@
               <td>348.06</td>
               <td>0.94%</td>
               <td>-14.82%</td>
-              <td>69.55%</td>
+              <td>69.25%</td>
               <td>17.299204</td>
               <td>High (43.72%)</td>
             </tr>
@@ -20203,7 +20203,7 @@
               <td>-0.29%</td>
               <td>-10.2%</td>
               <td>43.7%</td>
-              <td>16.004324</td>
+              <td>16.051426</td>
               <td>Medium (34.98%)</td>
             </tr>
             
@@ -20233,7 +20233,7 @@
               <td>-1.77%</td>
               <td>-8.5%</td>
               <td>53.26%</td>
-              <td>10.670354</td>
+              <td>10.484783</td>
               <td>Medium (35.88%)</td>
             </tr>
             
@@ -20253,8 +20253,18 @@
               <td>0.77%</td>
               <td>-9.59%</td>
               <td>24.6%</td>
-              <td>11.600456</td>
+              <td>11.68046</td>
               <td>Low (19.04%)</td>
+            </tr>
+            
+            <tr>
+              <td>NVDA</td>
+              <td>208.48</td>
+              <td>-2.91%</td>
+              <td>-11.86%</td>
+              <td>27.07%</td>
+              <td>31.92649</td>
+              <td>Medium (35.78%)</td>
             </tr>
             
             <tr>
@@ -20293,7 +20303,7 @@
               <td>0.38%</td>
               <td>-2.73%</td>
               <td>37.83%</td>
-              <td>61.77586</td>
+              <td>62.132946</td>
               <td>Medium (21.65%)</td>
             </tr>
             
@@ -20303,7 +20313,7 @@
               <td>1.2%</td>
               <td>-0.77%</td>
               <td>35.36%</td>
-              <td>20.440647</td>
+              <td>20.701277</td>
               <td>Low (17.81%)</td>
             </tr>
             
@@ -20349,22 +20359,32 @@
             
             <tr>
               <td>ICP</td>
-              <td>2.4804</td>
-              <td>15.08%</td>
-              <td>-74.54%</td>
-              <td>25.45%</td>
+              <td>2.4291</td>
+              <td>0.6%</td>
+              <td>-75.07%</td>
+              <td>22.85%</td>
               <td></td>
-              <td>High (48.24%)</td>
+              <td>High (47.47%)</td>
+            </tr>
+            
+            <tr>
+              <td>BLK</td>
+              <td>1172.61</td>
+              <td>1.39%</td>
+              <td>-3.88%</td>
+              <td>27.82%</td>
+              <td>28.093195</td>
+              <td>Medium (30.64%)</td>
             </tr>
             
             <tr>
               <td>LTC</td>
-              <td>52.624</td>
-              <td>12.14%</td>
-              <td>-61.18%</td>
-              <td>33.61%</td>
+              <td>51.478</td>
+              <td>-0.29%</td>
+              <td>-62.03%</td>
+              <td>30.7%</td>
               <td></td>
-              <td>High (41.01%)</td>
+              <td>High (40.67%)</td>
             </tr>
             
             <tr>
@@ -20383,28 +20403,8 @@
               <td>2.69%</td>
               <td>-0.5%</td>
               <td>103.61%</td>
-              <td>17.160606</td>
+              <td>17.641745</td>
               <td>Medium (28.86%)</td>
-            </tr>
-            
-            <tr>
-              <td>BLK</td>
-              <td>1172.61</td>
-              <td>1.39%</td>
-              <td>-3.88%</td>
-              <td>27.82%</td>
-              <td>27.701628</td>
-              <td>Medium (30.64%)</td>
-            </tr>
-            
-            <tr>
-              <td>NVDA</td>
-              <td>208.48</td>
-              <td>-2.91%</td>
-              <td>-11.86%</td>
-              <td>27.07%</td>
-              <td>32.883278</td>
-              <td>Medium (35.78%)</td>
             </tr>
             
             <tr>
@@ -20423,7 +20423,7 @@
               <td>-1.12%</td>
               <td>-10.23%</td>
               <td>18.18%</td>
-              <td>10.107143</td>
+              <td>9.988235</td>
               <td>Medium (24.54%)</td>
             </tr>
             
@@ -20483,7 +20483,7 @@
               <td>-1.38%</td>
               <td>-39.01%</td>
               <td>29.95%</td>
-              <td>18.390951</td>
+              <td>18.117714</td>
               <td>High (42.97%)</td>
             </tr>
             
@@ -20553,7 +20553,7 @@
               <td>3.78%</td>
               <td>-3.31%</td>
               <td>26.07%</td>
-              <td>31.645061</td>
+              <td>32.86218</td>
               <td>Medium (25.01%)</td>
             </tr>
             
@@ -20598,12 +20598,22 @@
             </tr>
             
             <tr>
+              <td>SOL</td>
+              <td>99.66</td>
+              <td>1.03%</td>
+              <td>-60.64%</td>
+              <td>64.96%</td>
+              <td></td>
+              <td>High (41.63%)</td>
+            </tr>
+            
+            <tr>
               <td>TMUS</td>
               <td>182.62</td>
               <td>-0.23%</td>
               <td>-29.4%</td>
               <td>10.24%</td>
-              <td>19.162643</td>
+              <td>19.122513</td>
               <td>High (46.75%)</td>
             </tr>
             
@@ -20613,7 +20623,7 @@
               <td>0.8%</td>
               <td>-47.54%</td>
               <td>46.31%</td>
-              <td>22.365175</td>
+              <td>22.556099</td>
               <td>High (47.08%)</td>
             </tr>
             
@@ -20629,12 +20639,12 @@
             
             <tr>
               <td>HBAR</td>
-              <td>0.08181</td>
-              <td>15.01%</td>
-              <td>-67.89%</td>
-              <td>27.24%</td>
+              <td>0.08054</td>
+              <td>1.74%</td>
+              <td>-68.39%</td>
+              <td>25.26%</td>
               <td></td>
-              <td>Medium (37.78%)</td>
+              <td>Medium (36.99%)</td>
             </tr>
             
             <tr>
@@ -20653,7 +20663,7 @@
               <td>2.76%</td>
               <td>-3.28%</td>
               <td>87.32%</td>
-              <td>17.517042</td>
+              <td>18.017797</td>
               <td>Medium (24.49%)</td>
             </tr>
             
@@ -20662,7 +20672,7 @@
               <td>346.0</td>
               <td>-0.82%</td>
               <td>-1.98%</td>
-              <td>139.78%</td>
+              <td>138.39%</td>
               <td>14.556163</td>
               <td>Medium (33.1%)</td>
             </tr>
@@ -20673,7 +20683,7 @@
               <td>3.06%</td>
               <td>-0.27%</td>
               <td>30.12%</td>
-              <td>31.551981</td>
+              <td>32.573254</td>
               <td>Medium (20.25%)</td>
             </tr>
             
@@ -20703,7 +20713,7 @@
               <td>1.33%</td>
               <td>-8.75%</td>
               <td>33.71%</td>
-              <td>20.799206</td>
+              <td>21.100645</td>
               <td>High (55.73%)</td>
             </tr>
             
@@ -20713,7 +20723,7 @@
               <td>0.18%</td>
               <td>-3.79%</td>
               <td>49.8%</td>
-              <td>35.975597</td>
+              <td>36.09572</td>
               <td>Medium (36.34%)</td>
             </tr>
             
@@ -20753,7 +20763,7 @@
               <td>-1.95%</td>
               <td>-12.03%</td>
               <td>151.42%</td>
-              <td>313.30356</td>
+              <td>302.5</td>
               <td>High (41.43%)</td>
             </tr>
             
@@ -20763,18 +20773,18 @@
               <td>0.32%</td>
               <td>-9.93%</td>
               <td>38.12%</td>
-              <td>35.467426</td>
+              <td>35.589447</td>
               <td>Medium (32.92%)</td>
             </tr>
             
             <tr>
               <td>XRP</td>
-              <td>1.5185</td>
-              <td>37.18%</td>
-              <td>-52.3%</td>
-              <td>53.63%</td>
+              <td>1.4839</td>
+              <td>0.3%</td>
+              <td>-53.39%</td>
+              <td>50.13%</td>
               <td></td>
-              <td>High (70.99%)</td>
+              <td>High (70.72%)</td>
             </tr>
             
             <tr>
@@ -20783,18 +20793,8 @@
               <td>-0.73%</td>
               <td>-15.45%</td>
               <td>66.69%</td>
-              <td>33.302116</td>
+              <td>33.102104</td>
               <td>Medium (38.41%)</td>
-            </tr>
-            
-            <tr>
-              <td>SOL</td>
-              <td>101.78</td>
-              <td>34.19%</td>
-              <td>-59.8%</td>
-              <td>68.47%</td>
-              <td></td>
-              <td>High (44.97%)</td>
             </tr>
             
             <tr>
@@ -20823,7 +20823,7 @@
               <td>1.33%</td>
               <td>-12.35%</td>
               <td>6.53%</td>
-              <td>21.847988</td>
+              <td>22.111614</td>
               <td>Low (17.01%)</td>
             </tr>
             
@@ -20849,12 +20849,12 @@
             
             <tr>
               <td>DOT</td>
-              <td>0.9169</td>
-              <td>12.47%</td>
-              <td>-81.19%</td>
-              <td>25.98%</td>
+              <td>0.8952</td>
+              <td>-0.39%</td>
+              <td>-81.63%</td>
+              <td>23.0%</td>
               <td></td>
-              <td>High (48.67%)</td>
+              <td>High (49.0%)</td>
             </tr>
             
             <tr>
@@ -20863,7 +20863,7 @@
               <td>1.73%</td>
               <td>-53.54%</td>
               <td>43.94%</td>
-              <td>85.37413</td>
+              <td>86.89324</td>
               <td>High (103.42%)</td>
             </tr>
             
@@ -20900,11 +20900,11 @@
             <tr>
               <td>TON</td>
               <td>0.005759321</td>
-              <td>-21.4%</td>
+              <td>0.0%</td>
               <td>-73.49%</td>
               <td>42.45%</td>
               <td></td>
-              <td>High (73.85%)</td>
+              <td>High (72.56%)</td>
             </tr>
             
             <tr>
@@ -20913,7 +20913,7 @@
               <td>0.91%</td>
               <td>-7.02%</td>
               <td>13.09%</td>
-              <td>45.77536</td>
+              <td>46.10949</td>
               <td>Low (16.48%)</td>
             </tr>
             
@@ -20933,7 +20933,7 @@
               <td>-1.08%</td>
               <td>-5.55%</td>
               <td>45.49%</td>
-              <td>24.248947</td>
+              <td>24.046024</td>
               <td>Medium (28.24%)</td>
             </tr>
             
@@ -20973,7 +20973,7 @@
               <td>0.62%</td>
               <td>-22.26%</td>
               <td>21.22%</td>
-              <td>17.27451</td>
+              <td>17.388159</td>
               <td>High (42.41%)</td>
             </tr>
             
@@ -21043,7 +21043,7 @@
               <td>1.61%</td>
               <td>-6.83%</td>
               <td>24.14%</td>
-              <td>35.872097</td>
+              <td>36.437008</td>
               <td>Medium (21.51%)</td>
             </tr>
             
@@ -21073,7 +21073,7 @@
               <td>-3.83%</td>
               <td>-30.05%</td>
               <td>17.34%</td>
-              <td>332.33337</td>
+              <td>323.10184</td>
               <td>High (57.51%)</td>
             </tr>
             
@@ -21083,7 +21083,7 @@
               <td>0.15%</td>
               <td>-7.73%</td>
               <td>37.08%</td>
-              <td>18.42282</td>
+              <td>18.484848</td>
               <td>Medium (20.5%)</td>
             </tr>
             
@@ -21143,7 +21143,7 @@
               <td>1.76%</td>
               <td>-16.59%</td>
               <td>9.8%</td>
-              <td>28.3375</td>
+              <td>28.7873</td>
               <td>Medium (31.52%)</td>
             </tr>
             
@@ -21153,7 +21153,7 @@
               <td>0.63%</td>
               <td>-17.77%</td>
               <td>26.97%</td>
-              <td>8.605096</td>
+              <td>8.660257</td>
               <td>Medium (37.32%)</td>
             </tr>
             
@@ -21189,12 +21189,12 @@
             
             <tr>
               <td>BNB</td>
-              <td>716.63</td>
-              <td>26.4%</td>
-              <td>-47.71%</td>
-              <td>33.05%</td>
+              <td>699.84</td>
+              <td>-0.56%</td>
+              <td>-48.94%</td>
+              <td>29.94%</td>
               <td></td>
-              <td>Medium (27.71%)</td>
+              <td>Medium (27.27%)</td>
             </tr>
             
             <tr>
@@ -21268,12 +21268,22 @@
             </tr>
             
             <tr>
+              <td>ORCL</td>
+              <td>142.45</td>
+              <td>-2.74%</td>
+              <td>-58.8%</td>
+              <td>24.41%</td>
+              <td>24.433962</td>
+              <td>High (61.53%)</td>
+            </tr>
+            
+            <tr>
               <td>UAL</td>
               <td>113.57</td>
               <td>0.35%</td>
               <td>-18.16%</td>
               <td>34.18%</td>
-              <td>10.594216</td>
+              <td>10.633895</td>
               <td>Medium (39.77%)</td>
             </tr>
             
@@ -21313,25 +21323,15 @@
               <td>1.66%</td>
               <td>-29.31%</td>
               <td>7.45%</td>
-              <td>20.704445</td>
+              <td>21.055368</td>
               <td>High (42.95%)</td>
-            </tr>
-            
-            <tr>
-              <td>ORCL</td>
-              <td>142.45</td>
-              <td>-2.74%</td>
-              <td>-58.8%</td>
-              <td>24.41%</td>
-              <td>25.123455</td>
-              <td>High (61.53%)</td>
             </tr>
             
             <tr>
               <td>CMG</td>
               <td>38.02</td>
               <td>3.04%</td>
-              <td>-12.78%</td>
+              <td>-11.85%</td>
               <td>35.59%</td>
               <td>34.25225</td>
               <td>High (61.67%)</td>
@@ -21469,12 +21469,12 @@
             
             <tr>
               <td>AAVE</td>
-              <td>131.88</td>
-              <td>38.77%</td>
-              <td>-62.35%</td>
-              <td>127.19%</td>
+              <td>129.02</td>
+              <td>-2.59%</td>
+              <td>-61.87%</td>
+              <td>122.27%</td>
               <td></td>
-              <td>High (92.95%)</td>
+              <td>High (91.85%)</td>
             </tr>
             
             <tr>
@@ -21483,7 +21483,7 @@
               <td>1.48%</td>
               <td>-10.28%</td>
               <td>4.5%</td>
-              <td>20.56979</td>
+              <td>20.88932</td>
               <td>Low (19.03%)</td>
             </tr>
             
@@ -21513,7 +21513,7 @@
               <td>0.08%</td>
               <td>-13.8%</td>
               <td>49.88%</td>
-              <td>81.66337</td>
+              <td>13.678275</td>
               <td>Medium (34.28%)</td>
             </tr>
             
@@ -21523,7 +21523,7 @@
               <td>-2.7%</td>
               <td>-55.24%</td>
               <td>16.14%</td>
-              <td>20.420832</td>
+              <td>19.842104</td>
               <td>Medium (32.81%)</td>
             </tr>
             
@@ -21553,7 +21553,7 @@
               <td>0.59%</td>
               <td>-6.34%</td>
               <td>18.9%</td>
-              <td>25.581081</td>
+              <td>25.696833</td>
               <td>Medium (24.85%)</td>
             </tr>
             
@@ -21593,7 +21593,7 @@
               <td>-2.81%</td>
               <td>-10.62%</td>
               <td>99.44%</td>
-              <td>30.285252</td>
+              <td>29.426773</td>
               <td>High (41.51%)</td>
             </tr>
             
@@ -21633,7 +21633,7 @@
               <td>2.03%</td>
               <td>-2.18%</td>
               <td>82.45%</td>
-              <td>16.52987</td>
+              <td>16.865725</td>
               <td>Medium (24.45%)</td>
             </tr>
             
@@ -21679,12 +21679,12 @@
             
             <tr>
               <td>TIA</td>
-              <td>0.3804</td>
-              <td>9.29%</td>
-              <td>-80.34%</td>
-              <td>37.96%</td>
+              <td>0.3716</td>
+              <td>0.04%</td>
+              <td>-80.8%</td>
+              <td>34.76%</td>
               <td></td>
-              <td>High (61.45%)</td>
+              <td>High (61.02%)</td>
             </tr>
             
             <tr>
@@ -21713,7 +21713,7 @@
               <td>-1.46%</td>
               <td>-30.69%</td>
               <td>0.49%</td>
-              <td>26.956923</td>
+              <td>26.521694</td>
               <td>Medium (39.01%)</td>
             </tr>
             
@@ -21723,7 +21723,7 @@
               <td>2.51%</td>
               <td>-6.14%</td>
               <td>38.34%</td>
-              <td>5.083822</td>
+              <td>5.2110953</td>
               <td>Medium (33.66%)</td>
             </tr>
             
@@ -21733,7 +21733,7 @@
               <td>1.1%</td>
               <td>-6.51%</td>
               <td>29.73%</td>
-              <td>31.577093</td>
+              <td>31.928732</td>
               <td>Medium (24.44%)</td>
             </tr>
             
@@ -21819,22 +21819,22 @@
             
             <tr>
               <td>ALGO</td>
-              <td>0.09459</td>
-              <td>13.73%</td>
-              <td>-63.63%</td>
-              <td>24.84%</td>
+              <td>0.0926</td>
+              <td>1.02%</td>
+              <td>-64.4%</td>
+              <td>22.22%</td>
               <td></td>
-              <td>High (60.2%)</td>
+              <td>High (59.89%)</td>
             </tr>
             
             <tr>
               <td>VET</td>
-              <td>0.005949</td>
-              <td>24.49%</td>
-              <td>-77.4%</td>
-              <td>38.96%</td>
+              <td>0.005761</td>
+              <td>1.89%</td>
+              <td>-78.11%</td>
+              <td>34.57%</td>
               <td></td>
-              <td>High (53.32%)</td>
+              <td>High (52.87%)</td>
             </tr>
             
             <tr>
@@ -21843,7 +21843,7 @@
               <td>1.19%</td>
               <td>-3.91%</td>
               <td>60.77%</td>
-              <td>19.06011</td>
+              <td>19.27072</td>
               <td>High (43.18%)</td>
             </tr>
             
@@ -21853,7 +21853,7 @@
               <td>-0.66%</td>
               <td>-2.18%</td>
               <td>53.14%</td>
-              <td>20.61971</td>
+              <td>20.492208</td>
               <td>Medium (30.7%)</td>
             </tr>
             
@@ -21863,7 +21863,7 @@
               <td>1.25%</td>
               <td>-3.95%</td>
               <td>33.5%</td>
-              <td>10.991936</td>
+              <td>11.121487</td>
               <td>Low (18.69%)</td>
             </tr>
             
@@ -21873,7 +21873,7 @@
               <td>0.52%</td>
               <td>-7.7%</td>
               <td>46.5%</td>
-              <td>17.729195</td>
+              <td>17.79187</td>
               <td>Medium (38.46%)</td>
             </tr>
             
@@ -21973,7 +21973,7 @@
               <td>-1.22%</td>
               <td>-7.33%</td>
               <td>56.02%</td>
-              <td>30.401878</td>
+              <td>30.025774</td>
               <td>High (56.11%)</td>
             </tr>
             
@@ -22001,9 +22001,9 @@
               <td>AMT</td>
               <td>178.39</td>
               <td>1.47%</td>
-              <td>-15.82%</td>
+              <td>-14.69%</td>
               <td>11.45%</td>
-              <td>24.139378</td>
+              <td>24.50412</td>
               <td>Medium (28.24%)</td>
             </tr>
             
@@ -22048,22 +22048,12 @@
             </tr>
             
             <tr>
-              <td>CTRA</td>
-              <td></td>
-              <td>%</td>
-              <td>%</td>
-              <td>%</td>
-              <td></td>
-              <td>-</td>
-            </tr>
-            
-            <tr>
               <td>NXPI</td>
               <td>222.44</td>
               <td>-1.38%</td>
               <td>-34.57%</td>
               <td>21.55%</td>
-              <td>19.225584</td>
+              <td>18.979523</td>
               <td>High (42.5%)</td>
             </tr>
             
@@ -22075,6 +22065,16 @@
               <td>0.46%</td>
               <td></td>
               <td>Medium (33.56%)</td>
+            </tr>
+            
+            <tr>
+              <td>CTRA</td>
+              <td></td>
+              <td>%</td>
+              <td>%</td>
+              <td>%</td>
+              <td></td>
+              <td>-</td>
             </tr>
             
             <tr>
@@ -22093,7 +22093,7 @@
               <td>1.49%</td>
               <td>-1.37%</td>
               <td>121.34%</td>
-              <td>37.584545</td>
+              <td>38.137257</td>
               <td>High (50.45%)</td>
             </tr>
             
@@ -22103,7 +22103,7 @@
               <td>-3.6%</td>
               <td>-39.89%</td>
               <td>175.96%</td>
-              <td>44.472725</td>
+              <td>42.91228</td>
               <td>High (81.2%)</td>
             </tr>
             
@@ -22149,12 +22149,12 @@
             
             <tr>
               <td>CRV</td>
-              <td>0.336</td>
-              <td>60.92%</td>
-              <td>-60.95%</td>
-              <td>96.05%</td>
+              <td>0.3292</td>
+              <td>-2.96%</td>
+              <td>-61.74%</td>
+              <td>92.08%</td>
               <td></td>
-              <td>High (87.16%)</td>
+              <td>High (86.84%)</td>
             </tr>
             
             <tr>
@@ -22263,7 +22263,7 @@
               <td>0.6%</td>
               <td>-5.54%</td>
               <td>38.65%</td>
-              <td>12.38492</td>
+              <td>12.459081</td>
               <td>Low (18.85%)</td>
             </tr>
             
@@ -22273,25 +22273,15 @@
               <td>-3.8%</td>
               <td>-11.21%</td>
               <td>62.76%</td>
-              <td>10.585185</td>
+              <td>10.992308</td>
               <td>High (54.18%)</td>
-            </tr>
-            
-            <tr>
-              <td>TRX</td>
-              <td>0.34463266</td>
-              <td>4.88%</td>
-              <td>-8.42%</td>
-              <td>28.53%</td>
-              <td></td>
-              <td>Low (9.05%)</td>
             </tr>
             
             <tr>
               <td>ZTS</td>
               <td>77.17</td>
               <td>-0.72%</td>
-              <td>-50.91%</td>
+              <td>-50.69%</td>
               <td>8.69%</td>
               <td>12.671592</td>
               <td>Medium (37.11%)</td>
@@ -22305,6 +22295,16 @@
               <td>7.09%</td>
               <td>24.025568</td>
               <td>Medium (25.17%)</td>
+            </tr>
+            
+            <tr>
+              <td>TRX</td>
+              <td>0.3426324</td>
+              <td>-0.63%</td>
+              <td>-8.95%</td>
+              <td>27.78%</td>
+              <td></td>
+              <td>Low (9.22%)</td>
             </tr>
             
             <tr>
@@ -22343,7 +22343,7 @@
               <td>2.12%</td>
               <td>-10.37%</td>
               <td>18.35%</td>
-              <td>11.00344</td>
+              <td>11.235323</td>
               <td>High (40.25%)</td>
             </tr>
             
@@ -22362,7 +22362,7 @@
               <td>73.53</td>
               <td>1.27%</td>
               <td>-16.09%</td>
-              <td>1.36%</td>
+              <td>1.38%</td>
               <td>18.066338</td>
               <td>Low (16.11%)</td>
             </tr>
@@ -22373,7 +22373,7 @@
               <td>-0.96%</td>
               <td>-6.51%</td>
               <td>46.43%</td>
-              <td>67.85852</td>
+              <td>67.38186</td>
               <td>Medium (30.45%)</td>
             </tr>
             
@@ -22393,18 +22393,18 @@
               <td>1.88%</td>
               <td>-15.33%</td>
               <td>20.5%</td>
-              <td>21.583334</td>
+              <td>22.009882</td>
               <td>Medium (25.74%)</td>
             </tr>
             
             <tr>
               <td>FIL</td>
-              <td>0.7662</td>
-              <td>5.34%</td>
-              <td>-80.27%</td>
-              <td>24.78%</td>
+              <td>0.7441</td>
+              <td>-1.2%</td>
+              <td>-80.84%</td>
+              <td>21.18%</td>
               <td></td>
-              <td>High (62.92%)</td>
+              <td>High (62.53%)</td>
             </tr>
             
             <tr>
@@ -22413,7 +22413,7 @@
               <td>1.12%</td>
               <td>-7.45%</td>
               <td>28.19%</td>
-              <td>15.40335</td>
+              <td>15.577275</td>
               <td>Low (18.31%)</td>
             </tr>
             
@@ -22423,7 +22423,7 @@
               <td>-0.53%</td>
               <td>-27.92%</td>
               <td>7.12%</td>
-              <td>8.5</td>
+              <td>8.555555</td>
               <td>Medium (21.67%)</td>
             </tr>
             
@@ -22443,7 +22443,7 @@
               <td>0.77%</td>
               <td>-3.15%</td>
               <td>26.67%</td>
-              <td>30.773674</td>
+              <td>31.067877</td>
               <td>Medium (22.27%)</td>
             </tr>
             
@@ -22453,7 +22453,7 @@
               <td>-0.24%</td>
               <td>-29.1%</td>
               <td>42.22%</td>
-              <td>14.996113</td>
+              <td>14.967021</td>
               <td>High (45.16%)</td>
             </tr>
             
@@ -22519,12 +22519,12 @@
             
             <tr>
               <td>DYDX</td>
-              <td>0.1195</td>
-              <td>-3.49%</td>
-              <td>-84.27%</td>
-              <td>79.29%</td>
+              <td>0.1169</td>
+              <td>0.73%</td>
+              <td>-84.61%</td>
+              <td>75.39%</td>
               <td></td>
-              <td>High (56.18%)</td>
+              <td>High (57.65%)</td>
             </tr>
             
             <tr>
@@ -22533,7 +22533,7 @@
               <td>1.23%</td>
               <td>-25.03%</td>
               <td>16.67%</td>
-              <td>17.610508</td>
+              <td>17.836699</td>
               <td>High (42.19%)</td>
             </tr>
             </tbody>
@@ -22572,61 +22572,61 @@
             <tr>
               <td>CBOE Volatility Index (VIX)</td>
               <td>15.85</td>
-              <td style="color:#3ecf7e;">4.76%</td>
+              <td style="color:#3ecf7e;">0.0%</td>
             </tr>
             
             <tr>
               <td>FTSE 100</td>
-              <td>10854.32</td>
-              <td style="color:#3ecf7e;">0.35%</td>
+              <td>10873.99</td>
+              <td style="color:#3ecf7e;">0.18%</td>
             </tr>
             
             <tr>
               <td>DAX (Germania)</td>
-              <td>26106.6</td>
-              <td style="color:#d4695a;">-0.11%</td>
+              <td>26337.83</td>
+              <td style="color:#3ecf7e;">0.89%</td>
             </tr>
             
             <tr>
               <td>Nikkei 225</td>
-              <td>65735.91</td>
-              <td style="color:#3ecf7e;">0.32%</td>
+              <td>65856.43</td>
+              <td style="color:#3ecf7e;">0.5%</td>
             </tr>
             
             <tr>
               <td>Aur</td>
-              <td>4701.5</td>
-              <td style="color:#3ecf7e;">0.08%</td>
+              <td>4694.4</td>
+              <td style="color:#d4695a;">-0.07%</td>
             </tr>
             
             <tr>
               <td>Argint</td>
-              <td>68.07</td>
-              <td style="color:#d4695a;">-0.76%</td>
+              <td>67.88</td>
+              <td style="color:#d4695a;">-1.04%</td>
             </tr>
             
             <tr>
               <td>Petrol brut (WTI)</td>
-              <td>84.35</td>
-              <td style="color:#d4695a;">-0.78%</td>
+              <td>82.42</td>
+              <td style="color:#d4695a;">-3.05%</td>
             </tr>
             
             <tr>
               <td>Petrol Brent</td>
-              <td>91.4</td>
-              <td style="color:#d4695a;">-0.84%</td>
+              <td>88.06</td>
+              <td style="color:#d4695a;">-2.74%</td>
             </tr>
             
             <tr>
               <td>Gaze naturale</td>
-              <td>2.793</td>
-              <td style="color:#d4695a;">-1.48%</td>
+              <td>2.801</td>
+              <td style="color:#d4695a;">-1.2%</td>
             </tr>
             
             <tr>
               <td>Cupru</td>
-              <td>6.592</td>
-              <td style="color:#d4695a;">-0.2%</td>
+              <td>6.6385</td>
+              <td style="color:#3ecf7e;">0.51%</td>
             </tr>
             </tbody>
         </table>
@@ -22701,13 +22701,13 @@
             </div>
             
             <div class="change-line">
-              <b>Agenții de presă și presă financiară majoră</b> — 3671 articole
-              <div style="font-size:11px; color:#8c8470; margin-top:4px;">Yahoo Finance (1796), Ziarul Financiar (637), CNBC Top News (557), Profit.ro (438), MarketWatch Top Stories (243)</div>
+              <b>Agenții de presă și presă financiară majoră</b> — 3750 articole
+              <div style="font-size:11px; color:#8c8470; margin-top:4px;">Yahoo Finance (1837), Ziarul Financiar (653), CNBC Top News (564), Profit.ro (448), MarketWatch Top Stories (248)</div>
             </div>
             
             <div class="change-line">
-              <b>Surse specializate / agregatoare</b> — 1573 articole
-              <div style="font-size:11px; color:#8c8470; margin-top:4px;">Investing.com Stock Market News (418), CoinDesk (367), CoinTelegraph (356), Economedia (325), Decrypt (107)</div>
+              <b>Surse specializate / agregatoare</b> — 1607 articole
+              <div style="font-size:11px; color:#8c8470; margin-top:4px;">Investing.com Stock Market News (428), CoinDesk (374), CoinTelegraph (361), Economedia (335), Decrypt (109)</div>
             </div>
             
             <div class="change-line">
@@ -22717,7 +22717,7 @@
             
 
     <div class="section-title" id="schimbari">Schimbări recente</div>
-    <div class="change-line" style="color:#3ecf7e;">up <b>AstraZeneca</b> SELL -&gt; BUY</div>
+    <div class="change-line" style="color:#3ecf7e;">up <b>Purcari Wineries</b> HOLD -&gt; BUY</div>
 
     <div class="footer">MarketLens — raport generat automat. Nu constituie sfat financiar.</div>
   </div>
