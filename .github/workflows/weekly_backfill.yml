@@ -1,7 +1,6 @@
 name: MarketLens Weekly Historical Backfill
 
-# Rulează de 2 ori pe săptămână (duminică și miercuri, 06:00 UTC),
-# plus poate fi pornit manual din tab-ul "Actions".
+# Ruleaza de 2 ori pe saptamana (duminica si miercuri, 06:00 UTC).
 on:
   schedule:
     - cron: '0 6 * * 0'
@@ -11,8 +10,6 @@ on:
 permissions:
   contents: write
 
-# Grup de concurență COMUN cu daily.yml — vezi explicația din acel
-# fișier.
 concurrency:
   group: marketlens-data-write
   cancel-in-progress: false
@@ -43,6 +40,13 @@ jobs:
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python run_weekly_backfill.py
+
+      # ESENTIAL aici in special: backfill-ul istoric poate ingera
+      # dintr-o data saptamani/luni de articole vechi, umfland
+      # raw_articles mult mai repede decat rularea zilnica obisnuita.
+      # Acest pas ruleaza INAINTE de commit, de fiecare data.
+      - name: Keep database size under control
+        run: python scripts/reduce_database_size.py --keep-days 14
 
       - name: Commit and push updated data + report
         run: |
