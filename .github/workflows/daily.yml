@@ -53,11 +53,15 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python run_daily.py
 
-      # Ruleaza la FIECARE rulare, inainte de commit — previne
-      # depasirea limitei GitHub de 100 MB, indiferent cate date brute
-      # s-au acumulat intre timp. Sters + VACUUM daca e nevoie, altfel
-      # nu face nimic (rapid, sigur de rulat mereu).
-      - name: Keep database size under control
+      # ARE DOI PASI, in ordinea asta — primul rezolva sursa reala de
+      # bloat (tabelul 'articles', arhivat pe luni, niciodata sters
+      # din istoric), al doilea e o plasa de siguranta suplimentara
+      # (raw_articles, daca vreodata e populat). Ruleaza la FIECARE
+      # rulare, inainte de commit.
+      - name: Archive old articles (preserves history, shrinks live DB)
+        run: python scripts/archive_old_articles.py --keep-days 180
+
+      - name: Keep database size under control (safety net)
         run: python scripts/reduce_database_size.py --keep-days 14
 
       - name: Commit and push updated data + report
