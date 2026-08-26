@@ -1,9 +1,8 @@
 name: MarketLens Daily Pipeline
 
 # Ruleaza de 5 ori pe zi, aliniat cu orele bursei americane (Eastern
-# Time). Orele de mai jos sunt calculate pentru EST (ora standard de
-# iarna, UTC-5) — vara (EDT, UTC-4), din cauza schimbarii orei,
-# rularile vor cadea cu o ora mai devreme fata de intentia initiala.
+# Time). Orele sunt calculate pentru EST (ora de iarna, UTC-5) — vara
+# vor cadea cu o ora mai devreme fata de intentia initiala.
 #
 #   1. Inainte de deschidere (9:00 ET / 14:00 UTC)
 #   2. Pranz (12:00 ET / 17:00 UTC)
@@ -53,13 +52,13 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python run_daily.py
 
-      # ARE DOI PASI, in ordinea asta — primul rezolva sursa reala de
-      # bloat (tabelul 'articles', arhivat pe luni, niciodata sters
-      # din istoric), al doilea e o plasa de siguranta suplimentara
-      # (raw_articles, daca vreodata e populat). Ruleaza la FIECARE
-      # rulare, inainte de commit.
+      # Fereastra de 60 de zile (nu 180): diagnosticul a aratat ca
+      # aproape tot volumul provine din articole RECENTE, generate de
+      # aceste 5 rulari zilnice — o fereastra de 180 de zile elibera
+      # doar 87 de articole. Istoricul NU se pierde: tot ce depaseste
+      # 60 de zile ajunge in data/archives/, comprimat si complet.
       - name: Archive old articles (preserves history, shrinks live DB)
-        run: python scripts/archive_old_articles.py --keep-days 180
+        run: python scripts/archive_old_articles.py --keep-days 60
 
       - name: Keep database size under control (safety net)
         run: python scripts/reduce_database_size.py --keep-days 14
