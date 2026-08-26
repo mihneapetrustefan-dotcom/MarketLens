@@ -1,0 +1,34 @@
+name: EMERGENCY - Reduce Database Size
+
+# Rulare MANUALA, o singura data (sau ori de cate ori baza de date se
+# apropie iar de limita GitHub de 100 MB) — micsoreaza data/marketlens.db
+# stergand payload-urile brute vechi (Faza 2) si rulind VACUUM.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  reduce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reduce database size
+        run: python scripts/reduce_database_size.py
+
+      - name: Commit and push the smaller database
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Emergency: reduce database size (prune old raw article payloads)"
+          git pull --rebase origin main
+          git push
