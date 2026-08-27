@@ -72,7 +72,16 @@ class DatasetVersion:
 
 
 class FeatureNamespace(str, Enum):
-    """Spec §41 — clear namespaces instead of one unstructured feature table."""
+    """
+    Spec §41 (Phase 7) / §4 (Phase 8) — clear namespaces instead of one
+    unstructured feature table.
+
+    EXTENDED IN PHASE 8: NEWS, PEER, TECHNICAL, FUNDAMENTAL,
+    CROSS_SECTIONAL and HISTORICAL were added when Phase 8's feature
+    library needed them. Adding members to this enum is additive and
+    safe — every existing feature keeps its namespace unchanged, and
+    no stored value is reinterpreted.
+    """
     MARKET = "market"
     SECTOR = "sector"
     ENTITY = "entity"
@@ -83,6 +92,12 @@ class FeatureNamespace(str, Enum):
     SENTIMENT = "sentiment"
     REGIME = "regime"
     RELATIONSHIP = "relationship"
+    NEWS = "news"
+    PEER = "peer"
+    TECHNICAL = "technical"
+    FUNDAMENTAL = "fundamental"
+    CROSS_SECTIONAL = "cross_sectional"
+    HISTORICAL = "historical"
 
 
 @dataclass
