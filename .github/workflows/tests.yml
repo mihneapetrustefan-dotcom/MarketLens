@@ -21,9 +21,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # -t . fixează directorul top-level la rădăcina repo-ului.
+      # Fără el, tests/scripts/ ar fi importat ca pachetul top-level
+      # `scripts`, umbrind directorul scripts/ real din rădăcină.
       - name: Run full test suite
-        run: PYTHONPATH=src python -m unittest discover -s tests -v
-      - name: Run full test suite
-        run: PYTHONPATH=src python -m unittest discover -s tests -v
+        run: PYTHONPATH=src python -m unittest discover -s tests -t . -v
       - name: Check company registry for collisions
         run: PYTHONPATH=src python src/check_registry_collisions.py
