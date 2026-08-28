@@ -1,16 +1,6 @@
-name: MarketLens Monthly Historical Backfill
+name: Phase 1 - Migrate Registries to Canonical Tables
 
-# SCHIMBARE DE PLAN (fata de varianta anterioara, de 2x/saptamana):
-# stirile din trecut nu se schimba, deci re-colectarea lor de doua ori
-# pe saptamana era munca irosita — aceleasi articole, re-descarcate,
-# re-deduplicate, fara informatie noua.
-#
-# Acum: O SINGURA rulare pe luna, in prima zi a lunii, la 06:00 UTC.
-# Poate fi pornita si manual oricand (workflow_dispatch), daca vrei o
-# a doua rulare intr-o luna anume.
 on:
-  schedule:
-    - cron: '0 6 1 * *'
   workflow_dispatch: {}
 
 permissions:
@@ -21,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  run-backfill:
+  migrate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -32,58 +22,38 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p data
-          gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber
+          # Reincearca: 'gh release upload --clobber' dintr-un alt
+          # workflow sterge asset-ul vechi INAINTE sa incarce pe cel
+          # nou, deci exista o fereastra scurta (de obicei sub un
+          # minut) in care asset-ul nu exista deloc. O descarcare care
+          # nimereste exact acea fereastra primeste "no assets to
+          # download" si esueaza imediat, desi nu e o eroare reala —
+          # doar o coliziune de timing intre doua workflow-uri care
+          # ruleaza acum in paralel (fiecare in propriul grup de
+          # concurenta). 5 incercari la 15s acopera confortabil golul.
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run monthly backfill + daily pipeline
-        env:
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-        run: python run_weekly_backfill.py
-
-      # Fereastra de 60 de zile (nu 180): diagnosticul a aratat ca
-      # aproape tot volumul provine din articole RECENTE, generate de
-      # cele 5 rulari zilnice — o fereastra de 180 de zile elibera doar
-      # 87 de articole, adica aproape nimic. Istoricul NU se pierde:
-      # tot ce depaseste 60 de zile ajunge in data/archives/, comprimat,
-      # complet, si ramane disponibil pentru Faza 7.
-      - name: Archive old articles (preserves history, shrinks live DB)
-        run: python scripts/archive_old_articles.py --keep-days 60
-
-      - name: Keep database size under control (safety net)
-        run: python scripts/reduce_database_size.py --keep-days 14
+      - name: Run Phase 1 migration
+        run: python scripts/migrate_registries_to_canonical.py
 
       - name: Upload updated database to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
-
-      - name: Commit and push report + archive files (not the database)
-        run: |
-          git config user.name "marketlens-bot"
-          git config user.email "actions@github.com"
-          git add data/archives/ docs/
-          git diff --staged --quiet || git commit -m "Actualizare (backfill lunar) $(date -u +'%Y-%m-%d %H:%M UTC')"
-
-          if git pull --rebase origin main; then
-            git push
-          else
-            echo "Conflict la rebase — pastram versiunea proaspat generata de aceasta rulare."
-            git rebase --abort || true
-            git fetch origin main
-            git merge -X ours origin/main --no-edit -m "Merge automat (rezolvare conflict pe fisiere regenerate)"
-            git push
-          fi
