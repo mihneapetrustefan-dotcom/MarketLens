@@ -1,0 +1,77 @@
+name: Backfill Article Entities (Phase 3)
+
+# Rulare MANUALA. Rezolva mentiunile de companii/tickere din tabela
+# `articles` existenta in legaturi canonice `article_entities`, fara
+# sa duplice corpusul in `news_articles` (vezi comentariul din
+# scripts/backfill_article_entities.py pentru motiv).
+#
+# Implicit: cele mai recente 30.000 de articole, prag de siguranta
+# 96 MB. Masurat pe acest volum: +5.55 MB, baza ajunge la ~90.2 MB
+# din plafonul GitHub de 100 MiB (104.86 MB).
+#
+# Sigur de rulat repetat: scrierile sunt INSERT OR IGNORE, deci o
+# rulare ulterioara peste randuri deja existente nu adauga nimic.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Cate articole (cele mai recente) sa proceseze. Gol = tot corpusul.'
+        required: false
+        default: '30000'
+      max_db_mb:
+        description: 'Prag de siguranta MB. Scriptul refuza sa scrie daca proiectia il depaseste.'
+        required: false
+        default: '96'
+      since:
+        description: 'Optional: doar articole publicate de la aceasta data ISO incolo (ex: 2026-01-01).'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+# Acelasi grup ca in daily.yml: backfill-ul si pipeline-ul zilnic
+# scriu amandoua in data/marketlens.db si fac push. Fara acest grup,
+# o rulare manuala in paralel cu pipeline-ul zilnic ar putea produce
+# un conflict de commit sau, mai rau, o cursa pe acelasi fisier.
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backfill (dry run first, always logged)
+        run: |
+          ARGS="--max-db-mb ${{ github.event.inputs.max_db_mb }}"
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          if [ -n "${{ github.event.inputs.since }}" ]; then
+            ARGS="$ARGS --since ${{ github.event.inputs.since }}"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/backfill_article_entities.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/backfill_article_entities.py $ARGS --apply
+
+      - name: Commit and push updated data
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Backfill article_entities (Phase 3) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
+          git push
