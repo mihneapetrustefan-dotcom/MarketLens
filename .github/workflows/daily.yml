@@ -27,7 +27,26 @@ permissions:
   contents: write
 
 concurrency:
-  group: marketlens-data-write
+  # Grup DEDICAT, separat de 'marketlens-data-write' folosit de toate
+  # celelalte workflow-uri (Fazele 3-7, arhivare, reducere baza).
+  #
+  # Motiv: acest pipeline ruleaza de 3 ori pe zi si trebuie sa ramana
+  # la timp. Daca ar imparti grupul cu rulari manuale de cercetare
+  # care dureaza ore intregi (ex. Cache Price Candles, ~2-3 ore),
+  # GitHub Actions pastreaza in coada DOAR cea mai recenta rulare in
+  # asteptare si anuleaza automat orice rulare anterioara neinceputa
+  # din acelasi grup. Rezultat masurat: in timpul unei capturi de
+  # preturi de 2h38m, pipeline-ul zilnic nu a mai rulat deloc timp de
+  # aproape 20 de ore — nu intarziat, ci sarit complet din coada.
+  #
+  # Riscul ramas, acceptat constient: daca acest pipeline si un
+  # workflow de cercetare ar rula chiar in aceeasi secunda, ambele
+  # ar scrie in acelasi asset din Release si ultimul care termina ar
+  # suprascrie rezultatul celuilalt. Este un risc mic (rularile de
+  # cercetare sunt declansate manual, ocazional) si recuperabil
+  # (re-rulare simpla), spre deosebire de a rata actualizari zilnice
+  # timp de o zi intreaga.
+  group: marketlens-daily-pipeline
   cancel-in-progress: false
 
 jobs:
