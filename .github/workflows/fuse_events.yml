@@ -1,0 +1,72 @@
+name: Fuse Events (Phase 5)
+
+# Rulare MANUALA. Ruleaza fuziunea de evenimente peste rapoartele
+# scrise de Faza 4: blocking -> scoring -> decizie -> merge ->
+# corroborare -> contradictii -> cronologie, si scrie evenimentele
+# canonice rezultate.
+#
+# Ruleaza DUPA Populate Events (Phase 4). Faza 4 scrie la nivel de
+# RAPORT (un rand per articol-tip); colapsarea in evenimente canonice
+# se face aici — asta e chiar rostul fazei.
+#
+# Masurat pe corpusul real: 846 rapoarte -> 581 evenimente canonice,
+# +1.15 MB. Rezultatul e reproductibil: verificat identic sub patru
+# valori diferite de PYTHONHASHSEED.
+#
+# Sigur de rulat repetat: id-urile canonice sunt derivate determinist
+# din setul de rapoarte fuzionate, iar randurile ramase din rulari
+# anterioare sunt curatate explicit. Rapoartele din `events` nu sunt
+# niciodata modificate sau sterse de fuziune.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Cate rapoarte (cele mai recente) sa fuzioneze. Gol = toate.'
+        required: false
+        default: ''
+      max_db_mb:
+        description: 'Prag de siguranta MB. Scriptul refuza sa scrie daca proiectia il depaseste.'
+        required: false
+        default: '96'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  fuse-events:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run fusion (dry run first, always logged)
+        run: |
+          ARGS="--max-db-mb ${{ github.event.inputs.max_db_mb }}"
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/fuse_events.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/fuse_events.py $ARGS --apply
+
+      - name: Commit and push updated data
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Fuse events (Phase 5) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
+          git push
