@@ -134,6 +134,14 @@ class BlockingIndex:
         common entity in a busy week) must never make one report's
         processing unbounded. Candidates are ordered by how many
         blocking keys they share, so the most plausible survive the cut.
+
+        The ordering is a TOTAL order, not just by hit count. Ties are
+        broken on the event's fingerprint, which is derived from its
+        content. Without that tiebreak the ranking inherits the
+        iteration order of `self._by_key`'s sets, which varies between
+        processes under string hash randomization — and since fusion
+        grouping depends on candidate order, the same input could then
+        produce different canonical events on different runs.
         """
         keys = blocking_keys_for_report(report, self.bucket_days)
         hit_counts: Dict[str, int] = {}
@@ -141,7 +149,12 @@ class BlockingIndex:
             for event_id in self._by_key.get(key, ()):
                 hit_counts[event_id] = hit_counts.get(event_id, 0) + 1
 
-        ranked = sorted(hit_counts.items(), key=lambda kv: kv[1], reverse=True)[:max_candidates]
+        def rank(item):
+            event_id, hits = item
+            event = self._events.get(event_id)
+            return (-hits, (event.fingerprint or "") if event else "", event_id)
+
+        ranked = sorted(hit_counts.items(), key=rank)[:max_candidates]
         return [self._events[event_id] for event_id in (eid for eid, _ in ranked) if event_id in self._events]
 
     def size(self) -> int:
