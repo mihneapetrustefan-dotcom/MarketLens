@@ -216,3 +216,46 @@ class TestMainDryRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCacheBenchmark(unittest.TestCase):
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.conn = sqlite3.connect(self.db_path)
+        initialize_price_cache_schema(self.conn)
+        self.connector = None  # not used in dry_run=True path
+
+    def tearDown(self):
+        self.conn.close()
+        os.remove(self.db_path)
+
+    def test_empty_anchors_makes_no_calls(self):
+        from scripts.cache_price_candles import cache_benchmark
+        result = cache_benchmark(self.conn, self.connector, [], dry_run=True)
+        self.assertEqual(result, (0, 0, 0, 0))
+
+    def test_dry_run_reports_planned_calls_without_fetching(self):
+        from scripts.cache_price_candles import cache_benchmark
+        anchors = [PUB, PUB.replace(day=2)]
+        daily_calls, daily_rows, minute_calls, minute_rows = cache_benchmark(
+            self.conn, self.connector, anchors, dry_run=True)
+        self.assertEqual(daily_calls, 1)
+        self.assertEqual(minute_calls, 2)  # two distinct days
+        self.assertEqual((daily_rows, minute_rows), (0, 0))  # dry run fetches nothing
+
+    def test_second_call_with_same_anchors_is_fully_cached(self):
+        from scripts.cache_price_candles import cache_benchmark, BENCHMARK_INSTRUMENT_ID
+        from unittest.mock import MagicMock
+        connector = MagicMock()
+        connector.get_daily_candles.return_value = []
+        connector.get_minute_candles.return_value = []
+        anchors = [PUB]
+        cache_benchmark(self.conn, connector, anchors, dry_run=False)
+        daily_calls, _, minute_calls, _ = cache_benchmark(self.conn, connector, anchors, dry_run=False)
+        self.assertEqual((daily_calls, minute_calls), (0, 0))
+
+    def test_benchmark_uses_reserved_instrument_id_not_a_real_instrument(self):
+        from scripts.cache_price_candles import BENCHMARK_INSTRUMENT_ID
+        # Must not collide with any real instrument_id format (inst-<ticker>).
+        self.assertFalse(BENCHMARK_INSTRUMENT_ID.startswith("inst-"))
