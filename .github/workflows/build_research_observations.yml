@@ -1,0 +1,74 @@
+name: Build Research Observations (Phase 7)
+
+# Rulare MANUALA. Converteste fiecare studiu de impact (Faza 6) intr-o
+# observatie de cercetare, despartita explicit in caracteristici
+# (InformationSnapshot, tot ce era cunoscut STRICT INAINTE de momentul
+# de vizibilitate al evenimentului) si etichete (OutcomeSet, tot ce
+# s-a masurat STRICT DUPA acel moment). Vezi docstring-ul scriptului
+# pentru exact ce intra in fiecare parte si de ce.
+#
+# Ruleaza DUPA Build Event Studies (Phase 6, step 2). Nu atinge
+# Polygon si nici price_candle_cache decat pentru a recupera calendarul
+# de zile de tranzactionare necesar etichetelor.
+#
+# Un studiu UNUSABLE tot primeste o observatie aici, marcata invalid —
+# nu e sarita in tacere (spec: observatiile proaste raman vizibile,
+# nu sunt sterse).
+#
+# Sigur de rulat repetat: id-urile de observatie sunt derivate
+# determinist din (event_id, instrument_id).
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '0 = fara limita (toate studiile). N = test rapid pe primele N.'
+        required: false
+        default: '0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  build-observations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build research observations (dry run first, always logged)
+        run: |
+          ARGS=""
+          # 0 inseamna fara limita — vezi cache_price_candles.yml pentru
+          # motivul acestei conventii (GitHub reaplica valoarea default
+          # a campului cand acesta e lasat gol in formular).
+          if [ "${{ github.event.inputs.limit }}" != "0" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/build_research_observations.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/build_research_observations.py $ARGS --apply
+
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
