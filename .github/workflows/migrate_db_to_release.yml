@@ -1,0 +1,89 @@
+name: MIGRATE - Move Database Out Of Git (run once)
+
+# Rulare MANUALA, o SINGURA data. Muta data/marketlens.db din git
+# tracking intr-un GitHub Release asset (limita 2 GB, gratuit), ca
+# repo-ul sa nu mai loveasca plafonul de 100 MB per fisier la fiecare
+# crestere a bazei.
+#
+# CE FACE:
+#   1. Creeaza (sau actualizeaza) un release cu tag-ul 'db-latest' si
+#      incarca baza curenta ca asset.
+#   2. Scoate data/marketlens.db din git tracking (git rm --cached) —
+#      fisierul RAMANE pe disc, doar nu mai e urmarit de git.
+#   3. Adauga data/marketlens.db in .gitignore, ca sa nu fie readaugat
+#      din greseala la un commit viitor.
+#
+# CE NU FACE (deliberat):
+#   Nu curata istoricul git existent. Commit-urile vechi inca contin
+#   versiuni anterioare ale bazei — asta ramane o decizie separata,
+#   explicita, de rescriere de istoric (ireversibila), nu ceva facut
+#   automat aici.
+#
+# DUPA aceasta rulare, toate celelalte workflow-uri care ating baza
+# trebuie sa aiba pasul de download/upload din release (deja adaugat
+# in aceasta sesiune) — altfel nu vor mai gasi data/marketlens.db.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Scrie exact "MIGRATE" ca sa confirmi (actiune unica, greu de anulat).'
+        required: true
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "MIGRATE" ]; then
+            echo "Confirmare lipsa sau incorecta. Scrie exact MIGRATE in campul confirm."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check database is currently tracked
+        run: |
+          if ! git ls-files --error-unmatch data/marketlens.db > /dev/null 2>&1; then
+            echo "data/marketlens.db nu mai e urmarit de git — migrarea a rulat deja probabil."
+            exit 1
+          fi
+          echo "Marime curenta: $(du -h data/marketlens.db | cut -f1)"
+
+      - name: Create release and upload current database
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view db-latest --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release db-latest exista deja — incarc peste asset-ul curent."
+            gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+          else
+            gh release create db-latest data/marketlens.db \
+              --repo ${{ github.repository }} \
+              --title "MarketLens database (rolling asset)" \
+              --notes "Baza de date live, actualizata de fiecare workflow de date. Nu este un release de cod — doar un loc de stocare pentru fisierul SQLite, in afara istoricului git."
+          fi
+
+      - name: Remove database from git tracking
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git rm --cached data/marketlens.db
+          if ! grep -qxF 'data/marketlens.db' .gitignore 2>/dev/null; then
+            echo 'data/marketlens.db' >> .gitignore
+          fi
+          git add .gitignore
+          git commit -m "Migrate database out of git tracking, into Release asset db-latest"
+          git push
+
+      - name: Confirm final state
+        run: |
+          echo "Baza a fost incarcata in Release db-latest."
+          echo "data/marketlens.db nu mai e urmarit de git de acum inainte."
+          echo "Fisierul ramane pe disc local in acest job, dar nu va mai fi comis."
+          ls -la data/marketlens.db
