@@ -46,6 +46,41 @@ if not logger.handlers:
 _BASE_URL = "https://api.polygon.io"
 
 
+def normalize_ticker_for_polygon(ticker: str, asset_class: str) -> Optional[str]:
+    """
+    Convert a MarketLens instrument ticker into the exact symbol
+    Polygon's aggregates endpoint expects.
+
+    Mirrors market_data.py's normalize_ticker_for_yfinance — same
+    reasoning, different provider convention:
+
+    - stocks: bare ticker, unchanged.
+    - crypto: Polygon requires the "X:" prefix plus a quote currency,
+      e.g. "BTC" -> "X:BTCUSD". A bare "BTC" is not a valid Polygon
+      ticker at all (unlike yfinance, which at least resolves it,
+      sometimes to the wrong instrument) — get_daily_candles would
+      simply return an empty result.
+    - bvb: returns None. Polygon's coverage is US/global-listed
+      equities; Bucharest Exchange tickers are not covered on the free
+      tier as of this writing. Same honest gap as yfinance's BVB
+      exclusion — callers must skip rather than guess.
+
+    Args:
+        ticker: bare ticker as stored in `instruments.ticker`.
+        asset_class: instruments.asset_class value — "stocks", "etf",
+            "forex", "crypto", or "bvb".
+
+    Returns:
+        The symbol to query Polygon with, or None if this asset class
+        is not reliably queryable at all.
+    """
+    if asset_class == "crypto":
+        return f"X:{ticker}USD"
+    if asset_class == "bvb":
+        return None
+    return ticker
+
+
 class PolygonConnector:
     """Fetches split/dividend-adjusted daily bars from Polygon.io (Massive) and returns them as Candles."""
 
@@ -145,6 +180,54 @@ class PolygonConnector:
             volume=bar.get("v"),
             adjusted_close=close,   # 'c' is already split/dividend-adjusted when adjusted=true
         )
+
+    def fetch_minute_bars_raw(self, ticker: str, from_moment: datetime, to_moment: datetime) -> Any:
+        """
+        Same as fetch_daily_bars_raw but at 1-minute granularity.
+
+        Polygon's aggregates endpoint takes the same shape for any
+        timespan — only the URL segment changes from 'day' to 'minute'.
+        The free Basic plan includes minute-level history (roughly two
+        years at the time this was written), which is what makes this
+        connector able to replace a cache built against yfinance's
+        60-day intraday limit.
+        """
+        self._rate_limiter.wait()
+        params = urlencode({"adjusted": "true", "sort": "asc", "limit": 5000, "apiKey": self.api_key})
+        from_ms = int(from_moment.timestamp() * 1000)
+        to_ms = int(to_moment.timestamp() * 1000)
+        url = (f"{_BASE_URL}/v2/aggs/ticker/{ticker}/range/1/minute/"
+               f"{from_ms}/{to_ms}?{params}")
+        with urlopen(url, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def get_minute_candles(self, ticker: str, from_moment: datetime, to_moment: datetime) -> List[Candle]:
+        """
+        Fetch and convert minute bars into Candles.
+
+        Same failure contract as get_daily_candles: never raises,
+        returns an empty list on any problem, which becomes a visible
+        data-quality issue upstream rather than a fabricated bar.
+        """
+        if not self.is_configured():
+            return []
+        try:
+            data = self.fetch_minute_bars_raw(ticker, from_moment, to_moment)
+        except Exception as exc:  # noqa: BLE001 — one bad ticker must not break a batch
+            logger.error("Polygon minute fetch failed for '%s': %s", ticker, exc)
+            return []
+
+        if not isinstance(data, dict) or data.get("status") not in ("OK", "DELAYED"):
+            logger.warning("Polygon returned an unexpected status for '%s' (minute): %s",
+                            ticker, data.get("status") if isinstance(data, dict) else type(data))
+            return []
+
+        candles = []
+        for bar in data.get("results") or []:
+            candle = self._bar_to_candle(bar)
+            if candle:
+                candles.append(candle)
+        return candles
 
     def get_daily_candles_batch(self, tickers: List[str], from_date: date, to_date: date) -> Dict[str, List[Candle]]:
         """
