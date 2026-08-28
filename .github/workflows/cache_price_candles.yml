@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       limit_instruments:
-        description: 'Limiteaza la primele N instrumente (test rapid). Gol = toate (~244, ~2-3 ore).'
+        description: '0 = fara limita (proceseaza toate ~244 instrumente, ~2-3 ore). N = test rapid pe primele N.'
         required: false
         default: '5'
       skip_minute:
@@ -64,7 +64,11 @@ jobs:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
         run: |
           ARGS=""
-          if [ -n "${{ github.event.inputs.limit_instruments }}" ]; then
+          # GitHub reaplica valoarea 'default' din YAML cand campul e
+          # lasat gol in formular (nu trimite un sir gol) — deci "gol
+          # = fara limita" nu poate functiona niciodata prin interfata
+          # web. 0 este sentinela explicita pentru "fara limita".
+          if [ "${{ github.event.inputs.limit_instruments }}" != "0" ]; then
             ARGS="$ARGS --limit-instruments ${{ github.event.inputs.limit_instruments }}"
           fi
           if [ "${{ github.event.inputs.skip_minute }}" = "true" ]; then
