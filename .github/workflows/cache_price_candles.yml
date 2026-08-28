@@ -1,0 +1,78 @@
+name: Cache Price Candles (Phase 6, step 1)
+
+# Rulare MANUALA. Aduce si stocheaza in cache candele Polygon.io
+# (zilnice si pe minute) pentru instrumentul principal al fiecarui
+# eveniment canonic. Nu calculeaza niciun studiu de impact — doar
+# pregateste datele de pret de care Phase 6 are nevoie, o singura
+# data, ca sa nu depinda de un apel live de fiecare data cand se
+# recalculeaza un studiu (vezi docstring-ul scriptului pentru motiv).
+#
+# ATENTIE LA DURATA: nivelul gratuit Polygon permite 5 cereri/minut.
+# Pe corpusul actual (244 instrumente distincte) rularea completa
+# face ~760 cereri si dureaza aproximativ 2-3 ORE. Foloseste
+# limit_instruments pentru un test rapid inainte de rularea completa.
+#
+# Necesita secretul POLYGON_API_KEY (cont gratuit, fara card, pe
+# polygon.io sau massive.com).
+on:
+  workflow_dispatch:
+    inputs:
+      limit_instruments:
+        description: 'Limiteaza la primele N instrumente (test rapid). Gol = toate (~244, ~2-3 ore).'
+        required: false
+        default: '5'
+      skip_minute:
+        description: 'true = doar candele zilnice, sare peste cele pe minute (mult mai rapid).'
+        required: false
+        default: 'false'
+      dry_run:
+        description: 'true = arata planul de cereri fara sa apeleze Polygon sau sa scrie.'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  cache-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache price candles
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.limit_instruments }}" ]; then
+            ARGS="$ARGS --limit-instruments ${{ github.event.inputs.limit_instruments }}"
+          fi
+          if [ "${{ github.event.inputs.skip_minute }}" = "true" ]; then
+            ARGS="$ARGS --skip-minute"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python scripts/cache_price_candles.py $ARGS
+
+      - name: Commit and push cached prices
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Cache price candles (Phase 6) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
+          git push
