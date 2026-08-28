@@ -37,6 +37,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -68,11 +75,16 @@ jobs:
       - name: Keep database size under control (safety net)
         run: python scripts/reduce_database_size.py --keep-days 14
 
-      - name: Commit and push updated data + report
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+
+      - name: Commit and push report + archive files (not the database)
         run: |
           git config user.name "marketlens-bot"
           git config user.email "actions@github.com"
-          git add data/ docs/
+          git add data/archives/ docs/
           git diff --staged --quiet || git commit -m "Actualizare automata $(date -u +'%Y-%m-%d %H:%M UTC')"
 
           if git pull --rebase origin main; then
