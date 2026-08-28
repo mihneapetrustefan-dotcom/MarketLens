@@ -1,21 +1,26 @@
 name: MarketLens Daily Pipeline
 
-# Ruleaza de 5 ori pe zi, aliniat cu orele bursei americane (Eastern
-# Time). Orele sunt calculate pentru EST (ora de iarna, UTC-5) — vara
-# vor cadea cu o ora mai devreme fata de intentia initiala.
+# Ruleaza de 3 ori pe zi, aliniat cu bursa americana.
 #
-#   1. Inainte de deschidere (9:00 ET / 14:00 UTC)
-#   2. Pranz (12:00 ET / 17:00 UTC)
-#   3. Ora 15:00 (15:00 ET / 20:00 UTC)
-#   4. Imediat dupa inchidere (16:15 ET / 21:15 UTC)
-#   5. Miezul noptii (00:00 ET / 05:00 UTC)
+# GitHub Actions interpreteaza cron DOAR in UTC si nu urmareste ora de
+# vara. Orele de mai jos sunt alese ca sa fie corecte in AMBELE regimuri
+# (EDT = UTC-4 vara, EST = UTC-5 iarna), nu doar iarna:
+#
+#   1. Inainte de deschidere — 13:00 UTC (9:00 EDT / 8:00 EST)
+#      Deschiderea e la 9:30 ET, adica 13:30 UTC vara si 14:30 iarna.
+#      13:00 UTC ramane inaintea ei tot anul.
+#   2. Pranz              — 16:30 UTC (12:30 EDT / 11:30 EST)
+#   3. Dupa inchidere     — 21:15 UTC (17:15 EDT / 16:15 EST)
+#      Inchiderea e la 16:00 ET, adica 20:00 UTC vara si 21:00 iarna.
+#      21:15 UTC ramane dupa ea tot anul.
+#
+# Redus de la 5 la 3 rulari pentru a incetini cresterea bazei de date.
+# Eliminate: rularea de la 15:00 ET si cea de la miezul noptii.
 on:
   schedule:
-    - cron: '0 14 * * *'
-    - cron: '0 17 * * *'
-    - cron: '0 20 * * *'
+    - cron: '0 13 * * *'
+    - cron: '30 16 * * *'
     - cron: '15 21 * * *'
-    - cron: '0 5 * * *'
   workflow_dispatch: {}
 
 permissions:
@@ -54,9 +59,9 @@ jobs:
 
       # Fereastra de 60 de zile (nu 180): diagnosticul a aratat ca
       # aproape tot volumul provine din articole RECENTE, generate de
-      # aceste 5 rulari zilnice — o fereastra de 180 de zile elibera
-      # doar 87 de articole. Istoricul NU se pierde: tot ce depaseste
-      # 60 de zile ajunge in data/archives/, comprimat si complet.
+      # rularile zilnice — o fereastra de 180 de zile elibera doar 87
+      # de articole. Istoricul NU se pierde: tot ce depaseste 60 de
+      # zile ajunge in data/archives/, comprimat si complet.
       - name: Archive old articles (preserves history, shrinks live DB)
         run: python scripts/archive_old_articles.py --keep-days 60
 
