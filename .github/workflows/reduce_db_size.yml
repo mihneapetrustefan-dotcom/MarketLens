@@ -25,7 +25,28 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p data
-          gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber
+          # Reincearca: 'gh release upload --clobber' dintr-un alt
+          # workflow sterge asset-ul vechi INAINTE sa incarce pe cel
+          # nou, deci exista o fereastra scurta (de obicei sub un
+          # minut) in care asset-ul nu exista deloc. O descarcare care
+          # nimereste exact acea fereastra primeste "no assets to
+          # download" si esueaza imediat, desi nu e o eroare reala —
+          # doar o coliziune de timing intre doua workflow-uri care
+          # ruleaza acum in paralel (fiecare in propriul grup de
+          # concurenta). 5 incercari la 15s acopera confortabil golul.
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
