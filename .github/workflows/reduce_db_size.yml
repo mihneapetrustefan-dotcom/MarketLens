@@ -9,12 +9,23 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
 jobs:
   reduce:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,11 +35,7 @@ jobs:
       - name: Reduce database size
         run: python scripts/reduce_database_size.py
 
-      - name: Commit and push the smaller database
-        run: |
-          git config user.name "marketlens-bot"
-          git config user.email "actions@github.com"
-          git add data/
-          git diff --staged --quiet || git commit -m "Emergency: reduce database size (prune old raw article payloads)"
-          git pull --rebase origin main
-          git push
+      - name: Upload the smaller database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
