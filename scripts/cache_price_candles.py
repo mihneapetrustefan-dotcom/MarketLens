@@ -81,6 +81,66 @@ FORWARD_CALENDAR_DAYS = 35
 MINUTE_MARGIN = timedelta(minutes=65)
 
 
+#: Reserved instrument_id for the market benchmark, used to key its
+#: candles in the SAME price_candle_cache table as real instruments.
+#: SPY is not in `instruments` — that table comes from the company
+#: registry, and an index ETF is not a company — so it needs this
+#: separate, explicit key rather than a fabricated company/security/
+#: instrument chain (spec rule 3: no parallel data model without a
+#: strong reason, and an ETF is not the same kind of thing as a
+#: security tied to a company).
+BENCHMARK_INSTRUMENT_ID = "benchmark-spy"
+BENCHMARK_TICKER = "SPY"
+
+
+def cache_benchmark(conn: sqlite3.Connection, connector: PolygonConnector,
+                    all_anchors: List[datetime], dry_run: bool) -> Tuple[int, int, int, int]:
+    """
+    Cache SPY as the market benchmark, covering every event's window.
+
+    Uses the SAME daily-per-range and minute-per-day logic as
+    per-instrument caching, just keyed under BENCHMARK_INSTRUMENT_ID
+    and spanning ALL events at once rather than one instrument's
+    events — there is only one benchmark series, shared by everything.
+
+    Returns (daily_calls, daily_rows, minute_calls, minute_rows).
+    """
+    if not all_anchors:
+        return (0, 0, 0, 0)
+
+    daily_calls = daily_rows = minute_calls = minute_rows = 0
+
+    d_start = min(all_anchors) - timedelta(days=BASELINE_CALENDAR_DAYS)
+    d_end = max(all_anchors) + timedelta(days=FORWARD_CALENDAR_DAYS)
+    if not is_range_cached(conn, BENCHMARK_INSTRUMENT_ID, "1d", d_start, d_end):
+        daily_calls += 1
+        if not dry_run:
+            candles = connector.get_daily_candles(BENCHMARK_TICKER, d_start.date(), d_end.date())
+            n = store_candles(conn, BENCHMARK_INSTRUMENT_ID, "1d", candles)
+            record_request(conn, BENCHMARK_INSTRUMENT_ID, "1d", d_start, d_end, n)
+            daily_rows += n
+            conn.commit()
+
+    by_day: Dict[str, List[datetime]] = defaultdict(list)
+    for a in all_anchors:
+        by_day[a.date().isoformat()].append(a)
+
+    for _, day_anchors in by_day.items():
+        m_start = min(day_anchors) - MINUTE_MARGIN
+        m_end = max(day_anchors) + MINUTE_MARGIN
+        if is_range_cached(conn, BENCHMARK_INSTRUMENT_ID, "1m", m_start, m_end):
+            continue
+        minute_calls += 1
+        if not dry_run:
+            candles = connector.get_minute_candles(BENCHMARK_TICKER, m_start, m_end)
+            n = store_candles(conn, BENCHMARK_INSTRUMENT_ID, "1m", candles)
+            record_request(conn, BENCHMARK_INSTRUMENT_ID, "1m", m_start, m_end, n)
+            minute_rows += n
+            conn.commit()
+
+    return (daily_calls, daily_rows, minute_calls, minute_rows)
+
+
 def resolve_event_instruments(conn: sqlite3.Connection) -> List[Tuple[str, str, str, str]]:
     """
     One row per canonical event with a resolvable primary instrument:
@@ -257,6 +317,20 @@ def main() -> int:
                 record_request(conn, instrument_id, "1m", m_start, m_end, n)
                 minute_rows += n
                 conn.commit()
+
+    # --- Benchmark (SPY): one shared series covering every event ---
+    all_anchors = [a for entry in by_instrument.values() for a in entry["anchors"]]
+    b_daily_calls, b_daily_rows, b_minute_calls, b_minute_rows = cache_benchmark(
+        conn, connector, all_anchors, args.dry_run)
+    daily_calls += b_daily_calls
+    daily_rows += b_daily_rows
+    minute_calls += b_minute_calls
+    minute_rows += b_minute_rows
+    if b_daily_calls or b_minute_calls:
+        print(f"Benchmark ({BENCHMARK_TICKER}): {b_daily_calls} cerere zilnica, "
+              f"{b_minute_calls} cereri pe minute noi")
+    else:
+        print(f"Benchmark ({BENCHMARK_TICKER}): deja in cache")
 
     print()
     print(f"Cereri zilnice   : {daily_calls:,} noi, {daily_skipped_cached:,} deja in cache")
