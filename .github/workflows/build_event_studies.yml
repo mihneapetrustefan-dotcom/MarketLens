@@ -1,0 +1,67 @@
+name: Build Event Studies (Phase 6, step 2)
+
+# Rulare MANUALA. Calculeaza studii de impact pentru fiecare eveniment
+# canonic cu instrument rezolvabil, citind EXCLUSIV din
+# price_candle_cache (populat de Cache Price Candles) — niciun apel
+# catre Polygon aici. Vezi docstring-ul scriptului pentru motiv
+# (reproductibilitate: un calcul derivat nu trebuie sa depinda de un
+# apel live).
+#
+# Ruleaza DUPA Cache Price Candles (Phase 6, step 1). Fara cache
+# populat, studiile ies UNUSABLE din lipsa de istoric, nu dintr-o
+# eroare.
+#
+# Sigur de rulat repetat: id-urile de studiu sunt derivate determinist
+# din (event_id, instrument_id).
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Cate evenimente (cele mai recente) sa proceseze. Gol = toate.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  build-studies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build event studies (dry run first, always logged)
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/build_event_studies.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/build_event_studies.py $ARGS --apply
+
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
