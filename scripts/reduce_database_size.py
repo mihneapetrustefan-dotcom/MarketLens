@@ -146,13 +146,15 @@ def main() -> int:
     print(f"\nDimensiune fisier DUPA: {human_mb(size_after)}")
     print(f"Redus cu: {human_mb(size_before - size_after)}")
 
-    if size_after > 95 * 1024 * 1024:
-        print("\nATENTIE: fisierul e in continuare aproape de limita GitHub de 100 MB.")
+    # Acelasi prag invechit ca in archive_old_articles.py — vezi
+    # comentariul de acolo. Baza traieste acum intr-un GitHub Release
+    # asset (plafon 2 GB), nu mai e limitata de git la 100 MB.
+    if size_after > 1800 * 1024 * 1024:
+        print("\nATENTIE: fisierul se apropie de limita de 2 GB a GitHub Release asset-ului.")
         print("Verifica raportul de mai sus — daca alt tabel (nu raw_articles) e mare,")
         print("acela trebuie tratat separat, cu grija (nu e curatat automat de acest script).")
-        return 2
 
-    print("\nOK — fisierul e acum sub limita GitHub. Poti relua rularile normale.")
+    print("\nOK — fisierul e verificat. Pipeline-ul continua normal.")
     return 0
 
 
