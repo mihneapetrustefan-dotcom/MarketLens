@@ -7,19 +7,21 @@ PIPELINE THIS SCRIPT CONNECTS
     articles + article_entities (Phase 3, populated by
     backfill_article_entities.py)
         -> EventExtractor.extract_from_article  (Phase 4, deterministic)
-        -> dedup against existing events via find_candidate_events /
-           find_matching_event (Phase 4's own corroboration hook)
-        -> EventRepository.save / add_evidence + link_article
+        -> EventRepository.save + link_article
 
 SCOPE, STATED PLAINLY
 ----------------------
-This is Phase 4 only: per-article deterministic extraction. It reuses
-Phase 4's own duplicate-detection functions (fingerprint + bounded
-candidate window) so that three articles about one earnings report
-become one event with three pieces of evidence, not three events —
-but it does NOT do Phase 5's fuller fusion (source corroboration
-scoring, contradiction handling, the event graph). That distinction
-already exists in the code; this script does not blur it.
+This is Phase 4 only, and it writes at the EVENT REPORT level: one row
+per (article, event_type). Three articles describing the same
+acquisition produce THREE rows here, not one.
+
+That is deliberate and follows the architecture rule that Article,
+Event Report and Canonical Event stay distinct. Deciding that three
+reports describe one occurrence is Phase 5's job (fusion,
+corroboration counting, contradiction detection, lifecycle state) and
+must not be pre-empted by a shortcut at write time — doing so would
+destroy the per-source granularity Phase 5 needs to count independent
+sources at all.
 
 ONLY ARTICLES WITH AT LEAST ONE PHASE 3 ENTITY ARE CONSIDERED, by
 construction: EventExtractor.extract_from_article returns nothing for
@@ -37,13 +39,15 @@ SAFETY
   (raises) an invalid event rather than storing a broken one.
 - --dry-run (the default) resolves and classifies everything and
   reports the outcome without opening a write transaction.
-- Re-running is safe: matching candidates get an added evidence
-  record + article_event_link rather than a duplicate event.
+- Re-running is safe: report ids are derived deterministically from
+  (article_id, event_type), so a second run rewrites the same rows
+  rather than minting new ones.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sqlite3
 import sys
@@ -61,10 +65,22 @@ if SRC not in sys.path:
 from src.data_access.news_schema import initialize_news_schema
 from src.data_access.event_repository import initialize_event_schema, EventRepository
 from src.events.extractor import EventExtractor
-from src.events.fingerprint import find_matching_event
+from src.events.fingerprint import compute_event_fingerprint
 from src.domain.event_models import ArticleEventLink, ArticleEventRelation, EventEvidence
 
 DEFAULT_DB = os.path.join(REPO_ROOT, "data", "marketlens.db")
+
+
+def report_id_for(article_id: str, event_type: str) -> str:
+    """
+    Stable id for one report — one article's claim about one event type.
+
+    Deterministic on purpose: it is what makes re-running this script a
+    no-op instead of a duplicate-generator. See the call site.
+    """
+    digest = hashlib.sha1(f"{article_id}|{event_type}".encode("utf-8")).hexdigest()
+    return f"evt-{digest[:16]}"
+
 
 # Measured on the full eligible corpus (521 new events + participants +
 # evidence + links, plus 325 corroborating evidence rows against
@@ -160,17 +176,10 @@ def main() -> int:
     extractor = EventExtractor(min_confidence=args.min_confidence)
     repo = EventRepository(conn)
 
-    new_events = []          # StructuredEvent objects to save() fresh
-    corroborations = []      # (existing_event_id, evidence, link) to attach
+    reports = []             # one StructuredEvent per (article, event_type)
     filtered_irrelevant = 0
     no_classification = 0
-    below_confidence = 0
     type_counts: Counter = Counter()
-
-    # Track candidates created THIS run so articles processed in the
-    # same pass can corroborate each other, not just events already
-    # on disk from a previous run.
-    session_events = []
 
     for article in articles:
         if not extractor.is_potentially_relevant(article):
@@ -186,29 +195,35 @@ def main() -> int:
             continue
 
         for candidate in candidates:
-            existing_on_disk = repo.find_candidate_events(candidate) if args.apply else []
-            match, reason = find_matching_event(candidate, existing_on_disk + session_events)
+            # DETERMINISTIC REPORT IDENTITY.
+            #
+            # EventExtractor assigns event_id = uuid4(), which is right
+            # for a pure in-memory extractor but makes re-running this
+            # script non-idempotent: every run would mint 846 brand-new
+            # rows. A report IS one article's claim about one event
+            # type, so (article_id, event_type) is its natural key.
+            # Hashing it gives a stable id, and INSERT OR REPLACE in
+            # EventRepository.save then makes re-runs a no-op.
+            candidate.event_id = report_id_for(
+                candidate.evidence[0].article_id, candidate.event_type.value
+            )
+            candidate.fingerprint = compute_event_fingerprint(candidate)
+            reports.append(candidate)
+            type_counts[candidate.event_type.value] += 1
 
-            evidence = candidate.evidence[0]
-            if match:
-                corroborations.append((match.event_id, evidence, reason))
-            else:
-                new_events.append(candidate)
-                session_events.append(candidate)
-                type_counts[candidate.event_type.value] += 1
-
-    total_candidates = len(new_events) + len(corroborations)
     print()
     print(f"Articole irelevante (filtru Tier 1): {filtered_irrelevant:,}")
     print(f"Fara clasificare deterministica    : {no_classification:,}")
-    print(f"Evenimente noi (candidati)         : {len(new_events):,}")
-    print(f"Dovezi corroborante (evenim. existent): {len(corroborations):,}")
+    print(f"Rapoarte de eveniment (Faza 4)     : {len(reports):,}")
     if type_counts:
         print("Pe tip:")
         for t, n in type_counts.most_common():
             print(f"  {t:28s} {n:>6,}")
 
-    projected = size_before + len(new_events) * ESTIMATED_BYTES_PER_EVENT
+    already = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    print(f"Randuri events deja existente      : {already:,}")
+
+    projected = size_before + max(0, len(reports) - already) * ESTIMATED_BYTES_PER_EVENT
     print()
     print(f"Proiectie marime : {projected / 1024 / 1024:.2f} MB (prag {args.max_db_mb:.1f} MB)")
 
@@ -222,7 +237,24 @@ def main() -> int:
         conn.close()
         return 0
 
-    for event in new_events:
+    current_ids = {e.event_id for e in reports}
+    existing_ids = {r[0] for r in conn.execute("SELECT event_id FROM events")}
+    stale = existing_ids - current_ids
+
+    # Rows from a previous run that this run no longer produces. This
+    # matters for the migration off uuid4 report ids: those rows can
+    # never be matched by id again, so without pruning they would sit
+    # in `events` forever as orphans. `articles` and `article_entities`
+    # are untouched — only the derived report rows are rebuilt.
+    for stale_id in stale:
+        for table in ("events", "event_participants", "event_evidence",
+                      "event_instruments", "event_sectors"):
+            conn.execute(f"DELETE FROM {table} WHERE event_id = ?", (stale_id,))
+        conn.execute("DELETE FROM article_event_links WHERE event_id = ?", (stale_id,))
+    if stale:
+        conn.commit()
+
+    for event in reports:
         repo.save(event)
         repo.link_article(ArticleEventLink(
             article_id=event.evidence[0].article_id,
@@ -230,17 +262,10 @@ def main() -> int:
             relation=ArticleEventRelation.CREATES,
         ))
 
-    for event_id, evidence, reason in corroborations:
-        repo.add_evidence(event_id, evidence)
-        repo.link_article(ArticleEventLink(
-            article_id=evidence.article_id,
-            event_id=event_id,
-            relation=ArticleEventRelation.CONFIRMS,
-        ))
-
     conn.close()
     size_after = os.path.getsize(args.db)
-    print(f"SCRIS: {len(new_events):,} evenimente noi, {len(corroborations):,} dovezi corroborante")
+    print(f"SCRIS: {len(reports):,} rapoarte de eveniment"
+          + (f", {len(stale):,} randuri invechite curatate" if stale else ""))
     print(f"Marime dupa: {size_after / 1024 / 1024:.2f} MB "
           f"(+{(size_after - size_before) / 1024 / 1024:.2f} MB)")
     return 0
