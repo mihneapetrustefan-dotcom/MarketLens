@@ -1,0 +1,85 @@
+name: Populate Events (Phase 4)
+
+# Rulare MANUALA. Extrage evenimente structurate din articolele care
+# au deja legaturi de entitati Faza 3 (article_entities), le
+# deduplica impotriva evenimentelor existente (fingerprint + fereastra
+# de timp marginita), si scrie in `events` + tabelele asociate.
+#
+# Ruleaza DUPA Backfill Article Entities (Phase 3) — proceseaza doar
+# articolele care au deja cel putin o entitate rezolvata.
+#
+# Implicit: tot corpusul eligibil, prag de siguranta 96 MB. Masurat
+# pe acest volum: 521 evenimente noi + 325 dovezi corroborante,
+# +1.21 MB.
+#
+# Sigur de rulat repetat: evenimentele noi folosesc INSERT OR REPLACE
+# pe cheie fixa, iar dovezile corroborante pe (event_id, article_id) —
+# o rulare ulterioara peste articole deja procesate nu creeaza
+# evenimente duplicate.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Cate articole (cele mai recente, cu entitati Faza 3) sa proceseze. Gol = tot corpusul eligibil.'
+        required: false
+        default: ''
+      max_db_mb:
+        description: 'Prag de siguranta MB. Scriptul refuza sa scrie daca proiectia il depaseste.'
+        required: false
+        default: '96'
+      since:
+        description: 'Optional: doar articole publicate de la aceasta data ISO incolo (ex: 2026-01-01).'
+        required: false
+        default: ''
+      min_confidence:
+        description: 'Prag minim de incredere pentru pastrarea unui eveniment extras.'
+        required: false
+        default: '0.3'
+
+permissions:
+  contents: write
+
+# Acelasi grup ca in daily.yml si backfill_article_entities.yml: toate
+# trei scriu in data/marketlens.db si fac push. Fara acest grup, doua
+# rulari suprapuse ar putea intra in coliziune pe acelasi commit.
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  populate-events:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run event population (dry run first, always logged)
+        run: |
+          ARGS="--max-db-mb ${{ github.event.inputs.max_db_mb }} --min-confidence ${{ github.event.inputs.min_confidence }}"
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          if [ -n "${{ github.event.inputs.since }}" ]; then
+            ARGS="$ARGS --since ${{ github.event.inputs.since }}"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/populate_events.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/populate_events.py $ARGS --apply
+
+      - name: Commit and push updated data
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Populate events (Phase 4) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
+          git push
