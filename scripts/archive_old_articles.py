@@ -183,9 +183,16 @@ def main() -> int:
     print(f"\nDimensiune fisier DUPA: {human_mb(size_after)}")
     print(f"Redus cu: {human_mb(size_before - size_after)}")
 
-    if size_after > 95 * 1024 * 1024:
-        print("\nATENTIE: fisierul e in continuare aproape de limita GitHub de 100 MB.")
-        return 2
+    # Pragul de 95 MB (limita git de 100 MB) a devenit invalid din
+    # momentul migrarii bazei intr-un GitHub Release asset (plafon
+    # 2 GB), pe 28 august 2026. Pastrat neactualizat, acest prag oprea
+    # pipeline-ul zilnic cu exit code 2 in fiecare zi, exact contrariul
+    # motivului migrarii. Prag nou: 1800 MB, cu marja sub 2 GB. Peste
+    # el, un AVERTISMENT — nu o eroare care opreste pipeline-ul; doar
+    # pragul dur de 2 GB al Release-ului justifica o oprire reala.
+    if size_after > 1800 * 1024 * 1024:
+        print("\nATENTIE: fisierul se apropie de limita de 2 GB a GitHub Release asset-ului.")
+        print("Ramane totusi doar un avertisment — pipeline-ul continua normal.")
 
     print("\nOK — istoricul e pastrat integral, in arhive comprimate sub data/archives/.")
     return 0
