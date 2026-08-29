@@ -1,0 +1,90 @@
+name: Compute Features (Phase 8)
+
+# Rulare MANUALA. Calculeaza cele 24 de caracteristici inginerite
+# (randamente, volatilitate, RSI, drawdown, recenta/noutatea
+# evenimentelor, diversitatea surselor, sentiment) pentru fiecare
+# observatie de cercetare din Faza 7, si le scrie in research_features
+# cu source='phase8_feature_engine'.
+#
+# Randurile scrise de Faza 7 in acelasi tabel (source=
+# 'phase6_event_study') NU sunt atinse — stergerea si rescrierea se
+# fac filtrat pe sursa.
+#
+# Ruleaza DUPA Build Research Observations (Phase 7). Nu face niciun
+# apel de retea, citeste doar din baza.
+#
+# Doua caracteristici (peer.relative_return_5d, peer.dispersion_5d)
+# ies mereu nule pana cand vor exista relatii de peers definite in
+# entity_relationships — vezi TODO(peers) din docstring-ul scriptului.
+# Sunt inregistrate ca incercate-si-indisponibile, nu omise.
+#
+# Sigur de rulat repetat: randurile proprii sunt inlocuite, nu
+# acumulate.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '0 = fara limita (toate observatiile). N = test rapid pe primele N.'
+        required: false
+        default: '0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  compute-features:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          # Reincearca: 'gh release upload --clobber' dintr-un alt
+          # workflow sterge asset-ul vechi INAINTE sa incarce pe cel
+          # nou, deci exista o fereastra scurta in care asset-ul nu
+          # exista deloc.
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compute features (dry run first, always logged)
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.limit }}" != "0" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/compute_features.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/compute_features.py $ARGS --apply
+
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
