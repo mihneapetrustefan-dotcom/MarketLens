@@ -1,0 +1,93 @@
+name: Train Models (Phase 9)
+
+# Rulare MANUALA. Antreneaza un model pe datasetul de cercetare
+# construit de Fazele 7 si 8, il evalueaza pe o portiune de testare
+# separata cronologic, si persista rezultatul IMPREUNA cu comparatiile
+# obligatorii fata de baseline-uri.
+#
+# ATENTIE LA INTERPRETARE: pe datasetul actual (~4 saptamani de
+# observatii, cateva sute de instrumente) acest workflow produce un
+# REZULTAT, nu o CONCLUZIE. Validarea walk-forward ar avea nevoie de
+# ~42 de luni de istoric; nu exista, deci se foloseste o singura
+# impartire cronologica. Evaluarile vor fi aproape sigur marcate
+# "esantion mic - descriptiv only", iar acest marcaj e persistat, nu
+# ascuns.
+#
+# Scopul rularii de acum e sa confirme ca lantul de date functioneaza
+# cap-coada. Daca piata e predictibila e o intrebare la care acest
+# dataset nu poate raspunde.
+#
+# Ruleaza DUPA Compute Features (Phase 8).
+#
+# Sigur de rulat repetat: randurile proprii sunt inlocuite pe cheie.
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: 'Eticheta de modelat (ex. d5.abnormal_return, d1.raw_return).'
+        required: false
+        default: 'd5.abnormal_return'
+      train_fraction:
+        description: 'Fractiunea de observatii (cele mai vechi) folosite la antrenare.'
+        required: false
+        default: '0.7'
+      embargo_days:
+        description: 'Zile de embargo intre antrenare si testare. Minim orizontul etichetei.'
+        required: false
+        default: '6'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  train-models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Train and evaluate (dry run first, always logged)
+        run: |
+          ARGS="--label ${{ github.event.inputs.label }}"
+          ARGS="$ARGS --train-fraction ${{ github.event.inputs.train_fraction }}"
+          ARGS="$ARGS --embargo-days ${{ github.event.inputs.embargo_days }}"
+          echo "=== DRY RUN ==="
+          python scripts/train_models.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/train_models.py $ARGS --apply
+
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
