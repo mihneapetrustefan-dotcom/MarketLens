@@ -102,11 +102,12 @@ EMBARGO_DAYS = 6.0
 
 def load_dataset(conn: sqlite3.Connection, label_name: str
                   ) -> Tuple[List[str], List[List[Optional[float]]], List[Optional[float]],
-                             List[datetime], List[str], Counter]:
+                             List[datetime], List[str], List[str], Counter]:
     """
     Build the design matrix.
 
-    Returns (feature_names, X, Y, cutoffs, cluster_ids, quality_counts).
+    Returns (feature_names, X, Y, cutoffs, cluster_ids, observation_ids,
+    quality_counts).
     Rows are ordered by information_cutoff, oldest first — the
     chronological split depends on that ordering.
     """
@@ -120,7 +121,7 @@ def load_dataset(conn: sqlite3.Connection, label_name: str
     quality_counts = Counter(row[3] for row in observations)
     usable = [row for row in observations if row[3] != "invalid"]
     if not usable:
-        return [], [], [], [], [], quality_counts
+        return [], [], [], [], [], [], quality_counts
 
     observation_ids = [row[0] for row in usable]
     placeholders = ",".join("?" * len(observation_ids))
@@ -159,7 +160,7 @@ def load_dataset(conn: sqlite3.Connection, label_name: str
         labels[observation_id] = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
     feature_names = sorted(numeric_names)
-    X, Y, cutoffs, cluster_ids = [], [], [], []
+    X, Y, cutoffs, cluster_ids, row_observation_ids = [], [], [], [], []
     for observation_id, cutoff_str, cluster_id, _quality in usable:
         if observation_id not in labels or labels[observation_id] is None:
             continue  # no resolved label — cannot train or score on it
@@ -168,8 +169,9 @@ def load_dataset(conn: sqlite3.Connection, label_name: str
         Y.append(labels[observation_id])
         cutoffs.append(datetime.fromisoformat(cutoff_str))
         cluster_ids.append(cluster_id or observation_id)
+        row_observation_ids.append(observation_id)
 
-    return feature_names, X, Y, cutoffs, cluster_ids, quality_counts
+    return feature_names, X, Y, cutoffs, cluster_ids, row_observation_ids, quality_counts
 
 
 def chronological_split(cutoffs: Sequence[datetime], train_fraction: float,
@@ -251,6 +253,31 @@ def persist(conn: sqlite3.Connection, model, evaluation) -> None:
               comparison.baseline_score, comparison.model_score))
 
 
+def persist_predictions(conn: sqlite3.Connection, predictions) -> int:
+    """Store each prediction so a Phase 10 Signal can reference it by id."""
+    for prediction in predictions:
+        conn.execute("""
+            INSERT OR REPLACE INTO predictions (
+                prediction_id, trained_model_id, model_qualified_id, observation_id,
+                predicted_value, predicted_class, class_probabilities_json, confidence,
+                prediction_interval_low, prediction_interval_high, uncertainty_basis,
+                information_cutoff, feature_set_version, predicted_at,
+                is_abstention, abstention_reason
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            prediction.prediction_id, prediction.trained_model_id,
+            prediction.model_qualified_id, prediction.observation_id,
+            prediction.predicted_value, prediction.predicted_class,
+            json.dumps(prediction.class_probabilities) if prediction.class_probabilities else None,
+            prediction.confidence, prediction.prediction_interval_low,
+            prediction.prediction_interval_high, prediction.uncertainty_basis,
+            _iso(prediction.information_cutoff), prediction.feature_set_version,
+            _iso(prediction.predicted_at), int(prediction.is_abstention),
+            prediction.abstention_reason,
+        ))
+    return len(predictions)
+
+
 def _iso(value) -> Optional[str]:
     return value.isoformat() if value else None
 
@@ -273,7 +300,8 @@ def main() -> int:
     conn = sqlite3.connect(args.db)
     initialize_model_schema(conn)
 
-    feature_names, X, Y, cutoffs, cluster_ids, quality_counts = load_dataset(conn, args.label)
+    feature_names, X, Y, cutoffs, cluster_ids, row_observation_ids, quality_counts = load_dataset(
+        conn, args.label)
 
     print(f"Eticheta modelata      : {args.label}")
     print("Observatii pe calitate :")
@@ -334,6 +362,16 @@ def main() -> int:
         feature_names=feature_names, window=window, cluster_count=test_clusters,
     )
 
+    # Predictions on the TEST set only. Training-set predictions are
+    # in-sample and must never become signals — a signal derived from
+    # a prediction the model was fitted on is not evidence of anything.
+    test_observation_ids = [row_observation_ids[i] for i in test_idx]
+    test_cutoffs = [cutoffs[i] for i in test_idx]
+    predictions = engine.predict(model, X_test, test_observation_ids, test_cutoffs)
+    abstentions = sum(1 for p in predictions if p.is_abstention)
+    print(f"Predictii generate (doar set de testare): {len(predictions):,} "
+          f"({abstentions} abtineri)")
+
     metric_name = primary_metric_name(specification.task)
     print()
     print("=== REZULTAT ===")
@@ -366,9 +404,11 @@ def main() -> int:
         return 0
 
     persist(conn, model, evaluation)
+    written_predictions = persist_predictions(conn, predictions)
     conn.commit()
     conn.close()
-    print(f"\nSCRIS: model {model.trained_model_id}, evaluare {evaluation.evaluation_id}")
+    print(f"\nSCRIS: model {model.trained_model_id}, evaluare {evaluation.evaluation_id}, "
+          f"{written_predictions:,} predictii")
     return 0
 
 
