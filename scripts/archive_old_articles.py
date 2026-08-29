@@ -114,7 +114,24 @@ def archive_old_articles(conn: sqlite3.Connection, keep_days: int) -> int:
 
     by_month = defaultdict(list)
     ids_to_delete = []
-    id_column = "id" if "id" in rows[0].keys() else None if rows else None
+    # BUG REPARAT: aceasta linie cauta o coloana numita exact "id".
+    # Tabelul `articles` are cheia primara `article_id`, deci
+    # id_column ramanea None si DELETE-ul de mai jos nu rula NICIODATA
+    # — desi scriptul tiparea "arhivate si sterse". Efectul masurat:
+    # articolele ramaneau in tabelul live si erau re-arhivate la
+    # fiecare rulare (arhiva se deschide in mod append), ajungand la
+    # 7 copii ale aceluiasi articol; 18.986 de linii in arhiva iunie
+    # 2026 pentru doar 3.105 articole reale.
+    #
+    # Se detecteaza acum cheia reala, in ordinea probabilitatii, in
+    # loc sa se presupuna un singur nume.
+    available = set(rows[0].keys()) if rows else set()
+    id_column = next((name for name in ("article_id", "id", "rowid") if name in available), None)
+    if rows and id_column is None:
+        print("NU am gasit o coloana de identificare in 'articles'.")
+        print(f"Coloanele reale sunt: {sorted(available)}")
+        print("Nu sterg nimic — arhivarea fara stergere ar duplica arhivele la fiecare rulare.")
+        return 0
 
     for row in rows:
         moment = parse_timestamp(row[timestamp_column])
@@ -144,12 +161,21 @@ def archive_old_articles(conn: sqlite3.Connection, keep_days: int) -> int:
               f"({human_mb(os.path.getsize(archive_path))})")
         total_archived += len(records)
 
+    deleted = 0
     if id_column and ids_to_delete:
         placeholders = ",".join("?" * len(ids_to_delete))
         conn.execute(f"DELETE FROM articles WHERE {id_column} IN ({placeholders})", ids_to_delete)
         conn.commit()
+        deleted = len(ids_to_delete)
 
-    print(f"\nTotal arhivate si sterse din tabelul live: {total_archived} articole (pastrate ultimele {keep_days} zile)")
+    # Raporteaza ce s-a intamplat REAL. Versiunea anterioara spunea
+    # mereu "arhivate si sterse", chiar si cand nu se stergea nimic.
+    print(f"\nTotal arhivate: {total_archived} articole "
+          f"(pastrate ultimele {keep_days} zile)")
+    print(f"Total sterse din tabelul live: {deleted}")
+    if total_archived and not deleted:
+        print("ATENTIE: s-a arhivat fara sa se stearga nimic — la urmatoarea rulare "
+              "aceleasi articole vor fi re-arhivate. Verifica coloana de identificare.")
     return total_archived
 
 
