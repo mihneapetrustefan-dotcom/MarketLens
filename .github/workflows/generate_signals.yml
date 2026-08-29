@@ -1,0 +1,105 @@
+name: Generate Signals (Phase 10)
+
+# Rulare MANUALA. Transforma predictiile Fazei 9 in semnale
+# structurate, validate si explicabile, folosind contextul din Fazele
+# 5, 7 si 8.
+#
+# NU plaseaza ordine, nu calculeaza marimi de pozitie, nu atinge
+# niciun broker. Faza 10 produce decizii/semnale; alocarea si riscul
+# apartin Fazei 11.
+#
+# COMPORTAMENT ASTEPTAT PE DATASETUL ACTUAL: aproape toate semnalele
+# vor fi SUPRIMATE, cu motivul "small_sample_evidence" — Faza 9 a
+# marcat evaluarile ca avand esantion efectiv sub prag. Asta e
+# comportamentul corect, nu o eroare: semnale construite pe dovezi
+# subtiri sunt retinute vizibil, nu emise in tacere. Se va relaxa
+# singur pe masura ce istoricul se acumuleaza.
+#
+# Semnalele suprimate SUNT stocate, cu motivele lor. Un candidat nu e
+# niciodata aruncat in tacere.
+#
+# Ruleaza DUPA Train Models (Phase 9).
+#
+# Sigur de rulat repetat: identitatea semnalului e derivata din
+# (strategie, versiune, instrument, stare informationala), deci
+# aceeasi informatie nu produce un al doilea semnal.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '0 = fara limita (toate observatiile cu predictii). N = test rapid.'
+        required: false
+        default: '0'
+      min_confidence:
+        description: 'Pragul minim de incredere sub care semnalul e suprimat.'
+        required: false
+        default: '0.25'
+      min_strength:
+        description: 'Pragul minim de forta sub care semnalul e suprimat.'
+        required: false
+        default: '0.10'
+      allow_small_sample:
+        description: 'true = NU suprima semnalele bazate pe esantion mic. Foloseste cu grija.'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  generate-signals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate signals (dry run first, always logged)
+        run: |
+          ARGS="--min-confidence ${{ github.event.inputs.min_confidence }}"
+          ARGS="$ARGS --min-strength ${{ github.event.inputs.min_strength }}"
+          if [ "${{ github.event.inputs.limit }}" != "0" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          if [ "${{ github.event.inputs.allow_small_sample }}" = "true" ]; then
+            ARGS="$ARGS --allow-small-sample"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/generate_signals.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/generate_signals.py $ARGS --apply
+
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
