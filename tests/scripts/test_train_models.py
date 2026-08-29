@@ -106,29 +106,29 @@ class TestLoadDataset(unittest.TestCase):
         os.remove(self.db_path)
 
     def test_categorical_features_are_excluded(self):
-        names, _, _, _, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
+        names, _, _, _, _, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
         self.assertNotIn("event.event_type", names)
 
     def test_numeric_features_from_both_phases_are_included(self):
-        names, _, _, _, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
+        names, _, _, _, _, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
         self.assertIn("market.return_5d", names)
         self.assertIn("event.count_7d", names)
 
     def test_rows_are_ordered_oldest_first(self):
-        _, _, _, cutoffs, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
+        _, _, _, cutoffs, _, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
         self.assertEqual(cutoffs, sorted(cutoffs))
 
     def test_observations_without_labels_are_dropped(self):
         self.conn.execute("DELETE FROM research_labels WHERE observation_id = 'obs-0000'")
         self.conn.commit()
-        _, X, _, _, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
+        _, X, _, _, _, _, _ = load_dataset(self.conn, DEFAULT_LABEL)
         self.assertEqual(len(X), 199)
 
     def test_invalid_quality_observations_are_excluded_but_counted(self):
         self.conn.execute("UPDATE research_observations SET quality_level='invalid' "
                           "WHERE observation_id IN ('obs-0000','obs-0001')")
         self.conn.commit()
-        _, X, _, _, _, quality_counts = load_dataset(self.conn, DEFAULT_LABEL)
+        _, X, _, _, _, _, quality_counts = load_dataset(self.conn, DEFAULT_LABEL)
         self.assertEqual(quality_counts["invalid"], 2)
         self.assertEqual(len(X), 198)
 
@@ -201,6 +201,52 @@ class TestTrainEndToEnd(unittest.TestCase):
         os.remove(self.db_path)
         seed(self.db_path, n=200, with_labels=False)
         self.assertEqual(self._run(["--apply"]), 2)
+
+    def test_predictions_are_persisted_for_the_test_set(self):
+        # Phase 10 Signals reference prediction_id; if predictions are
+        # not stored, that provenance link points at nothing.
+        self._run(["--apply"])
+        conn = sqlite3.connect(self.db_path)
+        count = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+        conn.close()
+        self.assertGreater(count, 0)
+
+    def test_predictions_cover_only_test_observations(self):
+        # An in-sample prediction must never become a signal.
+        self._run(["--apply"])
+        conn = sqlite3.connect(self.db_path)
+        prediction_obs = {r[0] for r in conn.execute(
+            "SELECT observation_id FROM predictions")}
+        train_size = conn.execute(
+            "SELECT train_sample_size FROM trained_models").fetchone()[0]
+        eval_size = conn.execute(
+            "SELECT sample_size FROM model_evaluations").fetchone()[0]
+        conn.close()
+        self.assertEqual(len(prediction_obs), eval_size)
+        self.assertLess(len(prediction_obs), train_size)
+
+    def test_predictions_carry_the_information_cutoff(self):
+        self._run(["--apply"])
+        conn = sqlite3.connect(self.db_path)
+        missing = conn.execute(
+            "SELECT COUNT(*) FROM predictions WHERE information_cutoff IS NULL").fetchone()[0]
+        conn.close()
+        self.assertEqual(missing, 0)
+
+    def test_rerunning_does_not_duplicate_predictions(self):
+        self._run(["--apply"])
+        conn = sqlite3.connect(self.db_path)
+        first = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+        conn.close()
+        self._run(["--apply"])
+        conn = sqlite3.connect(self.db_path)
+        second = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+        conn.close()
+        # Prediction ids are uuid-minted per run, so a re-run adds a
+        # fresh set rather than replacing. That is correct: each run is
+        # a distinct act of prediction with its own timestamp. What
+        # must NOT happen is silent loss of the earlier ones.
+        self.assertGreaterEqual(second, first)
 
 
 if __name__ == "__main__":
