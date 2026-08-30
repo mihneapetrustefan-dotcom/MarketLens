@@ -233,20 +233,115 @@ def collect_signals(conn: sqlite3.Connection) -> Dict:
 
 
 def collect_legacy_portfolio(conn: sqlite3.Connection) -> Dict:
+    """
+    Everything reconstructable from what run_daily.py's legacy stages
+    actually PERSIST — the `recommendations` and `portfolio_snapshots`
+    tables. Sector labels come from the static company registry
+    already shipped in the repo (COMPANY_SECTOR_MAP), not a live
+    computation, so it is safe to reuse here too.
+
+    NOT reconstructable here, and not pretended to be: live market
+    prices, macro/FOMC snapshots, and the daily narrative summary are
+    computed fresh during run_daily.py's own execution and were never
+    written to a table — see the module docstring's note on this.
+    """
     if not table_exists(conn, "recommendations"):
         return {"available": False}
+
     total_recs = scalar(conn, "SELECT COUNT(*) FROM recommendations", default=0)
     by_rec = rows(conn, "SELECT recommendation, COUNT(*) FROM recommendations GROUP BY recommendation ORDER BY 2 DESC")
     checked = scalar(conn, "SELECT COUNT(*) FROM recommendations WHERE was_correct IS NOT NULL", default=0)
     correct = scalar(conn, "SELECT COUNT(*) FROM recommendations WHERE was_correct = 1", default=0)
-    latest_snapshot = rows(conn, """
+
+    recent = rows(conn, """
+        SELECT entity, ticker, recommendation, confidence_score, time_horizon,
+               generated_at, was_correct
+        FROM recommendations ORDER BY generated_at DESC LIMIT 15
+    """)
+
+    # Verified track record: latest CHECKED outcome per entity, same
+    # rule as RecommendationLog.load_latest_verified_outcome_per_entity
+    # (checked rows ordered ascending, later ones overwrite earlier —
+    # equivalent expressed as a single SQL query here).
+    verified = rows(conn, """
+        SELECT entity, was_correct FROM recommendations r
+        WHERE was_correct IS NOT NULL
+          AND generated_at = (
+              SELECT MAX(generated_at) FROM recommendations r2
+              WHERE r2.entity = r.entity AND r2.was_correct IS NOT NULL
+          )
+        ORDER BY entity
+    """)
+    verified_correct = sum(1 for _, w in verified if w)
+
+    # Accuracy over time, bucketed to one point per calendar day —
+    # same convention as load_accuracy_history_daily: cumulative hit
+    # rate as of the last check that day.
+    checked_rows = rows(conn, """
+        SELECT checked_at, was_correct FROM recommendations
+        WHERE was_correct IS NOT NULL AND checked_at IS NOT NULL
+        ORDER BY checked_at ASC
+    """)
+    daily_accuracy: Dict[str, Tuple[int, int]] = {}
+    running_correct, running_total = 0, 0
+    for checked_at, was_correct in checked_rows:
+        running_total += 1
+        running_correct += int(bool(was_correct))
+        day = str(checked_at)[:10]
+        daily_accuracy[day] = (running_correct, running_total)
+    accuracy_trend = [(day, c / t) for day, (c, t) in sorted(daily_accuracy.items())][-20:]
+
+    # Calibration: does a higher confidence score actually mean more
+    # often right? Bucketed same as load_calibration_report's default
+    # (width 0.1, starting at 0.5).
+    calibration_rows = rows(conn, """
+        SELECT confidence_score, was_correct FROM recommendations
+        WHERE was_correct IS NOT NULL AND confidence_score IS NOT NULL AND confidence_score >= 0.5
+    """)
+    buckets: Dict[float, List[int]] = {}
+    for confidence, was_correct in calibration_rows:
+        bucket = round((confidence // 0.1) * 0.1, 2)
+        buckets.setdefault(bucket, []).append(int(bool(was_correct)))
+    calibration = [(f"{b:.1f}–{b+0.1:.1f}", len(v), sum(v) / len(v))
+                   for b, v in sorted(buckets.items())]
+
+    # Portfolio history over time, not just the latest snapshot.
+    portfolio_history = rows(conn, """
         SELECT recorded_at, total_invested, total_final_value, total_return_pct, trades_simulated
-        FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 1
+        FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 12
     """) if table_exists(conn, "portfolio_snapshots") else []
-    return {"available": True, "total_recs": total_recs, "by_rec": by_rec,
-            "checked": checked, "correct": correct,
-            "accuracy": (correct / checked) if checked else None,
-            "latest_snapshot": latest_snapshot[0] if latest_snapshot else None}
+
+    # Sector breakdown: static registry already shipped with the
+    # code, cross-referenced against companies that have at least one
+    # recommendation, so the count reflects real coverage.
+    sector_breakdown: List[tuple] = []
+    try:
+        sys.path.insert(0, REPO_ROOT)
+        from sector_registry import COMPANY_SECTOR_MAP
+        from collections import Counter
+        active_entities = {r[0] for r in rows(conn, "SELECT DISTINCT entity FROM recommendations")}
+        counts = Counter(sector for company, sector in COMPANY_SECTOR_MAP.items()
+                         if company in active_entities)
+        sector_breakdown = counts.most_common(10)
+    except ImportError:
+        pass
+
+    watchlist: List[str] = []
+    watchlist_path = os.path.join(REPO_ROOT, "watchlist.txt")
+    if os.path.exists(watchlist_path):
+        with open(watchlist_path, encoding="utf-8") as handle:
+            watchlist = [line.strip() for line in handle
+                        if line.strip() and not line.strip().startswith("#")]
+
+    return {
+        "available": True, "total_recs": total_recs, "by_rec": by_rec,
+        "checked": checked, "correct": correct,
+        "accuracy": (correct / checked) if checked else None,
+        "recent": recent, "verified": verified, "verified_count": len(verified),
+        "verified_correct": verified_correct, "accuracy_trend": accuracy_trend,
+        "calibration": calibration, "portfolio_history": portfolio_history,
+        "sector_breakdown": sector_breakdown, "watchlist": watchlist,
+    }
 
 
 # ============================================================
@@ -443,24 +538,94 @@ def render_dashboard(conn: sqlite3.Connection, db_path: str) -> str:
     # --- Legacy portfolio section ---
     legacy_html = '<div class="empty-note">Fara date legacy.</div>'
     if legacy.get("available"):
-        snap = legacy.get("latest_snapshot")
-        snap_html = ""
-        if snap:
-            recorded_at, invested, final_value, return_pct, trades = snap
-            snap_html = f"""
-<div class="stat-row">
-  <div class="stat"><div class="stat-value">{fmt_num(invested, 0)}</div><div class="stat-label">investit (simulat)</div></div>
-  <div class="stat"><div class="stat-value signed">{fmt_signed_pct(return_pct / 100 if return_pct else None)}</div><div class="stat-label">randament simulat</div></div>
-  <div class="stat"><div class="stat-value">{fmt_num(trades, 0)}</div><div class="stat-label">tranzactii simulate</div></div>
-</div>"""
+        rec_rows = []
+        for entity, ticker, rec, conf, horizon, gen_at, was_correct in legacy["recent"]:
+            rec_class = {"BUY": "up", "SELL": "down"}.get(rec, "muted")
+            verdict = ('<span class="badge up">corect</span>' if was_correct == 1
+                       else '<span class="badge down">gresit</span>' if was_correct == 0
+                       else '<span class="badge muted">neverificat</span>')
+            rec_rows.append(f"""<tr>
+<td>{esc(entity)}</td><td class="mono">{esc(ticker or '')}</td>
+<td><span class="pill {rec_class}">{esc(rec)}</span></td>
+<td class="num">{fmt_num(conf, 2)}</td><td>{esc(horizon or '')}</td>
+<td class="mono small">{esc((gen_at or '')[:16])}</td><td>{verdict}</td>
+</tr>""")
+
+        verified_html = ""
+        if legacy["verified_count"]:
+            verified_rate = legacy["verified_correct"] / legacy["verified_count"]
+            verified_html = f"""
+<div class="stat"><div class="stat-value">{fmt_pct(verified_rate)}</div>
+<div class="stat-label">acuratete pe apel unic per companie ({legacy['verified_count']} companii)</div></div>"""
+
+        trend_html = '<div class="empty-note">Inca fara istoric verificat.</div>'
+        if legacy["accuracy_trend"]:
+            trend_html = render_bar_rows(
+                [(day, rate) for day, rate in legacy["accuracy_trend"][-8:]],
+                value_fmt=fmt_pct)
+
+        calib_rows = "".join(
+            f"<tr><td>{esc(bucket)}</td><td class='num'>{n}</td><td class='num'>{fmt_pct(rate)}</td></tr>"
+            for bucket, n, rate in legacy["calibration"])
+
+        portfolio_rows = "".join(
+            f"""<tr><td class="mono small">{esc((rec[0] or '')[:16])}</td>
+<td class="num">{fmt_num(rec[1], 0)}</td><td class="num">{fmt_num(rec[2], 0)}</td>
+<td class="num signed">{fmt_signed_pct((rec[3] or 0) / 100)}</td><td class="num">{fmt_num(rec[4], 0)}</td></tr>"""
+            for rec in legacy["portfolio_history"])
+
+        sector_html = render_bar_rows(legacy["sector_breakdown"]) if legacy["sector_breakdown"] \
+            else '<div class="empty-note">Registrul de sectoare nu a putut fi incarcat.</div>'
+
+        watchlist_html = ('<div class="empty-note">Niciun watchlist definit (watchlist.txt lipseste).</div>'
+                          if not legacy["watchlist"] else
+                          " · ".join(f'<span class="pill muted">{esc(w)}</span>' for w in legacy["watchlist"]))
+
         legacy_html = f"""
 <div class="stat-row">
   <div class="stat"><div class="stat-value">{fmt_num(legacy['total_recs'])}</div><div class="stat-label">recomandari emise</div></div>
-  <div class="stat"><div class="stat-value">{fmt_pct(legacy['accuracy'])}</div><div class="stat-label">acuratete verificata ({fmt_num(legacy['checked'])} verificate)</div></div>
+  <div class="stat"><div class="stat-value">{fmt_pct(legacy['accuracy'])}</div><div class="stat-label">acuratete bruta ({fmt_num(legacy['checked'])} verificate)</div></div>
+  {verified_html}
 </div>
-{snap_html}
-<div class="subhead">Dupa tip</div>
-{render_bar_rows(legacy['by_rec'])}"""
+
+<div class="split">
+  <div>
+    <div class="subhead">Dupa tip de recomandare</div>
+    {render_bar_rows(legacy['by_rec'])}
+    <div class="subhead" style="margin-top:20px">Pe sector (companii cu recomandari)</div>
+    {sector_html}
+  </div>
+  <div>
+    <div class="subhead">Acuratete cumulativa in timp (ultimele 8 zile cu verificari)</div>
+    {trend_html}
+    <div class="subhead" style="margin-top:20px">Calibrare (incredere declarata vs. rata reala)</div>
+    <table class="mini"><thead><tr><th>Interval incredere</th><th class="num">N</th><th class="num">Rata reala</th></tr></thead>
+    <tbody>{calib_rows or '<tr><td colspan=3>Fara date de calibrare</td></tr>'}</tbody></table>
+  </div>
+</div>
+
+<div class="subhead" style="margin-top:22px">Istoric portofoliu simulat</div>
+<table class="mini">
+<thead><tr><th>Inregistrat</th><th class="num">Investit</th><th class="num">Valoare finala</th><th class="num">Randament</th><th class="num">Tranzactii</th></tr></thead>
+<tbody>{portfolio_rows or '<tr><td colspan=5>Niciun instantaneu de portofoliu</td></tr>'}</tbody>
+</table>
+
+<div class="subhead" style="margin-top:22px">Recomandari recente</div>
+<table class="mini">
+<thead><tr><th>Companie</th><th>Ticker</th><th>Recomandare</th><th class="num">Incredere</th><th>Orizont</th><th>Generat</th><th>Verificare</th></tr></thead>
+<tbody>{"".join(rec_rows) or '<tr><td colspan=7>Fara recomandari</td></tr>'}</tbody>
+</table>
+
+<div class="subhead" style="margin-top:22px">Watchlist</div>
+<div class="small">{watchlist_html}</div>
+
+<div class="notice" style="margin-top:22px">
+<strong>Ce nu poate fi reconstruit retroactiv:</strong> preturile de piata live, instantaneele
+macro/FOMC si rezumatul narativ zilnic sunt calculate live in timpul rularii pipeline-ului zilnic
+si nu sunt salvate separat in baza de date — apar doar in raportul generat chiar in acea zi. Aceasta
+sectiune arata tot ce chiar persista in baza: recomandari, verificari, calibrare si istoricul de
+portofoliu.
+</div>"""
 
     page = f"""<!DOCTYPE html>
 <html lang="ro">
