@@ -61,6 +61,7 @@ SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
+from src.data_access.model_schema import initialize_model_schema
 from src.data_access.signal_schema import initialize_signal_schema
 from src.data_access.signal_repository import SignalRepository
 from src.domain.model_models import Prediction
@@ -219,13 +220,28 @@ def main() -> int:
 
     conn = sqlite3.connect(args.db)
     initialize_signal_schema(conn)
+    # Phase 9's schema is created here too, defensively: this script
+    # READS `predictions`, and a raw "no such table" from SQLite is a
+    # much worse error message than the explicit check below. Creating
+    # it is harmless (IF NOT EXISTS) and makes the real problem —
+    # "Phase 9 has not run yet" — say so plainly.
+    initialize_model_schema(conn)
     repository = SignalRepository(conn)
     repository.save_strategy(STRATEGY)
 
+    prediction_count = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+    if prediction_count == 0:
+        print("Nicio predictie in baza.")
+        print("Ruleaza intai 'Train Models (Phase 9)' — acesta populeaza tabelul")
+        print("`predictions`, din care Faza 10 isi construieste semnalele.")
+        conn.close()
+        return 2
+
     contexts = load_contexts(conn, args.limit)
+    print(f"Predictii in baza: {prediction_count:,}")
     print(f"Contexte de generare (observatii cu predictii): {len(contexts):,}")
     if not contexts:
-        print("Nicio predictie in baza. Ruleaza intai Train Models (Phase 9).")
+        print("Predictiile existente nu au observatii corespunzatoare cu information_cutoff.")
         conn.close()
         return 2
 
