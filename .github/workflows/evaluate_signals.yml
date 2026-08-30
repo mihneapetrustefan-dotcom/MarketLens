@@ -1,0 +1,85 @@
+name: Evaluate Signals (Phase 10)
+
+# Rulare MANUALA. Compara semnalele stocate cu ce s-a intamplat de
+# fapt (etichetele Fazei 7), calculeaza evaluari agregate cu baseline
+# obligatoriu, si genereaza pagina de inspectie docs/signals.html.
+#
+# REGULA CENTRALA: o eticheta care s-a rezolvat LA SAU INAINTE de
+# cutoff-ul informational al semnalului nu e punctata deloc — ar
+# masura memorie, nu predictie. Astfel de perechi sunt refuzate
+# explicit si numarate in log, nu doar avertizate.
+#
+# Fiecare rata de succes vine insotita de un baseline (regula naiva
+# "mereu directia majoritara"), din acelasi motiv ca in Faza 9: o rata
+# de 55% nu inseamna nimic daca piata a urcat in 55% din cazuri.
+#
+# ASTEPTARI PE DATASETUL ACTUAL: aproape toate cohortele vor fi
+# marcate "esantion mic" (sub 30 de observatii) si deci descriptive,
+# nu concluzive. Se relaxeaza singur pe masura ce se acumuleaza
+# istoric.
+#
+# Ruleaza DUPA Generate Signals (Phase 10).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  evaluate-signals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Evaluate signals (dry run first, always logged)
+        run: |
+          echo "=== DRY RUN ==="
+          python scripts/evaluate_signals.py
+          echo "=== APPLY ==="
+          python scripts/evaluate_signals.py --apply
+
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+
+      - name: Commit the inspection page
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add docs/signals.html
+          git diff --staged --quiet || git commit -m "Update signal inspection page (Phase 10) $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
+          git push
