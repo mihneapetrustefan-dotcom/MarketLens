@@ -1,0 +1,66 @@
+name: Rebuild Dashboard (All Phases)
+
+# Rulare MANUALA. Genereaza docs/index.html din NOU, folosind un
+# script separat de generatorul original (DashboardGenerator), care
+# citeste EXCLUSIV din pipeline-ul vechi. Acest script nou citeste din
+# toate tabelele — Fazele 1-10 — si degradeaza sectiune cu sectiune
+# cand o faza nu a rulat inca, in loc sa afiseze date inventate.
+#
+# ATENTIE: aceasta rulare SUPRASCRIE docs/index.html. Pipeline-ul
+# zilnic (daily.yml) inca genereaza propriul sau raport, cu
+# generatorul vechi, la fiecare rulare — daca acesta ruleaza dupa
+# aceasta actualizare manuala, va suprascrie noul panou. Ramane o
+# decizie separata daca vrei sa faci acest panou permanent
+# (inlocuind pasul de raport din daily.yml).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  rebuild-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build comprehensive dashboard
+        run: python scripts/build_dashboard.py
+
+      - name: Commit the new dashboard
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add docs/index.html
+          git diff --staged --quiet || git commit -m "Rebuild dashboard covering all phases $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
+          git push
