@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarketLens — Semnale (Faza 10)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing:border-box; }
+body { font-family:'Source Sans 3',Georgia,serif; background:#0d0c0a; color:#eae6da; margin:0; }
+.masthead { text-align:center; border-bottom:4px double #eae6da; padding:26px 20px 14px; }
+.masthead h1 { font-family:'Playfair Display',serif; font-size:34px; font-weight:900; margin:0; color:#f5f1e6; }
+.masthead .sub { font-size:11px; letter-spacing:3px; text-transform:uppercase; color:#8c8470; margin-top:6px; }
+.wrap { max-width:1200px; margin:0 auto; padding:22px 18px 60px; }
+.notice { border:1px solid #5a4a2a; background:#1a1710; padding:14px 16px; margin:18px 0; font-size:13px; line-height:1.6; color:#cdc5ad; }
+.notice strong { color:#d4915a; }
+h2 { font-family:'Playfair Display',serif; font-size:20px; margin:30px 0 10px; color:#f5f1e6; border-bottom:1px solid #33301f; padding-bottom:6px; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:#8c8470; border-bottom:1px solid #33301f; padding:8px 6px; }
+td { padding:8px 6px; border-bottom:1px solid #1e1c14; vertical-align:top; }
+td.num { text-align:right; font-variant-numeric:tabular-nums; }
+.mono { font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+.small { font-size:12px; color:#b6ae97; }
+.reason { color:#c07a4a; font-size:11px; margin-top:3px; }
+.badge { display:inline-block; padding:1px 7px; border-radius:2px; font-size:10px; letter-spacing:.8px; text-transform:uppercase; }
+.badge.ok { background:#22331f; color:#8fbf7a; }
+.badge.warn { background:#33291f; color:#d4915a; }
+.dir { font-weight:600; }
+.dir.long { color:#8fbf7a; } .dir.short { color:#cf7a6a; }
+.dir.neutral, .dir.no_signal { color:#8c8470; }
+.foot { margin-top:34px; font-size:11px; color:#6e6857; text-align:center; }
+</style>
+</head>
+<body>
+<div class="masthead">
+  <h1>Semnale</h1>
+  <div class="sub">MarketLens · Faza 10 · pagina de inspectie</div>
+</div>
+<div class="wrap">
+
+<div class="notice">
+<strong>Aceasta pagina este doar pentru inspectie.</strong> Nu contine ordine, marimi de
+pozitie sau actiuni de tranzactionare. Un semnal este o afirmatie despre un instrument,
+nu o recomandare de a tranzactiona; alocarea si riscul apartin unei faze ulterioare.
+<br><br>
+Semnalele <em>suprimate</em> sunt afisate deliberat alaturi de cele active, cu motivele lor.
+O pagina care ar arata doar semnalele trecute de validare ar ascunde cat de selectiv
+este de fapt sistemul. Evaluarile marcate <span class="badge warn">esantion mic</span>
+(sub 30 observatii) sunt descriptive, nu concluzive.
+</div>
+
+<p class="small">Stare curenta: suppressed: 5</p>
+
+<h2>Evaluari</h2>
+<table>
+<thead><tr><th>Cohorta</th><th>Valoare</th><th>Orizont</th><th>N</th>
+<th>Rata de succes</th><th>Baseline</th><th>Bate baseline</th><th>Randament mediu</th></tr></thead>
+<tbody><tr>
+<td>confidence_bucket</td><td>very_low</td><td>d1</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0329</td>
+</tr>
+<tr>
+<td>confidence_bucket</td><td>very_low</td><td>d5</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">0.600</td>
+<td class="num">0.600</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0174</td>
+</tr>
+<tr>
+<td>event_type</td><td>earnings</td><td>d1</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0253</td>
+</tr>
+<tr>
+<td>event_type</td><td>earnings</td><td>d5</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0217</td>
+</tr>
+<tr>
+<td>event_type</td><td>litigation</td><td>d1</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0701</td>
+</tr>
+<tr>
+<td>event_type</td><td>litigation</td><td>d5</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0940</td>
+</tr>
+<tr>
+<td>event_type</td><td>partnership</td><td>d1</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0333</td>
+</tr>
+<tr>
+<td>event_type</td><td>partnership</td><td>d5</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0229</td>
+</tr>
+<tr>
+<td>event_type</td><td>product_launch</td><td>d1</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0340</td>
+</tr>
+<tr>
+<td>event_type</td><td>product_launch</td><td>d5</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">0.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">-0.0330</td>
+</tr>
+<tr>
+<td>event_type</td><td>regulatory_action</td><td>d1</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0019</td>
+</tr>
+<tr>
+<td>event_type</td><td>regulatory_action</td><td>d5</td>
+<td class="num">1 <span class="badge warn">esantion mic</span></td>
+<td class="num">0.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">-0.0184</td>
+</tr>
+<tr>
+<td>overall</td><td>all</td><td>d1</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0329</td>
+</tr>
+<tr>
+<td>overall</td><td>all</td><td>d5</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">0.600</td>
+<td class="num">0.600</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0174</td>
+</tr>
+<tr>
+<td>overall</td><td>directional_only</td><td>d1</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0329</td>
+</tr>
+<tr>
+<td>overall</td><td>directional_only</td><td>d5</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">0.600</td>
+<td class="num">0.600</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0174</td>
+</tr>
+<tr>
+<td>strategy</td><td>ml_directional</td><td>d1</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">1.000</td>
+<td class="num">1.000</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0329</td>
+</tr>
+<tr>
+<td>strategy</td><td>ml_directional</td><td>d5</td>
+<td class="num">5 <span class="badge warn">esantion mic</span></td>
+<td class="num">0.600</td>
+<td class="num">0.600</td>
+<td><span class="badge warn">nu</span></td>
+<td class="num">0.0174</td>
+</tr></tbody>
+</table>
+
+<h2>Motive de suprimare</h2>
+<table>
+<thead><tr><th>Motiv</th><th>Numar</th></tr></thead>
+<tbody><tr><td>low_confidence</td><td class="num">5</td></tr>
+<tr><td>small_sample_evidence</td><td class="num">5</td></tr>
+<tr><td>stale_prediction</td><td class="num">5</td></tr></tbody>
+</table>
+
+<h2>Semnale recente</h2>
+<table>
+<thead><tr><th>Instrument</th><th>Directie</th><th>Stare</th><th>Forta</th><th>Incredere</th>
+<th>Randament asteptat</th><th>Acord</th><th>Cutoff informational</th><th>Explicatie</th></tr></thead>
+<tbody><tr>
+<td class="mono">crypto-avax</td>
+<td><span class="dir long">long</span></td>
+<td><span class="badge warn">suppressed</span></td>
+<td class="num">0.851</td>
+<td class="num">0.150</td>
+<td class="num">0.0426</td>
+<td>insufficient_evidence</td>
+<td class="mono small">2026-08-21T18:39</td>
+<td class="small">long from 1 model prediction(s) with mean expected return 0.0426<div class="reason">confidence 0.150 below floor 0.25; information is 7.7 days old, limit 7.0; supporting evaluation was flagged small-sample</div></td>
+</tr>
+<tr>
+<td class="mono">crypto-ada</td>
+<td><span class="dir long">long</span></td>
+<td><span class="badge warn">suppressed</span></td>
+<td class="num">0.986</td>
+<td class="num">0.150</td>
+<td class="num">0.0493</td>
+<td>insufficient_evidence</td>
+<td class="mono small">2026-08-21T18:25</td>
+<td class="small">long from 1 model prediction(s) with mean expected return 0.0493<div class="reason">confidence 0.150 below floor 0.25; information is 7.7 days old, limit 7.0; supporting evaluation was flagged small-sample</div></td>
+</tr>
+<tr>
+<td class="mono">crypto-sei</td>
+<td><span class="dir long">long</span></td>
+<td><span class="badge warn">suppressed</span></td>
+<td class="num">0.833</td>
+<td class="num">0.150</td>
+<td class="num">0.0417</td>
+<td>insufficient_evidence</td>
+<td class="mono small">2026-08-21T15:30</td>
+<td class="small">long from 1 model prediction(s) with mean expected return 0.0417<div class="reason">confidence 0.150 below floor 0.25; information is 7.8 days old, limit 7.0; supporting evaluation was flagged small-sample</div></td>
+</tr>
+<tr>
+<td class="mono">crypto-avax</td>
+<td><span class="dir long">long</span></td>
+<td><span class="badge warn">suppressed</span></td>
+<td class="num">0.588</td>
+<td class="num">0.150</td>
+<td class="num">0.0294</td>
+<td>insufficient_evidence</td>
+<td class="mono small">2026-08-20T17:32</td>
+<td class="small">long from 1 model prediction(s) with mean expected return 0.0294<div class="reason">confidence 0.150 below floor 0.25; information is 8.8 days old, limit 7.0; supporting evaluation was flagged small-sample</div></td>
+</tr>
+<tr>
+<td class="mono">crypto-btc</td>
+<td><span class="dir long">long</span></td>
+<td><span class="badge warn">suppressed</span></td>
+<td class="num">1.000</td>
+<td class="num">0.150</td>
+<td class="num">0.0672</td>
+<td>insufficient_evidence</td>
+<td class="mono small">2026-08-20T15:40</td>
+<td class="small">long from 1 model prediction(s) with mean expected return 0.0672<div class="reason">confidence 0.150 below floor 0.25; information is 8.8 days old, limit 7.0; supporting evaluation was flagged small-sample</div></td>
+</tr></tbody>
+</table>
+
+<div class="foot">Generat 2026-08-30 18:09 UTC · MarketLens Faza 10</div>
+</div>
+</body>
+</html>
