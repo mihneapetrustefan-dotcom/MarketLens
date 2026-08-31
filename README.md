@@ -135,15 +135,54 @@ Paginile **Portofoliu** și **Risc** din Dashboard afișează rezultatul.
 Fără un portofoliu declarat, ele arată explicit acest lucru — nu date
 simulate.
 
+## Backtesting (Faza 12)
+
+Faza 12 reia **întregul lanț de decizie istoric**: informația
+disponibilă la momentul T → semnal → context de portofoliu → motorul
+real de risc (Faza 11) → alocare → execuție simulată pe lumânări deja
+stocate → stare de portofoliu → performanță.
+
+**Nu tranzacționează nimic.** Singurul executor implementat este
+`SimulationExecutor`. `PaperExecutor` și `BrokerExecutor` (MT5 / IBKR)
+aparțin unor faze ulterioare și nu există aici.
+
+Garanțiile pe care le impune:
+
+- **Fără look-ahead.** Fiecare citire de preț poartă `timestamp <= as_of`
+  în SQL, iar o umplere trebuie să fie *strict* după ordinul ei.
+  Încălcările ridică `TemporalViolation` și opresc rularea.
+- **Costurile sunt reale.** Comisionul și slippage-ul sunt debitate din
+  numerar la fiecare umplere, nu scăzute dintr-un randament final.
+- **Riscul este cel real.** Simularea apelează `PortfolioService.evaluate()`,
+  aceeași funcție ca pipeline-ul live — nu un strat simplificat.
+- **Reproductibil.** Aceleași intrări, aceleași versiuni și aceeași
+  amprentă de configurație produc același rezultat.
+
+```bash
+# Rulare pe semnalele reale stocate
+python scripts/run_backtest.py --name prima-rulare
+
+# Exersează mecanismul pe semnale generate (NU este dovadă despre o strategie)
+python scripts/run_backtest.py --synthetic-signals --cost-sensitivity --bootstrap
+```
+
+**Atenție onestă:** toate semnalele din baza actuală sunt *suprimate*
+(încredere scăzută, predicții învechite, eșantion mic), deci o rulare
+reală produce zero tranzacții și raportează exact asta. Un backtest
+**nu este o dovadă de profitabilitate viitoare**; pagina Backtesting
+afișează scorul de calitate a cercetării (care *nu* este un scor de
+profitabilitate) alături de toate limitările declarate.
+
 ## Structura proiectului
 
 ```
 ├── src/                        # modulele pipeline-ului, testate individual
+│   ├── backtest/               # Faza 12 — replay istoric, execuție simulată
 │   ├── portfolio/              # Faza 11 — portofoliu, expunere, risc
 │   ├── signals/                # Faza 10 — motorul de semnale
 │   ├── domain/                 # modelele canonice de domeniu
 │   └── data_access/            # scheme SQL + repository-uri
-├── tests/                      # suita completă de teste (1700+ teste)
+├── tests/                      # suita completă de teste (2000+ teste)
 ├── data/marketlens.db          # baza de date persistentă (creată la prima rulare)
 ├── docs/index.html             # MarketLens Terminal (regenerat la fiecare rulare)
 ├── run_daily.py                # script de orchestrare — rularea zilnică

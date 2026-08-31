@@ -100,7 +100,8 @@ class PortfolioService:
     # ---------------- state ----------------
 
     def build_snapshot(self, portfolio_id: str, as_of: datetime,
-                       positions: Optional[Sequence[Position]] = None
+                       positions: Optional[Sequence[Position]] = None,
+                       cash: Optional[float] = None
                        ) -> PortfolioSnapshot:
         """
         Price the portfolio as it stood at the anchor.
@@ -109,6 +110,13 @@ class PortfolioService:
         or read from storage. Reading uses the anchor-aware accessor, so
         a position opened after the anchor is invisible and one closed
         after it is correctly still open.
+
+        `cash` overrides the stored balance. This exists for Phase 12:
+        a backtest's cash lives in its own in-memory ledger and changes
+        with every simulated fill, so reading the stored balance would
+        value a simulated book against a real portfolio's cash. Passing
+        it in keeps the simulation from having to write into the live
+        `portfolios` table to be evaluated.
         """
         _require_utc(as_of)
         portfolio = self.repository.get_portfolio(portfolio_id) or {}
@@ -129,7 +137,8 @@ class PortfolioService:
             portfolio_id=portfolio_id,
             as_of=as_of,
             base_currency=portfolio.get("base_currency", "USD"),
-            cash=float(portfolio.get("cash", 0.0) or 0.0),
+            cash=(float(cash) if cash is not None
+                  else float(portfolio.get("cash", 0.0) or 0.0)),
             valuations=priced,
             unvalued_positions=unpriced,
             currencies=[p.currency for p in held if p.currency],
@@ -330,6 +339,7 @@ class PortfolioService:
                  signals: Optional[Sequence[Signal]] = None,
                  proposal: Optional[AllocationProposal] = None,
                  positions: Optional[Sequence[Position]] = None,
+                 cash: Optional[float] = None,
                  persist: bool = False) -> EvaluationResult:
         """
         The whole pipeline: state -> metrics -> proposal -> decision.
@@ -339,11 +349,16 @@ class PortfolioService:
         signals. Supplying neither evaluates the CURRENT state against
         the limits, which is a legitimate and useful question on its
         own.
+
+        `positions` and `cash` together let a caller evaluate a book
+        this service does not store — which is how Phase 12 runs the
+        real risk engine against a simulated portfolio without writing
+        into the live tables.
         """
         _require_utc(as_of)
         constraint_set = self.constraints.load_or_default(self.constraint_version)
 
-        snapshot = self.build_snapshot(portfolio_id, as_of, positions)
+        snapshot = self.build_snapshot(portfolio_id, as_of, positions, cash)
         metrics = self.compute_metrics(snapshot, as_of)
 
         usable_signals = list(signals) if signals is not None else self.actionable_signals(as_of)

@@ -1,0 +1,124 @@
+name: Run Backtest (Phase 12)
+
+# Rulare MANUALA. Reia lantul de decizie istoric si inregistreaza
+# rezultatul in baza de date.
+#
+# ACEST WORKFLOW NU TRANZACTIONEAZA. Nu contacteaza niciun broker, nu
+# trimite niciun ordin si nu are nicio credentiala de executie. Singurul
+# executor implementat scrie umpleri simulate pe lumanari deja stocate.
+#
+# DE CE NU E IN PIPELINE-UL ZILNIC: un backtest este un experiment
+# deliberat, nu o sarcina periodica. Rulat automat de trei ori pe zi ar
+# incuraja exact practica pe care specificatia o interzice — reglarea
+# repetata a parametrilor pe aceeasi perioada pana cand cifrele arata
+# bine. Fiecare rulare ramane o alegere explicita, inregistrata.
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Numele experimentului'
+        required: true
+        default: 'backtest'
+        type: string
+      universe_limit:
+        description: 'Cate instrumente (cele cu cel mai mult istoric)'
+        required: false
+        default: '15'
+        type: string
+      commission_bps:
+        description: 'Comision, in puncte de baza'
+        required: false
+        default: '2'
+        type: string
+      slippage_bps:
+        description: 'Slippage, in puncte de baza'
+        required: false
+        default: '5'
+        type: string
+      timing:
+        description: 'Momentul executiei'
+        required: false
+        default: 'next_bar_open'
+        type: choice
+        options:
+          - next_bar_open
+          - next_bar_close
+          - same_bar_close
+      synthetic_signals:
+        description: 'Semnale generate (exerseaza mecanismul; NU dovada despre o strategie)'
+        required: false
+        default: false
+        type: boolean
+      cost_sensitivity:
+        description: 'Ruleaza si scenariile 0/5/10/20 bps'
+        required: false
+        default: true
+        type: boolean
+      dry_run:
+        description: 'Doar afiseaza, nu scrie nimic'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backtest
+        run: |
+          ARGS="--name '${{ inputs.name }}'"
+          ARGS="$ARGS --universe-limit ${{ inputs.universe_limit }}"
+          ARGS="$ARGS --commission-bps ${{ inputs.commission_bps }}"
+          ARGS="$ARGS --slippage-bps ${{ inputs.slippage_bps }}"
+          ARGS="$ARGS --timing ${{ inputs.timing }}"
+          if [ "${{ inputs.synthetic_signals }}" = "true" ]; then
+            ARGS="$ARGS --synthetic-signals"
+          fi
+          if [ "${{ inputs.cost_sensitivity }}" = "true" ]; then
+            ARGS="$ARGS --cost-sensitivity"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          eval python scripts/run_backtest.py $ARGS
+
+      # Deliberat FARA upload al bazei inapoi in release: publicarea
+      # rezultatelor ramane o actiune explicita, nu un efect secundar
+      # al unei rulari de cercetare.

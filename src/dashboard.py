@@ -459,6 +459,125 @@ class DashboardGenerator:
 
         return {"available": True, "portfolios": portfolios, "detail": detail}
 
+    def _collect_backtests(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Phase 12: stored backtest runs and their results.
+
+        Reads only what a run PERSISTED. Unlike the portfolio page,
+        nothing is recomputed live — a backtest is an expensive,
+        deliberate experiment, and silently re-running one on every
+        page build would be both slow and misleading about when it
+        happened.
+        """
+        if not _table_exists(conn, "backtest_runs"):
+            return {"available": False,
+                    "reason": "Phase 12 tables are not present in this database"}
+
+        rows = _rows(conn, """
+            SELECT run_id, backtest_id, status, period_start, period_end,
+                   initial_capital, execution_timing, cost_model_version,
+                   slippage_method, config_fingerprint, started_at,
+                   observations_processed, duration_seconds, quality_json,
+                   constraint_set_version, code_version
+            FROM backtest_runs ORDER BY started_at DESC LIMIT 25
+        """)
+        if not rows:
+            return {"available": True, "runs": [], "detail": {}}
+
+        runs: List[Dict[str, Any]] = []
+        detail: Dict[str, Any] = {}
+
+        for (run_id, backtest_id, status, start, end, capital, timing,
+             cost_version, slippage_method, fingerprint, started_at,
+             observations, duration, quality_json, constraints,
+             code_version) in rows:
+            try:
+                quality = json.loads(quality_json) if quality_json else {}
+            except (ValueError, TypeError):
+                quality = {}
+
+            metrics: Dict[str, Any] = {}
+            unavailable: Dict[str, Any] = {}
+            for metric, value, reason in _rows(conn,
+                    "SELECT metric, value, unavailable_reason FROM backtest_metrics "
+                    "WHERE run_id = ?", (run_id,)):
+                if metric.startswith("unavailable::"):
+                    unavailable[metric.split("::", 1)[1]] = reason
+                else:
+                    metrics[metric] = value
+
+            runs.append({
+                "run_id": run_id, "backtest_id": backtest_id, "status": status,
+                "period": [start, end], "capital": capital, "timing": timing,
+                "cost_version": cost_version, "slippage_method": slippage_method,
+                "fingerprint": fingerprint, "started_at": started_at,
+                "observations": observations, "duration": duration,
+                "quality_score": quality.get("score"),
+                "total_return": metrics.get("total_return"),
+                "sharpe": metrics.get("sharpe"),
+                "max_drawdown": metrics.get("max_drawdown"),
+                "trades": metrics.get("total_trades"),
+            })
+
+            detail[run_id] = {
+                "metrics": metrics,
+                "unavailable": unavailable,
+                "quality": quality,
+                "constraints": constraints,
+                "code_version": code_version,
+                "equity": [{"t": r[0], "e": r[1], "b": r[2], "d": r[3]}
+                           for r in _rows(conn,
+                               "SELECT timestamp, equity, benchmark_value, drawdown "
+                               "FROM backtest_equity WHERE run_id = ? "
+                               "ORDER BY timestamp ASC", (run_id,))],
+                "trades": [{
+                    "instrument_id": r[0], "side": r[1], "quantity": r[2],
+                    "entry_price": r[3], "exit_price": r[4], "entry_at": r[5],
+                    "exit_at": r[6], "net_pnl": r[7], "costs": r[8],
+                    "holding_days": r[9], "exit_reason": r[10],
+                } for r in _rows(conn, """
+                    SELECT instrument_id, side, quantity, entry_price, exit_price,
+                           entry_at, exit_at, net_pnl, costs, holding_days,
+                           exit_reason
+                    FROM backtest_trades WHERE run_id = ?
+                    ORDER BY exit_at DESC LIMIT 60
+                """, (run_id,))],
+                "attribution": [{
+                    "dimension": r[0], "key": r[1], "label": r[2],
+                    "trades": r[3], "wins": r[4], "net_pnl": r[5],
+                } for r in _rows(conn, """
+                    SELECT dimension, bucket_key, label, trades, wins, net_pnl
+                    FROM backtest_attribution WHERE run_id = ?
+                    ORDER BY dimension, net_pnl DESC
+                """, (run_id,))],
+                "warnings": [{"code": r[0], "message": r[1], "detail": r[2]}
+                             for r in _rows(conn,
+                                 "SELECT code, message, detail FROM backtest_warnings "
+                                 "WHERE run_id = ? ORDER BY code", (run_id,))],
+                "orders": _scalar(conn,
+                    "SELECT COUNT(*) FROM simulated_orders WHERE run_id = ?",
+                    (run_id,), default=0),
+                "rejected_orders": _scalar(conn,
+                    "SELECT COUNT(*) FROM simulated_orders WHERE run_id = ? "
+                    "AND state = 'rejected'", (run_id,), default=0),
+                "risk_events": [{"kind": r[0], "at": r[1], "reason": r[2]}
+                                for r in _rows(conn, """
+                    SELECT kind, occurred_at, reason FROM backtest_risk_events
+                    WHERE run_id = ? ORDER BY seq ASC LIMIT 40
+                """, (run_id,))],
+                "config": self._backtest_config(conn, run_id),
+            }
+
+        return {"available": True, "runs": runs, "detail": detail}
+
+    def _backtest_config(self, conn: sqlite3.Connection, run_id: str) -> Dict[str, Any]:
+        raw = _scalar(conn, "SELECT config_json FROM backtest_runs WHERE run_id = ?",
+                      (run_id,), default="{}")
+        try:
+            return json.loads(raw) if raw else {}
+        except (ValueError, TypeError):
+            return {}
+
     def _collect_constraints(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         """The active risk limits, so the Risk page can show what is being enforced."""
         if not _table_exists(conn, "risk_constraints"):
@@ -604,6 +723,7 @@ class DashboardGenerator:
         rec_index = self._collect_rec_index(conn)
         portfolio = self._collect_portfolio(conn)
         constraints = self._collect_constraints(conn)
+        backtests = self._collect_backtests(conn)
 
         universe = self._build_universe()
         sector_summary = self._build_sector_summary()
@@ -639,6 +759,7 @@ class DashboardGenerator:
             "legacy": legacy,
             "portfolio": portfolio,
             "constraints": constraints,
+            "backtests": backtests,
             "rec_index": rec_index,
             "current_recs": current_recs_by_entity,
             "universe": universe,
@@ -1236,6 +1357,325 @@ table.data tr.sel { background:var(--accent-bg); }
   }
 
   // ---------------------------------------------------------------
+  // Phase 12 — backtesting
+  // ---------------------------------------------------------------
+  var BT = D.backtests || { available: false };
+  var BT_RUNS = BT.runs || [];
+
+  function btSelected() {
+    if (!BT_RUNS.length) return null;
+    var id = state.param;
+    if (id && BT.detail && BT.detail[id]) return { id: id, d: BT.detail[id] };
+    var first = BT_RUNS[0].run_id;
+    return BT.detail && BT.detail[first] ? { id: first, d: BT.detail[first] } : null;
+  }
+
+  var BT_STATE_COLOR = {
+    completed: "var(--up)", completed_with_warnings: "var(--accent-dark)",
+    failed: "var(--accent-dark)", cancelled: "var(--faint)", running: "var(--muted)"
+  };
+
+  function btQualityBand(score) {
+    if (score === null || score === undefined) return "neevaluat";
+    if (score >= 0.75) return "puternic";
+    if (score >= 0.5) return "moderat";
+    if (score >= 0.25) return "slab";
+    return "foarte slab";
+  }
+
+  function btEmptyState() {
+    if (!BT.available) {
+      return blk("Backtesting", "Faza 12",
+        '<div class="callout"><b>Tabelele Fazei 12 nu exista in aceasta baza de date.</b>' +
+        '<p>Motorul de backtesting este implementat, dar schema nu a fost creata aici. ' +
+        'Ruleaza <span class="mono">python scripts/run_backtest.py</span> pentru a o crea ' +
+        'si a inregistra prima rulare.</p></div>');
+    }
+    return blk("Backtesting", "nicio rulare inregistrata",
+      '<div class="callout"><b>Niciun backtest nu a fost rulat inca.</b>' +
+      '<p>Aceasta nu este o eroare si nu se afiseaza rezultate simulate in loc. ' +
+      'Motorul reia intregul lant de decizie istoric — semnal, risc, alocare, ' +
+      'executie simulata — dar nu inventeaza nimic.</p>' +
+      '<div class="mono" style="margin-top:8px;font-size:11px;background:var(--panel);padding:10px;">' +
+      'python scripts/run_backtest.py --name prima-rulare</div>' +
+      '<p style="margin-top:10px;"><b>Atentie:</b> toate semnalele stocate in aceasta baza ' +
+      'sunt <i>suprimate</i> (incredere scazuta, predictii invechite, esantion mic), deci o ' +
+      'rulare reala produce zero tranzactii si raporteaza exact asta. Foloseste ' +
+      '<span class="mono">--synthetic-signals</span> pentru a testa mecanismul — dar acele ' +
+      'rulari nu spun nimic despre vreo strategie.</p></div>');
+  }
+
+  function viewBacktests() {
+    var sel = btSelected();
+    if (!sel) return pageHead("Backtesting", "Backtesting") + btEmptyState();
+
+    var d = sel.d, m = d.metrics || {}, un = d.unavailable || {};
+    var run = null;
+    for (var i = 0; i < BT_RUNS.length; i++) {
+      if (BT_RUNS[i].run_id === sel.id) { run = BT_RUNS[i]; break; }
+    }
+    run = run || BT_RUNS[0];
+
+    var html = pageHead("Backtesting - simulare istorica", run.backtest_id || sel.id, [
+      ["Verdict", (run.status || "").toUpperCase().replace(/_/g, " ")],
+      ["Tranzactii", String(m.total_trades === undefined ? 0 : Math.round(m.total_trades))]
+    ]);
+
+    if (BT_RUNS.length > 1) {
+      html += '<div class="filterbar"><div class="segbtns">' + BT_RUNS.slice(0, 8).map(function (r) {
+        return '<button class="' + (r.run_id === sel.id ? "on" : "") +
+          '" onclick="MLGo(\'backtests\',\'' + esc(r.run_id) + '\')">' +
+          esc((r.run_id || "").slice(4, 12)) + '</button>';
+      }).join("") + '</div></div>';
+    }
+
+    // --- status banner ---
+    var color = BT_STATE_COLOR[run.status] || "var(--muted)";
+    html += '<section class="blk"><div class="blk-body">' +
+      '<div style="border:2px solid ' + color + ';padding:14px 16px;">' +
+      '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:' + color + ';">' +
+      esc((run.status || "").replace(/_/g, " ")) + '</div>' +
+      '<div style="font-size:14px;margin-top:6px;">' +
+      esc(fmtDate(run.period ? run.period[0] : "")) + ' &rarr; ' +
+      esc(fmtDate(run.period ? run.period[1] : "")) + ' &middot; ' +
+      esc(run.observations || 0) + ' observatii &middot; ' +
+      esc(d.orders || 0) + ' ordine</div>' +
+      '<div class="mono" style="font-size:11px;color:var(--muted);margin-top:8px;">' +
+      esc(sel.id) + ' &middot; amprenta ' + esc(run.fingerprint || "") + '</div>' +
+      '</div></div></section>';
+
+    // --- headline metrics ---
+    function cell(label, value, note) {
+      return '<div class="cell"><div class="n">' + value + '</div><div class="l">' +
+        esc(label) + (note ? '<br><span style="color:var(--faint);">' + esc(note) + '</span>' : "") +
+        '</div></div>';
+    }
+    function num(v, digits) {
+      return (v === null || v === undefined) ? "—" : Number(v).toFixed(digits === undefined ? 2 : digits);
+    }
+    html += '<section class="blk"><div class="blk-head"><h2>Performanta</h2>' +
+      '<span class="blk-note">masurata pe seria simulata, nu o prognoza</span></div>' +
+      '<div class="statgrid" style="grid-template-columns:repeat(5,1fr);">' +
+      cell("randament total", fmtPct(m.total_return, 2)) +
+      cell("CAGR", fmtPct(m.cagr, 2)) +
+      cell("volatilitate", fmtPct(m.volatility, 1), un.volatility || "") +
+      cell("Sharpe", num(m.sharpe), un.sharpe || "") +
+      cell("drawdown maxim", fmtPct(m.max_drawdown, 2), un.max_drawdown || "") +
+      '</div><div class="statgrid" style="grid-template-columns:repeat(5,1fr);">' +
+      cell("rata de castig", fmtPct(m.win_rate, 1)) +
+      cell("profit factor", num(m.profit_factor), un.profit_factor || "") +
+      cell("rulaj", num(m.turnover) + "x", "anualizat " + num(m.annualized_turnover) + "x") +
+      cell("costuri", num(m.total_costs), "comision") +
+      cell("slippage", num(m.total_slippage), "cost de executie") +
+      '</div></section>';
+
+    // --- benchmark ---
+    if (m.benchmark_return !== null && m.benchmark_return !== undefined) {
+      html += '<section class="blk"><div class="blk-head"><h2>Fata de benchmark</h2></div>' +
+        '<div class="statgrid" style="grid-template-columns:repeat(3,1fr);">' +
+        cell("strategie", fmtPct(m.total_return, 2)) +
+        cell("benchmark", fmtPct(m.benchmark_return, 2)) +
+        cell("excedent", fmtPct(m.excess_return, 2)) +
+        '</div></section>';
+    }
+
+    // --- equity curve ---
+    var eq = d.equity || [];
+    if (eq.length > 1) {
+      html += blk("Curba de capital", eq.length + " observatii",
+        btEquityChart(eq) +
+        '<div class="copy" style="margin-top:10px;"><p>Linia continua este capitalul ' +
+        'simulat; cea punctata, benchmark-ul reindexat la acelasi capital initial. ' +
+        'Zona de sub linia zero este drawdown-ul.</p></div>');
+    }
+
+    // --- research quality ---
+    var q = d.quality || {};
+    if (q.score !== null && q.score !== undefined) {
+      var factors = q.factors || {};
+      html += '<section class="blk"><div class="blk-head"><h2>Calitatea cercetarii</h2>' +
+        '<span class="blk-note warn">NU masoara profitabilitatea</span></div>' +
+        '<div class="blk-body"><div style="display:flex;align-items:baseline;gap:14px;margin-bottom:12px;">' +
+        '<span style="font-size:32px;font-weight:800;letter-spacing:-0.02em;">' +
+        num(q.score, 3) + '</span>' +
+        '<span style="font-size:13px;font-weight:700;">' + esc(btQualityBand(q.score)) + '</span>' +
+        '</div>' +
+        '<div class="copy"><p><b>Ce inseamna:</b> cat de mult se poate avea incredere in ' +
+        'aceste cifre — marimea esantionului, realismul executiei, integritatea ' +
+        'punct-in-timp. O rulare foarte profitabila poate avea un scor mic, si invers. ' +
+        'Nu este un scor de profitabilitate.</p></div>' +
+        barRows(Object.keys(factors).map(function (k) { return [k, factors[k]]; }),
+                function (v) { return num(v, 2); }) +
+        ((q.notes || []).length
+          ? '<div class="copy" style="margin-top:12px;">' + q.notes.map(function (n) {
+              return '<p>- ' + esc(n) + '</p>'; }).join("") + '</div>'
+          : "") +
+        '</div></section>';
+    }
+
+    // --- warnings ---
+    var warns = d.warnings || [];
+    html += blk("Limitari declarate", warns.length + " avertisment(e)",
+      warns.length
+        ? warns.map(function (w) {
+            return '<div style="border-bottom:1px solid var(--line);padding:8px 0;">' +
+              '<span class="mono" style="font-weight:700;color:var(--accent-dark);">' +
+              esc(w.code) + '</span><br>' + esc(w.message) +
+              (w.detail ? '<br><span style="color:var(--muted);font-size:12px;">' +
+                esc(w.detail) + '</span>' : "") + '</div>';
+          }).join("")
+        : '<div class="empty">Nicio limitare semnalata.</div>', "warn");
+
+    // --- unavailable metrics ---
+    var unKeys = Object.keys(un);
+    if (unKeys.length) {
+      html += blk("Ce nu a putut fi masurat", unKeys.length + " metrici",
+        '<div class="copy"><p>Absente, nu zero — esantionul nu le sustine.</p></div>' +
+        unKeys.map(function (k) {
+          return '<div style="border-bottom:1px solid var(--line);padding:6px 0;font-size:12px;">' +
+            '<span class="mono"><b>' + esc(k) + '</b></span> ' +
+            '<span style="color:var(--muted);">' + esc(un[k]) + '</span></div>';
+        }).join(""));
+    }
+
+    // --- risk events ---
+    var events = d.risk_events || [];
+    if (events.length) {
+      html += blk("Alocari respinse sau reduse de motorul de risc", events.length + " eveniment(e)",
+        '<div class="copy"><p>Pastrate, nu aruncate: arata cat a costat disciplina de risc.</p></div>' +
+        '<table class="data"><thead><tr><th>Tip</th><th>Cand</th><th>Motiv</th>' +
+        '</tr></thead><tbody>' + events.slice(0, 20).map(function (e) {
+          return '<tr><td><span class="pill ' +
+            (e.kind === "rejected" ? "warn-outline" : "ghost") + '">' + esc(e.kind) +
+            '</span></td><td class="mono">' + esc(fmtDate(e.at)) + '</td><td>' +
+            esc(e.reason) + '</td></tr>';
+        }).join("") + '</tbody></table>');
+    }
+
+    // --- trades ---
+    var trades = d.trades || [];
+    if (trades.length) {
+      html += blk("Registrul de tranzactii", trades.length + " afisate",
+        '<table class="data"><thead><tr><th>Instrument</th><th>Directie</th>' +
+        '<th class="r">Cantitate</th><th class="r">Intrare</th><th class="r">Iesire</th>' +
+        '<th class="r">P&amp;L net</th><th class="r">Zile</th><th>Motiv iesire</th>' +
+        '</tr></thead><tbody>' + trades.map(function (t) {
+          return '<tr><td class="mono">' + esc(t.instrument_id) + '</td>' +
+            '<td>' + esc(t.side) + '</td>' +
+            '<td class="r">' + num(t.quantity, 4) + '</td>' +
+            '<td class="r">' + num(t.entry_price) + '</td>' +
+            '<td class="r">' + num(t.exit_price) + '</td>' +
+            '<td class="r" style="color:' + ((t.net_pnl || 0) >= 0 ? "var(--up)" : "var(--down)") +
+            '">' + num(t.net_pnl) + '</td>' +
+            '<td class="r">' + num(t.holding_days, 1) + '</td>' +
+            '<td style="font-size:11px;color:var(--muted);">' + esc(t.exit_reason) + '</td></tr>';
+        }).join("") + '</tbody></table>');
+    }
+
+    // --- attribution ---
+    var attr = d.attribution || [];
+    if (attr.length) {
+      var dims = {};
+      attr.forEach(function (a) { (dims[a.dimension] = dims[a.dimension] || []).push(a); });
+      var blocks = "";
+      Object.keys(dims).forEach(function (dim) {
+        var pairs = dims[dim].slice(0, 8).map(function (a) {
+          return [a.label || a.key, a.net_pnl];
+        });
+        blocks += '<div><div class="blk-head"><h2>' + esc(dim) + '</h2>' +
+          '<span class="blk-note">' + dims[dim].length + '</span></div>' +
+          '<div class="blk-body">' + barRows(pairs, function (v) { return num(v); }) +
+          '</div></div>';
+      });
+      html += '<section class="blk"><div class="grid2">' + blocks + '</div></section>';
+      html += blk("Despre atribuire", "descriere, nu cauzalitate",
+        '<div class="copy"><p>Aceste grupari arata <b>unde s-a acumulat</b> P&amp;L-ul. ' +
+        'Nu demonstreaza ca acel tip de eveniment sau acel sector <i>a cauzat</i> ' +
+        'rezultatul — pozitiile pot fi corelate si pot fi purtate de o miscare generala ' +
+        'de piata careia eticheta doar i s-a suprapus.</p></div>');
+    }
+
+    // --- configuration and reproducibility ---
+    var cfg = d.config || {};
+    var exec = cfg.execution || {}, costs = cfg.costs || {}, slip = cfg.slippage || {};
+    html += blk("Configuratie si reproductibilitate", "tot ce determina rezultatul",
+      '<table class="data"><tbody>' +
+      [["capital initial", num(cfg.initial_capital)],
+       ["universe", String((cfg.universe || []).length) + " instrumente"],
+       ["benchmark", esc(cfg.benchmark_instrument_id || "—")],
+       ["moment executie", esc(exec.timing || "—")],
+       ["latenta semnal&rarr;ordin", num(exec.signal_to_order_seconds, 0) + "s"],
+       ["plafon participare", exec.max_participation === null || exec.max_participation === undefined
+          ? "fara" : fmtPct(exec.max_participation, 0)],
+       ["model cost", esc(costs.version || "—") + " &middot; " + num(costs.commission_bps, 2) + " bps"],
+       ["model slippage", esc(slip.version || "—") + " &middot; " + esc(slip.method || "—") +
+          " &middot; " + num(slip.base_bps, 2) + " bps"],
+       ["set de limite risc", esc(d.constraints || "—")],
+       ["reechilibrare", String(cfg.rebalance_days || "—") + " zile"],
+       ["rata fara risc", num(cfg.risk_free_rate, 4) + " (" + esc(cfg.risk_free_source || "") + ")"],
+       ["versiune cod", esc(d.code_version || "—")],
+       ["amprenta configuratie", '<span class="mono">' + esc(run.fingerprint || "") + '</span>']
+      ].map(function (row) {
+        return '<tr><td style="width:34%;color:var(--muted);">' + row[0] + '</td>' +
+          '<td class="mono">' + row[1] + '</td></tr>';
+      }).join("") + '</tbody></table>' +
+      '<div class="copy" style="margin-top:12px;"><p>Aceleasi intrari, aceleasi versiuni ' +
+      'si aceeasi amprenta produc acelasi rezultat. O rulare a carei configuratie difera ' +
+      'primeste un identificator diferit, deci nu poate fi confundata cu o reluare.</p></div>');
+
+    html += blk("Ce nu este un backtest", "citire onesta",
+      '<div class="copy"><p>Un backtest <b>nu este o dovada de profitabilitate viitoare</b>. ' +
+      'Este o reconstructie a ceea ce ar fi produs aceste reguli pe aceste date, sub ' +
+      'aceste ipoteze de executie si cost. Perioada este scurta, esantionul este mic si ' +
+      'preturile sunt ajustate retroactiv.</p>' +
+      '<p>Nu exista integrare cu broker si nicio capacitate de executie in aceasta faza. ' +
+      'Singurul executor implementat scrie tranzactii simulate pe lumanari deja stocate.</p></div>');
+
+    return html;
+  }
+
+  function btEquityChart(points) {
+    var width = 900, height = 200, pad = 4;
+    var eqs = points.map(function (p) { return p.e; }).filter(function (v) {
+      return v !== null && v !== undefined; });
+    if (eqs.length < 2) return '<div class="empty">Prea putine observatii.</div>';
+
+    var base = eqs[0];
+    var bench = [], bench0 = null;
+    points.forEach(function (p) {
+      if (p.b !== null && p.b !== undefined) {
+        if (bench0 === null) bench0 = p.b;
+        bench.push(base * (p.b / bench0));
+      } else { bench.push(null); }
+    });
+
+    var all = eqs.concat(bench.filter(function (v) { return v !== null; }));
+    var min = Math.min.apply(null, all), max = Math.max.apply(null, all);
+    var range = (max - min) || 1;
+
+    function path(series) {
+      var out = [], started = false;
+      for (var i = 0; i < series.length; i++) {
+        var v = series[i];
+        if (v === null || v === undefined) continue;
+        var x = pad + (i / (series.length - 1)) * (width - 2 * pad);
+        var y = height - pad - ((v - min) / range) * (height - 2 * pad);
+        out.push((started ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1));
+        started = true;
+      }
+      return out.join(" ");
+    }
+
+    return '<div style="overflow-x:auto;"><svg viewBox="0 0 ' + width + ' ' + height +
+      '" width="100%" height="' + height + '" preserveAspectRatio="none" ' +
+      'style="display:block;border:1px solid var(--line);background:var(--bg2);">' +
+      '<path d="' + path(bench) + '" fill="none" stroke="var(--border-mid)" ' +
+      'stroke-width="1.5" stroke-dasharray="4 3"></path>' +
+      '<path d="' + path(eqs) + '" fill="none" stroke="var(--ink)" stroke-width="2"></path>' +
+      '</svg></div>';
+  }
+
+  // ---------------------------------------------------------------
   // navigation state
   // ---------------------------------------------------------------
   var STUB_META = {
@@ -1267,7 +1707,8 @@ table.data tr.sel { background:var(--accent-bg); }
     ]},
     { label: "Portofoliu", items: [
       { id: "portfolio", label: "Portofoliu", tag: PF_COUNT ? String(PF_COUNT) : "0" },
-      { id: "risk", label: "Risc", tag: RISK_TAG }
+      { id: "risk", label: "Risc", tag: RISK_TAG },
+      { id: "backtests", label: "Backtesting", tag: BT_RUNS.length ? String(BT_RUNS.length) : "0" }
     ]},
     { label: "Performanta", items: [
       { id: "outcomes", label: "Rezultate", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
@@ -1826,6 +2267,7 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "models") main.innerHTML = viewModels();
     else if (v === "portfolio") main.innerHTML = viewPortfolio();
     else if (v === "risk") main.innerHTML = viewRisk();
+    else if (v === "backtests") main.innerHTML = viewBacktests();
     else if (STUB_IDS.indexOf(v) !== -1) main.innerHTML = viewStub(v);
     else main.innerHTML = viewOverview();
     document.title = "MarketLens Terminal";
