@@ -298,6 +298,191 @@ class DashboardGenerator:
             "watchlist": watchlist or [],
         }
 
+    def _collect_portfolio(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Phase 11: declared portfolios, their state, and the latest risk
+        decision for each.
+
+        The state is computed LIVE at page-build time rather than read
+        from a stored snapshot. That is deliberate: it uses only the
+        cached candles (no network), so it is cheap and reproducible,
+        and it means the page reflects the portfolio as it stands now
+        instead of whenever someone last ran the evaluator by hand.
+
+        Anchored at wall-clock now, which is honest rather than
+        convenient: if the newest candle is four days old, the page
+        says the prices are stale instead of quietly anchoring itself
+        to the last date that happened to have data.
+        """
+        if not _table_exists(conn, "portfolios"):
+            return {"available": False,
+                    "reason": "Phase 11 tables are not present in this database"}
+
+        rows = _rows(conn, """
+            SELECT portfolio_id, name, base_currency, cash, kind
+            FROM portfolios ORDER BY portfolio_id
+        """)
+        if not rows:
+            return {"available": True, "portfolios": [], "detail": {}}
+
+        try:
+            from src.portfolio.service import PortfolioService
+            from src.domain.portfolio_models import ExposureDimension
+        except ImportError:
+            # The package is unreachable (e.g. generated from a context
+            # where only src/ is importable). Listing what exists is
+            # still better than claiming there is nothing.
+            return {"available": True, "reason": "risk engine not importable here",
+                    "portfolios": [{"id": r[0], "name": r[1], "currency": r[2],
+                                    "cash": r[3], "kind": r[4]} for r in rows],
+                    "detail": {}}
+
+        service = PortfolioService(conn)
+        as_of = datetime.now(timezone.utc)
+
+        portfolios: List[Dict[str, Any]] = []
+        detail: Dict[str, Any] = {}
+
+        for portfolio_id, name, currency, cash, kind in rows:
+            try:
+                result = service.evaluate(portfolio_id, as_of, persist=False)
+            except Exception as exc:      # noqa: BLE001 — one bad book must not blank the page
+                portfolios.append({"id": portfolio_id, "name": name,
+                                   "currency": currency, "cash": cash, "kind": kind,
+                                   "positions": None, "error": str(exc)})
+                continue
+
+            snapshot, metrics, decision = result.snapshot, result.metrics, result.decision
+
+            exposures = {}
+            for dimension, breakdown in service.exposures.all_breakdowns(snapshot).items():
+                exposures[dimension.value] = {
+                    "buckets": [{"key": b.key, "label": b.label, "exposure": b.exposure,
+                                 "weight": b.weight, "count": b.position_count,
+                                 "long": b.long_exposure, "short": b.short_exposure}
+                                for b in breakdown.buckets],
+                    "unclassified": breakdown.unclassified_exposure,
+                    "unclassified_count": breakdown.unclassified_count,
+                }
+
+            positions = [{
+                "instrument_id": v.position.instrument_id,
+                "quantity": v.position.quantity,
+                "entry": v.position.average_entry_price,
+                "price": v.price,
+                "market_value": v.market_value,
+                "exposure": v.exposure,
+                "weight": snapshot.weight_of(v.position.instrument_id),
+                "unrealized": v.unrealized_pnl,
+                "status": v.status.value,
+                "age_days": v.price_age_days,
+                "currency": v.position.currency,
+            } for v in snapshot.valuations] + [{
+                "instrument_id": v.position.instrument_id,
+                "quantity": v.position.quantity,
+                "entry": v.position.average_entry_price,
+                "price": None, "market_value": None, "exposure": None,
+                "weight": None, "unrealized": None,
+                "status": v.status.value, "age_days": None,
+                "currency": v.position.currency,
+            } for v in snapshot.unvalued_positions]
+
+            portfolios.append({
+                "id": portfolio_id, "name": name, "currency": currency,
+                "cash": cash, "kind": kind, "positions": len(positions),
+                "equity": snapshot.equity, "state": decision.state.value,
+            })
+
+            detail[portfolio_id] = {
+                "snapshot": {
+                    "as_of": snapshot.as_of, "equity": snapshot.equity,
+                    "cash": snapshot.cash, "gross": snapshot.gross_exposure,
+                    "net": snapshot.net_exposure, "long": snapshot.long_exposure,
+                    "short": snapshot.short_exposure, "leverage": snapshot.leverage,
+                    "unrealized": snapshot.unrealized_pnl,
+                    "realized": snapshot.realized_pnl,
+                    "complete": snapshot.is_complete,
+                    "stale": snapshot.has_stale_prices,
+                    "multi_currency": snapshot.is_multi_currency,
+                    "currency": snapshot.base_currency,
+                    "unvalued": [v.position.instrument_id
+                                 for v in snapshot.unvalued_positions],
+                },
+                "positions": positions,
+                "exposures": exposures,
+                "metrics": {
+                    "volatility": metrics.volatility.value,
+                    "volatility_obs": metrics.volatility.observations,
+                    "volatility_note": metrics.volatility.note,
+                    "volatility_insufficient": metrics.volatility.insufficient_data,
+                    "volatility_method": metrics.volatility.method,
+                    "var": metrics.value_at_risk.value,
+                    "var_confidence": metrics.value_at_risk.confidence_level,
+                    "es": metrics.value_at_risk.expected_shortfall,
+                    "var_insufficient": metrics.value_at_risk.insufficient_data,
+                    "var_note": metrics.value_at_risk.note,
+                    "max_drawdown": metrics.drawdown.max_drawdown,
+                    "current_drawdown": metrics.drawdown.current_drawdown,
+                    "drawdown_insufficient": metrics.drawdown.insufficient_data,
+                    "hhi": metrics.concentration.hhi,
+                    "effective_positions": metrics.concentration.effective_positions,
+                    "invested_weight": metrics.concentration.invested_weight,
+                    "largest_weight": metrics.concentration.largest_weight,
+                    "largest_instrument": metrics.concentration.largest_instrument_id,
+                    "top_5": metrics.concentration.top_5_weight,
+                    "avg_correlation": metrics.correlation.average_correlation,
+                    "max_correlation": metrics.correlation.max_correlation,
+                    "correlated_pairs": metrics.correlation.highly_correlated_pairs,
+                    "correlation_pairs": metrics.correlation.computed_pairs,
+                    "correlation_thin": metrics.correlation.insufficient_pairs,
+                    "unavailable": metrics.unavailable,
+                },
+                "decision": {
+                    "id": decision.decision_id,
+                    "state": decision.state.value,
+                    "summary": decision.summary,
+                    "reasons": decision.reasons,
+                    "evaluated": decision.evaluated_scopes,
+                    "skipped": decision.skipped_scopes,
+                    "engine_version": decision.provenance.risk_engine_version,
+                    "constraint_version": decision.provenance.constraint_set_version,
+                    "violations": [{
+                        "constraint_id": v.constraint_id, "scope": v.scope.value,
+                        "severity": v.severity.value, "message": v.message,
+                        "observed": v.observed_value, "current": v.current_value,
+                        "limit": v.limit_value, "applies_to": v.applies_to,
+                        "remediated": v.remediated,
+                    } for v in decision.violations],
+                },
+                "intents": len(result.intents),
+            }
+
+        return {"available": True, "portfolios": portfolios, "detail": detail}
+
+    def _collect_constraints(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """The active risk limits, so the Risk page can show what is being enforced."""
+        if not _table_exists(conn, "risk_constraints"):
+            return {"available": False}
+        rows = _rows(conn, """
+            SELECT constraint_set_version, constraint_id, scope, severity,
+                   max_value, min_value, applies_to, description, enabled
+            FROM risk_constraints ORDER BY constraint_set_version, scope, constraint_id
+        """)
+        if not rows:
+            return {"available": False}
+        state = _scalar(conn,
+                        "SELECT trading_state FROM risk_constraint_sets "
+                        "ORDER BY version DESC LIMIT 1", default="enabled")
+        return {
+            "available": True,
+            "trading_state": state,
+            "constraints": [{
+                "version": r[0], "id": r[1], "scope": r[2], "severity": r[3],
+                "max": r[4], "min": r[5], "applies_to": r[6],
+                "description": r[7], "enabled": bool(r[8]),
+            } for r in rows],
+        }
+
     def _collect_rec_index(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
         """entity -> latest recommendation, across the FULL history table (every
         entity that has ever received one) — used to power the Markets 'call'
@@ -417,6 +602,8 @@ class DashboardGenerator:
         signals = self._collect_signals(conn)
         legacy = self._collect_legacy(conn, watchlist)
         rec_index = self._collect_rec_index(conn)
+        portfolio = self._collect_portfolio(conn)
+        constraints = self._collect_constraints(conn)
 
         universe = self._build_universe()
         sector_summary = self._build_sector_summary()
@@ -450,6 +637,8 @@ class DashboardGenerator:
             "models": models,
             "signals": signals,
             "legacy": legacy,
+            "portfolio": portfolio,
+            "constraints": constraints,
             "rec_index": rec_index,
             "current_recs": current_recs_by_entity,
             "universe": universe,
@@ -726,6 +915,327 @@ table.data tr.sel { background:var(--accent-bg); }
   }
 
   // ---------------------------------------------------------------
+  // Phase 11 — portfolio and risk
+  // ---------------------------------------------------------------
+  var PF = D.portfolio || { available: false };
+  var PF_LIST = PF.portfolios || [];
+  var PF_COUNT = PF_LIST.length;
+
+  function pfSelected() {
+    // The route parameter selects a book; with one portfolio (the
+    // common case) it is implicit.
+    if (!PF_COUNT) return null;
+    var id = state.param;
+    if (id && PF.detail && PF.detail[id]) return { id: id, d: PF.detail[id] };
+    var first = PF_LIST[0].id;
+    return PF.detail && PF.detail[first] ? { id: first, d: PF.detail[first] } : null;
+  }
+
+  var STATE_LABEL = {
+    approved: "APROBAT", reduced: "REDUS", rejected: "RESPINS",
+    requires_review: "NECESITA REVIZUIRE", insufficient_data: "DATE INSUFICIENTE"
+  };
+  var STATE_COLOR = {
+    approved: "var(--up)", reduced: "var(--up)", rejected: "var(--accent-dark)",
+    requires_review: "var(--accent-dark)", insufficient_data: "var(--faint)"
+  };
+
+  var RISK_TAG = (function () {
+    var sel = PF_COUNT ? (PF.detail || {})[PF_LIST[0].id] : null;
+    if (!sel || !sel.decision) return "0";
+    var n = (sel.decision.violations || []).filter(function (v) { return !v.remediated; }).length;
+    return String(n);
+  })();
+
+  function pfMoney(v, currency) {
+    if (v === null || v === undefined) return "—";
+    return fmtNum(v, 2) + (currency ? " " + currency : "");
+  }
+
+  function pfEmptyState() {
+    if (!PF.available) {
+      return blk("Portofoliu", "Faza 11",
+        '<div class="callout"><b>Tabelele Fazei 11 nu exista in aceasta baza de date.</b>' +
+        '<p>Motorul de portofoliu si risc este implementat, dar schema nu a fost inca creata aici. ' +
+        'Ruleaza <span class="mono">python scripts/evaluate_portfolio_risk.py --portfolio &lt;nume&gt; --create</span> ' +
+        'pentru a crea tabelele si a declara un portofoliu.</p></div>');
+    }
+    return blk("Portofoliu", "niciun portofoliu declarat",
+      '<div class="callout"><b>Niciun portofoliu nu este declarat inca.</b>' +
+      '<p>Aceasta nu este o eroare si nu exista date simulate afisate in loc. ' +
+      'Motorul de risc (Faza 11) este complet functional, dar opereaza doar pe pozitii ' +
+      'declarate explicit — nu inventeaza un portofoliu.</p>' +
+      '<p>Pentru a declara unul:</p>' +
+      '<div class="mono" style="margin-top:8px;font-size:11px;background:var(--panel);padding:10px;">' +
+      'python scripts/evaluate_portfolio_risk.py --portfolio meu --create --cash 100000</div>' +
+      '<p style="margin-top:10px;">Odata ce exista pozitii, aceasta pagina arata expunerea reala, ' +
+      'ponderile, P&amp;L nerealizat si verdictul motorului de risc.</p></div>');
+  }
+
+  function pfQualityCallouts(s) {
+    var out = "";
+    if (!s.complete) {
+      out += '<div class="callout"><b>Instantaneu incomplet.</b> ' +
+        esc((s.unvalued || []).length) + ' pozitie(i) nu au avut pret la ancora: ' +
+        '<span class="mono">' + esc((s.unvalued || []).join(", ")) + '</span>. ' +
+        'Capitalul propriu este subevaluat, deci fiecare pondere calculata fata de el este ' +
+        'supraevaluata — motorul de risc refuza sa aprobe in aceasta stare.</div>';
+    }
+    if (s.stale) {
+      out += '<div class="callout"><b>Preturi invechite.</b> Cel putin o pozitie a fost ' +
+        'evaluata pe baza unei lumanari mai vechi decat limita de prospetime. Valoarea este ' +
+        'afisata, dar marcata — o decizie de risc pe date invechite nu este aprobata.</div>';
+    }
+    if (s.multi_currency) {
+      out += '<div class="callout"><b>Mai multe valute.</b> Nu exista date FX in acest sistem, ' +
+        'deci totalurile de mai jos aduna unitati diferite. Sunt afisate exact asa cum sunt, ' +
+        'fara curs inventat.</div>';
+    }
+    return out;
+  }
+
+  function viewPortfolio() {
+    var sel = pfSelected();
+    if (!sel) return pageHead("Portofoliu", "Portofoliu") + pfEmptyState();
+
+    var d = sel.d, s = d.snapshot;
+    var html = pageHead("Portofoliu - stare curenta", sel.id, [
+      ["Capital propriu", pfMoney(s.equity, s.currency)],
+      ["Pozitii", String((d.positions || []).length)]
+    ]);
+
+    if (PF_COUNT > 1) {
+      html += '<div class="filterbar"><div class="segbtns">' + PF_LIST.map(function (p) {
+        return '<button class="' + (p.id === sel.id ? "on" : "") + '" onclick="MLGo(\'portfolio\',\'' +
+          esc(p.id) + '\')">' + esc(p.name) + '</button>';
+      }).join("") + '</div></div>';
+    }
+
+    var q = pfQualityCallouts(s);
+    if (q) html += blk("Calitatea datelor", "verificari de integritate", q, "warn");
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(6,1fr);">' +
+      '<div class="cell"><div class="n">' + pfMoney(s.equity) + '</div><div class="l">capital propriu (' + esc(s.currency) + ')</div></div>' +
+      '<div class="cell"><div class="n">' + pfMoney(s.cash) + '</div><div class="l">numerar</div></div>' +
+      '<div class="cell"><div class="n">' + pfMoney(s.gross) + '</div><div class="l">expunere bruta</div></div>' +
+      '<div class="cell"><div class="n">' + pfMoney(s.net) + '</div><div class="l">expunere neta</div></div>' +
+      '<div class="cell"><div class="n">' + (s.leverage === null || s.leverage === undefined ? "—" : Number(s.leverage).toFixed(2) + "x") + '</div><div class="l">levier</div></div>' +
+      '<div class="cell"><div class="n" style="color:' + ((s.unrealized || 0) >= 0 ? "var(--up)" : "var(--down)") + '">' +
+        pfMoney(s.unrealized) + '</div><div class="l">P&amp;L nerealizat</div></div>' +
+      '</div></section>';
+
+    // --- positions ---
+    var rows = (d.positions || []).map(function (p) {
+      var statusPill = p.status === "valued"
+        ? ''
+        : '<span class="pill warn-outline">' + esc(p.status === "stale_price" ? "invechit" : "fara pret") + '</span>';
+      return '<tr>' +
+        '<td class="mono">' + esc(p.instrument_id) + '</td>' +
+        '<td class="r">' + fmtNum(p.quantity, 4) + '</td>' +
+        '<td class="r">' + (p.entry === null ? "—" : fmtNum(p.entry, 2)) + '</td>' +
+        '<td class="r">' + (p.price === null ? "—" : fmtNum(p.price, 2)) + '</td>' +
+        '<td class="r">' + pfMoney(p.market_value) + '</td>' +
+        '<td class="r">' + fmtPct(p.weight, 2) + '</td>' +
+        '<td class="r" style="color:' + ((p.unrealized || 0) >= 0 ? "var(--up)" : "var(--down)") + '">' +
+          pfMoney(p.unrealized) + '</td>' +
+        '<td>' + statusPill + '</td></tr>';
+    }).join("");
+
+    html += blk("Pozitii", String((d.positions || []).length) + " detinute",
+      rows
+        ? '<table class="data"><thead><tr><th>Instrument</th><th class="r">Cantitate</th>' +
+          '<th class="r">Pret intrare</th><th class="r">Pret curent</th><th class="r">Valoare</th>' +
+          '<th class="r">Pondere</th><th class="r">P&amp;L</th><th>Stare</th></tr></thead><tbody>' +
+          rows + '</tbody></table>'
+        : '<div class="empty">Portofoliu gol - doar numerar.</div>');
+
+    // --- allocation ---
+    var allocBlocks = "";
+    ["sector", "asset_class", "currency"].forEach(function (dim) {
+      var ex = (d.exposures || {})[dim];
+      if (!ex || !ex.buckets.length) return;
+      var pairs = ex.buckets.map(function (b) { return [b.label + " (" + b.count + ")", b.weight || 0]; });
+      var note = ex.unclassified_count
+        ? '<span class="blk-note warn">' + ex.unclassified_count + ' neclasificat(e)</span>' : "";
+      allocBlocks += '<div><div class="blk-head"><h2>' +
+        esc({ sector: "Alocare pe sector", asset_class: "Pe clasa de activ", currency: "Pe valuta" }[dim]) +
+        '</h2>' + note + '</div><div class="blk-body">' +
+        barRows(pairs, function (v) { return fmtPct(v, 1); }) + '</div></div>';
+    });
+    if (allocBlocks) {
+      html += '<section class="blk"><div class="grid2">' + allocBlocks + '</div></section>';
+    }
+
+    html += blk("Provenienta", "de unde vine fiecare cifra",
+      '<div class="copy"><p>Preturile provin exclusiv din <span class="mono">price_candle_cache</span> ' +
+      '(lumanari deja stocate), niciodata dintr-un apel live — de aceea aceeasi stare poate fi ' +
+      'recalculata identic mai tarziu. Sectorul vine din lantul canonic ' +
+      '<span class="mono">instruments -> securities -> companies -> sectors</span>, nu din ' +
+      'potrivirea pe cuvinte-cheie.</p>' +
+      '<p>Ancora: <span class="mono">' + fmtDate(s.as_of) + '</span>. ' +
+      'Nicio lumanare de dupa aceasta data nu este citita.</p></div>');
+
+    return html;
+  }
+
+  function viewRisk() {
+    var sel = pfSelected();
+    if (!sel) {
+      return pageHead("Risc", "Motorul de risc") +
+        blk("Stare", "Faza 11",
+          '<div class="callout"><b>Niciun portofoliu de evaluat.</b>' +
+          '<p>Motorul de risc este implementat si testat, dar nu are pe ce sa opereze pana cand ' +
+          'nu este declarat un portofoliu. Limitele active sunt afisate mai jos.</p></div>') +
+        riskConstraintsBlock();
+    }
+
+    var d = sel.d, m = d.metrics, dec = d.decision;
+    var color = STATE_COLOR[dec.state] || "var(--muted)";
+
+    var html = pageHead("Risc - decizie", sel.id, [
+      ["Verdict", STATE_LABEL[dec.state] || dec.state],
+      ["Limite", dec.constraint_version]
+    ]);
+
+    html += '<section class="blk"><div class="blk-body">' +
+      '<div style="border:2px solid ' + color + ';padding:14px 16px;">' +
+      '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:' + color + ';">' +
+      esc(STATE_LABEL[dec.state] || dec.state) + '</div>' +
+      '<div style="font-size:15px;font-weight:700;margin-top:6px;">' + esc(dec.summary) + '</div>' +
+      '<div class="mono" style="font-size:11px;color:var(--muted);margin-top:8px;">' +
+      esc(dec.id) + ' - motor ' + esc(dec.engine_version) + ' / limite ' + esc(dec.constraint_version) +
+      '</div></div></div></section>';
+
+    // --- violations ---
+    var vrows = (dec.violations || []).map(function (v) {
+      var sev = v.remediated
+        ? '<span class="pill ghost">remediat</span>'
+        : (v.severity === "hard" ? '<span class="pill" style="background:var(--accent-dark);color:var(--bg);">HARD</span>'
+                                 : '<span class="pill warn-outline">soft</span>');
+      return '<tr><td>' + sev + '</td>' +
+        '<td class="mono">' + esc(v.constraint_id) + '</td>' +
+        '<td>' + esc(v.applies_to || "-") + '</td>' +
+        '<td class="r">' + (v.current === null ? "—" : fmtPct(v.current, 2)) + '</td>' +
+        '<td class="r"><b>' + (v.observed === null ? "—" : fmtPct(v.observed, 2)) + '</b></td>' +
+        '<td class="r">' + (v.limit === null ? "—" : fmtPct(v.limit, 2)) + '</td></tr>';
+    }).join("");
+
+    html += blk("Limite incalcate", (dec.violations || []).length + " total",
+      vrows
+        ? '<table class="data"><thead><tr><th>Severitate</th><th>Limita</th><th>Se aplica la</th>' +
+          '<th class="r">Curent</th><th class="r">Proiectat</th><th class="r">Prag</th></tr></thead>' +
+          '<tbody>' + vrows + '</tbody></table>'
+        : '<div class="empty">Nicio limita incalcata.</div>');
+
+    // --- metrics ---
+    function metricCell(label, value, note) {
+      return '<div class="cell"><div class="n">' + value + '</div><div class="l">' + esc(label) +
+        (note ? '<br><span style="color:var(--faint);">' + esc(note) + '</span>' : "") + '</div></div>';
+    }
+    html += '<section class="blk"><div class="blk-head"><h2>Metrici de risc</h2>' +
+      '<span class="blk-note">masurate pe istoricul stocat, nu prognoze</span></div>' +
+      '<div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+      metricCell("volatilitate anualizata",
+        m.volatility_insufficient ? "—" : fmtPct(m.volatility, 1),
+        m.volatility_insufficient ? m.volatility_note : m.volatility_obs + " observatii") +
+      metricCell("VaR " + fmtPct(m.var_confidence, 0) + " (1 zi)",
+        m.var_insufficient ? "—" : fmtPct(m.var, 2),
+        m.var_insufficient ? m.var_note : "istoric, din capital propriu") +
+      metricCell("expected shortfall",
+        m.var_insufficient ? "—" : fmtPct(m.es, 2),
+        m.var_insufficient ? "" : "pierderea medie dincolo de VaR") +
+      metricCell("drawdown maxim",
+        m.drawdown_insufficient ? "—" : fmtPct(m.max_drawdown, 2),
+        m.drawdown_insufficient ? "necesita istoric de instantanee" : "din instantanee reale") +
+      '</div><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+      metricCell("HHI (concentrare)", m.hhi === null ? "—" : Number(m.hhi).toFixed(4),
+        "fata de capitalul propriu") +
+      metricCell("largime efectiva",
+        m.effective_positions === null ? "—" : Number(m.effective_positions).toFixed(2),
+        "pozitii echivalente, din partea investita") +
+      metricCell("cea mai mare pozitie", fmtPct(m.largest_weight, 2),
+        m.largest_instrument || "") +
+      metricCell("corelatie medie",
+        m.avg_correlation === null ? "—" : Number(m.avg_correlation).toFixed(3),
+        m.correlation_pairs + " perechi, " + m.correlation_thin + " prea subtiri") +
+      '</div></section>';
+
+    if ((m.correlated_pairs || []).length) {
+      html += blk("Perechi puternic corelate", "se misca impreuna",
+        '<div class="copy"><p>Aceste pozitii nu diversifica atat cat sugereaza numarul lor.</p></div>' +
+        '<table class="data"><thead><tr><th>Instrument A</th><th>Instrument B</th>' +
+        '<th class="r">Corelatie</th></tr></thead><tbody>' +
+        m.correlated_pairs.map(function (p) {
+          return '<tr><td class="mono">' + esc(p[0]) + '</td><td class="mono">' + esc(p[1]) +
+            '</td><td class="r"><b>' + Number(p[2]).toFixed(2) + '</b></td></tr>';
+        }).join("") + '</tbody></table>', "warn");
+    }
+
+    // --- audit: what ran, what did not ---
+    var skipped = dec.skipped || {};
+    var skippedKeys = Object.keys(skipped);
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Verificari efectuate</h2><span class="blk-note">' +
+      (dec.evaluated || []).length + '</span></div><div class="blk-body">' +
+      ((dec.evaluated || []).length
+        ? '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + dec.evaluated.map(function (s) {
+            return '<span class="phrasechip mono">' + esc(s) + '</span>'; }).join("") + '</div>'
+        : '<div class="empty">Nicio verificare nu a rulat.</div>') +
+      '</div></div>' +
+      '<div><div class="blk-head"><h2>Verificari care nu au putut rula</h2><span class="blk-note' +
+      (skippedKeys.length ? ' warn' : '') + '">' + skippedKeys.length + '</span></div><div class="blk-body">' +
+      (skippedKeys.length
+        ? skippedKeys.map(function (k) {
+            return '<div style="border-bottom:1px solid var(--line);padding:6px 0;font-size:12px;">' +
+              '<span class="mono"><b>' + esc(k) + '</b></span><br>' +
+              '<span style="color:var(--muted);">' + esc(skipped[k]) + '</span></div>'; }).join("")
+        : '<div class="empty">Toate verificarile aplicabile au rulat.</div>') +
+      '</div></div></section>';
+
+    if ((dec.reasons || []).length) {
+      html += blk("Rationament", "de ce acest verdict",
+        '<div class="copy">' + dec.reasons.map(function (r) {
+          return '<p>- ' + esc(r) + '</p>'; }).join("") + '</div>');
+    }
+
+    html += blk("Intentii de ordin", d.intents + " generate",
+      '<div class="copy"><p>O intentie de ordin este o <b>inregistrare inerta</b>: descrie ce ' +
+      '<i>ar fi</i> instruit daca ar exista un nivel de executie. Nu are cont, broker, bursa sau ' +
+      'identificator de ordin, si nimic din aceasta faza nu o poate transmite nicaieri. ' +
+      'Integrarea MT5 / Interactive Brokers apartine unei faze ulterioare.</p></div>');
+
+    html += riskConstraintsBlock();
+    return html;
+  }
+
+  function riskConstraintsBlock() {
+    var C = D.constraints || { available: false };
+    if (!C.available) {
+      return blk("Limite de risc", "neconfigurate",
+        '<div class="empty">Setul de limite nu a fost inca scris in baza de date. ' +
+        'Prima rulare a evaluatorului il creeaza din valorile implicite.</div>');
+    }
+    var rows = C.constraints.filter(function (c) { return c.enabled; }).map(function (c) {
+      var bound = c.max !== null && c.max !== undefined
+        ? "max " + Number(c.max).toFixed(2)
+        : "min " + Number(c.min).toFixed(2);
+      return '<tr><td>' + (c.severity === "hard"
+          ? '<span class="pill solid">HARD</span>'
+          : '<span class="pill ghost">soft</span>') + '</td>' +
+        '<td class="mono">' + esc(c.id) + '</td>' +
+        '<td class="mono">' + esc(c.scope) + '</td>' +
+        '<td class="r mono">' + esc(bound) + '</td>' +
+        '<td style="color:var(--muted);font-size:11px;">' + esc(c.description) + '</td></tr>';
+    }).join("");
+
+    return blk("Limite active",
+      'set <span class="mono">' + esc((C.constraints[0] || {}).version || "v1") +
+      '</span> - stare ' + esc(C.trading_state),
+      '<table class="data"><thead><tr><th>Severitate</th><th>Identificator</th><th>Domeniu</th>' +
+      '<th class="r">Prag</th><th>Ce protejeaza</th></tr></thead><tbody>' + rows + '</tbody></table>');
+  }
+
+  // ---------------------------------------------------------------
   // navigation state
   // ---------------------------------------------------------------
   var STUB_META = {
@@ -733,10 +1243,6 @@ table.data tr.sel { background:var(--accent-bg); }
       body: D.meta.watchlist_count
         ? "Companiile urmarite (" + D.meta.watchlist_count + ") sunt pinuite pe pagina Rezumat de mai sus fiecare data cand pipeline-ul zilnic ruleaza cu un fisier watchlist.txt prezent. O vedere dedicata (alerte, comparatie side-by-side) este un punct de extindere viitor, nu o functie neimplementata azi."
         : "Nicio companie urmarita momentan. Adauga nume de companii (unul pe linie) in watchlist.txt la radacina repo-ului, iar urmatoarea rulare zilnica le va pinui pe pagina Rezumat." },
-    portfolio: { kicker: "Sectiune", title: "Portofoliu", stat: [D.portfolio_result ? String(D.portfolio_result.trades_simulated) : "0", "tranzactii simulate"],
-      body: D.portfolio_result
-        ? "Simularea de portofoliu curenta are " + D.portfolio_result.trades_simulated + " tranzactii, pe baza recomandarilor deja verificate prin Backtest Engine. O pagina dedicata (alocare, expunere pe sector, P&L per pozitie) este urmatorul pas — datele brute exista deja in portfolio_snapshots."
-        : "Nicio simulare de portofoliu disponibila inca — necesita recomandari deja verificate prin Backtest Engine. Portofoliul real (holdings, alocare, expunere, P&L) este planificat pentru o faza ulterioara (MT5 / Interactive Brokers) si nu exista inca in pipeline." },
     research: { kicker: "Sectiune", title: "Cercetare", stat: [fmtNum(D.research.available ? D.research.total : 0), "observatii"],
       body: D.research.available
         ? "Setul de cercetare are " + fmtNum(D.research.total) + " observatii (Faza 7) si " + fmtNum(D.research.feature_count) + " caracteristici in registru (Faza 8) — vezi sectiunea Modele pentru acoperirea lor pe nume. O pagina dedicata de explorare (filtrare pe fereastra, export, comparatie intre versiuni de dataset) este un punct de extindere viitor."
@@ -759,11 +1265,14 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "events", label: "Evenimente", tag: D.events.available ? fmtNum(D.events.total) : "0" },
       { id: "signals", label: "Semnale", tag: D.signals.available ? fmtNum(D.signals.total) : "0" }
     ]},
+    { label: "Portofoliu", items: [
+      { id: "portfolio", label: "Portofoliu", tag: PF_COUNT ? String(PF_COUNT) : "0" },
+      { id: "risk", label: "Risc", tag: RISK_TAG }
+    ]},
     { label: "Performanta", items: [
       { id: "outcomes", label: "Rezultate", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
       { id: "models", label: "Modele", tag: D.models.available ? String(D.models.models.length) : "0" },
-      { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true },
-      { id: "portfolio", label: "Portofoliu", tag: D.portfolio_result ? String(D.portfolio_result.trades_simulated) : "0", stub: true }
+      { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true }
     ]}
   ];
 
@@ -1298,7 +1807,7 @@ table.data tr.sel { background:var(--accent-bg); }
     nav.innerHTML = html;
   }
 
-  var STUB_IDS = ["watchlist", "portfolio", "research", "features"];
+  var STUB_IDS = ["watchlist", "research", "features"];
 
   function render() {
     renderNav();
@@ -1315,6 +1824,8 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "signals") main.innerHTML = viewSignals();
     else if (v === "outcomes") main.innerHTML = viewOutcomes();
     else if (v === "models") main.innerHTML = viewModels();
+    else if (v === "portfolio") main.innerHTML = viewPortfolio();
+    else if (v === "risk") main.innerHTML = viewRisk();
     else if (STUB_IDS.indexOf(v) !== -1) main.innerHTML = viewStub(v);
     else main.innerHTML = viewOverview();
     document.title = "MarketLens Terminal";

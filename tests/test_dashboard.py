@@ -16,8 +16,21 @@ embedded JSON is valid and safe to inject into a <script> block.
 """
 
 import json
+import os
 import sqlite3
+import sys
 import unittest
+
+# dashboard.py is a flat module under src/ (imported bare, the legacy
+# convention), but it now also reaches the Phase 11 package via
+# `src.portfolio.*`. Both roots therefore have to be importable, and
+# stating that here rather than relying on whichever test module
+# happened to run first keeps this file runnable on its own.
+_REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
+for _path in (_REPO_ROOT, os.path.join(_REPO_ROOT, "src")):
+    _resolved = os.path.abspath(_path)
+    if _resolved not in sys.path:
+        sys.path.insert(0, _resolved)
 
 from dashboard import DashboardGenerator
 

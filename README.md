@@ -103,20 +103,54 @@ python run_daily.py
 python run_weekly_backfill.py
 
 # Rulează toată suita de teste
-PYTHONPATH=src python -m unittest discover -s tests -v
+PYTHONPATH=src python -m pytest tests/ -q
 ```
+
+## Portofoliu și risc (Faza 11)
+
+Faza 11 adaugă nivelul dintre **semnale** și o viitoare execuție:
+starea portofoliului, expunerea, metricile de risc, limitele și
+decizia de risc.
+
+**Nu tranzacționează nimic.** Nu există conexiune la broker, nu există
+ordine, nu există credențiale. Cea mai „activă" ieșire este un rând
+inert în `order_intents`, care descrie ce *ar fi* instruit dacă ar
+exista un nivel de execuție. MT5 / Interactive Brokers aparțin unei
+faze ulterioare.
+
+Motorul operează **doar pe poziții declarate explicit** — nu inventează
+un portofoliu. Toate prețurile vin din `price_candle_cache` (lumânări
+deja stocate), niciodată dintr-un apel live, deci orice decizie poate
+fi recalculată identic mai târziu.
+
+```bash
+# Declară un portofoliu și evaluează-l (fără să scrii nimic)
+python scripts/evaluate_portfolio_risk.py --portfolio meu --create --cash 100000 --dry-run
+
+# Evaluează la o ancoră istorică (replay punct-în-timp)
+python scripts/evaluate_portfolio_risk.py --portfolio meu --as-of 2026-08-27T20:00:00+00:00
+```
+
+Paginile **Portofoliu** și **Risc** din Dashboard afișează rezultatul.
+Fără un portofoliu declarat, ele arată explicit acest lucru — nu date
+simulate.
 
 ## Structura proiectului
 
 ```
-├── src/                        # toate cele 31 de module, testate individual
-├── tests/                      # suita completă de teste (25 fișiere, 400+ teste)
+├── src/                        # modulele pipeline-ului, testate individual
+│   ├── portfolio/              # Faza 11 — portofoliu, expunere, risc
+│   ├── signals/                # Faza 10 — motorul de semnale
+│   ├── domain/                 # modelele canonice de domeniu
+│   └── data_access/            # scheme SQL + repository-uri
+├── tests/                      # suita completă de teste (1700+ teste)
 ├── data/marketlens.db          # baza de date persistentă (creată la prima rulare)
-├── docs/index.html             # raportul Dashboard (regenerat la fiecare rulare)
+├── docs/index.html             # MarketLens Terminal (regenerat la fiecare rulare)
 ├── run_daily.py                # script de orchestrare — rularea zilnică
 ├── run_weekly_backfill.py      # script de orchestrare — backfill istoric săptămânal
+├── scripts/                    # rulări manuale per fază
 ├── requirements.txt
-└── .github/workflows/          # cele 3 workflow-uri GitHub Actions
+└── .github/workflows/          # workflow-urile GitHub Actions
 ```
 
 ## Disclaimer

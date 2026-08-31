@@ -1,0 +1,92 @@
+name: Evaluate Portfolio Risk (Phase 11)
+
+# Rulare MANUALA. Evalueaza un portofoliu declarat fata de limitele de
+# risc ale Fazei 11 si scrie decizia in baza de date.
+#
+# DE CE NU E IN PIPELINE-UL ZILNIC: Faza 11 nu are inca pe ce sa
+# opereze — niciun portofoliu nu este declarat implicit, iar toate
+# semnalele din baza curenta sunt suprimate. Un pas care ruleaza de 3
+# ori pe zi doar ca sa raporteze un portofoliu gol nu ajuta pe nimeni.
+# Devine pas de pipeline cand exista un portofoliu real de urmarit —
+# o decizie separata, luata atunci, nu una moștenită acum.
+#
+# ACEST WORKFLOW NU TRANZACTIONEAZA. Nu contacteaza niciun broker, nu
+# trimite niciun ordin si nu are nicio credentiala de executie. Cea mai
+# "activa" iesire a sa este un rand inert in order_intents.
+on:
+  workflow_dispatch:
+    inputs:
+      portfolio:
+        description: 'portfolio_id de evaluat'
+        required: true
+        type: string
+      as_of:
+        description: 'Ancora ISO-8601 UTC (gol = acum)'
+        required: false
+        type: string
+      sizing:
+        description: 'Strategia de dimensionare'
+        required: false
+        default: 'fixed_fraction'
+        type: choice
+        options:
+          - fixed_fraction
+          - volatility_target
+      dry_run:
+        description: 'Doar afiseaza, nu scrie nimic'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Evaluate portfolio risk
+        run: |
+          ARGS="--portfolio '${{ inputs.portfolio }}' --sizing '${{ inputs.sizing }}'"
+          if [ -n "${{ inputs.as_of }}" ]; then
+            ARGS="$ARGS --as-of '${{ inputs.as_of }}'"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          eval python scripts/evaluate_portfolio_risk.py $ARGS
+
+      # Deliberat FARA pas de upload al bazei: o evaluare care nu e
+      # dry-run scrie local, dar publicarea inapoi in release ramane o
+      # actiune explicita, nu un efect secundar al unei rulari manuale.
