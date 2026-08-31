@@ -32,6 +32,7 @@ instead of failing the entire run and producing no report at all.
 """
 
 import os
+import sqlite3
 import sys
 import logging
 from pathlib import Path
@@ -353,8 +354,15 @@ def main() -> int:
     )
 
     # --- 9. Dashboard ---
+    # A separate, short-lived READ connection to the same database file
+    # `db` (NewsDatabase) already has open — SQLite supports concurrent
+    # readers, and this keeps the dashboard's phase 3-10 queries (event
+    # fusion, impact, research, models, signals, full recommendation
+    # history) decoupled from NewsDatabase's own connection lifecycle.
+    dashboard_conn = sqlite3.connect(DB_PATH)
     dashboard = DashboardGenerator()
     report_html = dashboard.generate_report(
+        conn=dashboard_conn,
         recommendations=recommendations,
         articles=all_articles,
         db_stats=stats,
@@ -379,6 +387,7 @@ def main() -> int:
         fomc_meetings=fomc_meetings,
         source_summary=source_summary,
     )
+    dashboard_conn.close()
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     dashboard.save_report(report_html, REPORT_PATH)
     print(f"Dashboard saved to {REPORT_PATH} ({len(report_html)} characters)")

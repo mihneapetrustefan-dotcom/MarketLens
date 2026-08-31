@@ -1,787 +1,370 @@
 """
 dashboard.py
 ---------------
-Dashboard v2 module for MarketLens.
+MarketLens Terminal — the presentation layer.
 
-RESPONSIBILITY:
-Build a complete, self-contained HTML investment report from the
-pipeline's final outputs — recommendations, sector stats, market
-data, risk, portfolio simulation, upgrade/downgrade history, price
-charts — with NOTHING removed or trimmed versus earlier versions.
+RESPONSIBILITY
+--------------
+Builds ONE self-contained HTML application ("MarketLens Terminal")
+covering every phase of the pipeline: ingestion/health, entity
+resolution, events + fusion, market impact, research/features, models,
+signals, and the legacy recommendations/portfolio track record — plus
+a Markets explorer, per-company drill-down, and a Sectors explorer
+built from the static company/sector registries.
 
-STRUCTURE (v2 — restructured from a single long scrolling page):
-A sticky left sidebar with anchor links to each section — Rezumat,
-Watchlist (if any), Sectoare, Portofoliu, Date de piață, Schimbări —
-so the whole report is still ONE continuous page (nothing hidden,
-nothing lost), but with constant orientation instead of blind
-scrolling. Uses plain HTML anchor links (`<a href="#id">`), so jumping
-between sections works even with JavaScript disabled.
+WHY ONE MODULE, NOT TWO
+------------------------
+Earlier versions of this project had two competing dashboard builders:
+this module (fed only by the CURRENT run's in-memory objects — today's
+recommendations, live market prices, the daily narrative) and
+scripts/build_dashboard.py (fed only by reading the database directly,
+covering phases the first one never saw). Neither alone had the full
+picture. This module now does both: it always reads straight from a
+SQLite connection for anything durable, and additionally accepts the
+CURRENT run's in-memory extras (live prices, the daily summary) for
+the few things that are computed fresh each run and never persisted.
+Passing no connection (or no live extras) degrades gracefully section
+by section — never a crash, never an invented number.
 
-WHAT'S NEW IN v2 vs v1:
-1. Watchlist is now a DEDICATED, PINNED SECTION at the top — not a
-   filter that hides everything else. Watchlist entities are pulled
-   out of the sector-grouped body (so they're never shown twice) and
-   shown first, in full card detail, regardless of which sector
-   they're in.
-2. Each card's hidden "argument" now includes a REAL, CLICKABLE LINK
-   to the representative source article — not just its title as
-   plain text — so the person can go verify the actual news behind a
-   recommendation in one click.
+SELF-CONTAINED BY DESIGN
+-------------------------
+The output is a single HTML file: inline CSS, inline JS, one embedded
+JSON data blob. No build step, no bundler, no separate JS/CSS assets
+to keep in sync — it works the moment GitHub Pages serves the file,
+exactly like every previous version of this dashboard.
 
-SAFETY: every piece of user-facing text is HTML-escaped before
-insertion, and every value embedded inside an inline <script> block
-(for Chart.js) is JSON-serialized with "</" escaped, so a stray
-article title can never break the page structure or inject a script.
+NO FAKE DATA
+------------
+Every figure comes from a real query against the database or a value
+the caller actually computed this run. Where something cannot be
+computed (live prices in the DB-only path, a phase that hasn't run
+yet), the UI says so explicitly instead of omitting the section or
+inventing a placeholder.
+
+SAFETY: every piece of user/article-derived text is HTML-escaped by
+the client-side renderer before insertion (see esc() in the embedded
+script), and the JSON payload itself is escaped against "</" so a
+stray headline can never break out of its <script> block.
 """
 
-import html as html_lib
 import json
-from collections import Counter
+import os
+import sqlite3
+import sys
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+_SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from company_registry import COMPANY_REGISTRY
+from sector_registry import COMPANY_SECTOR_MAP, SECTOR_KEYWORDS
+from event_lexicon import EVENT_LEXICON
+
+
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone() is not None
+
+
+def _scalar(conn: sqlite3.Connection, sql: str, params: tuple = (), default=None):
+    try:
+        row = conn.execute(sql, params).fetchone()
+        return row[0] if row and row[0] is not None else default
+    except sqlite3.OperationalError:
+        return default
+
+
+def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> List[tuple]:
+    try:
+        return conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:
+        return []
 
 
 class DashboardGenerator:
     """
-    Builds a self-contained HTML investment report: sidebar navigation,
-    a pinned watchlist section, sector-grouped recommendation cards
-    (each with a confidence bar, badges, a price sparkline, and a
-    hidden, source-linked argument), a portfolio chart, and a market
-    data table.
+    Builds the MarketLens Terminal: a single-page application (client
+    routing, no server) rendering Overview / Markets / Company /
+    Sectors / News / Events / Signals / Outcomes / Models, plus honest
+    placeholders for Watchlist / Portfolio / Research / Features.
     """
 
-    _RECOMMENDATION_COLORS = {
-        "STRONG_BUY": "#2ecc71", "BUY": "#3ecf7e", "HOLD": "#8a8f98",
-        "SELL": "#f0645f", "STRONG_SELL": "#e63946",
-    }
+    # ------------------------------------------------------------------
+    # Phase-by-phase data collection — each method is self-contained and
+    # tolerant of missing tables (an older export, or a phase that
+    # hasn't run yet), same discipline as the rest of this project's
+    # data-access layer.
+    # ------------------------------------------------------------------
 
-    _SECTOR_TINTS = {
-        "positive": "#0f3d24",
-        "negative": "#3d1518",
-        "mixed": "#3d3312",
-        "neutral": "#1a1f2e",
-    }
+    _FLOW_STAGES = [
+        ("Ingestie", "articles", "articole"),
+        ("Entitati", "article_entities", "legaturi"),
+        ("Evenimente", "events", "rapoarte"),
+        ("Fuziune", "canonical_events", "evenimente"),
+        ("Impact", "event_studies", "studii"),
+        ("Cercetare", "research_observations", "observatii"),
+        ("Caracteristici", "research_features", "valori"),
+        ("Modele", "trained_models", "modele"),
+        ("Semnale", "signals", "semnale"),
+    ]
 
-    _UNCATEGORIZED_SECTOR = "Altele"
+    def _collect_flow(self, conn: sqlite3.Connection) -> List[Dict[str, Any]]:
+        flow = []
+        for label, table, unit in self._FLOW_STAGES:
+            count = _scalar(conn, f"SELECT COUNT(*) FROM {table}") if _table_exists(conn, table) else None
+            flow.append({"label": label, "count": count, "unit": unit})
+        return flow
 
-    def _escape(self, value: Any) -> str:
-        """HTML-escape any value before inserting it into the page — the single point every piece of text passes through."""
-        if value is None:
-            return ""
-        return html_lib.escape(str(value))
-
-    def _json_for_script(self, data: Any) -> str:
-        """Serialize data for safe embedding inside an inline <script> block, escaping "</" as defense in depth."""
-        return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-
-    def _anchor_id(self, text: str) -> str:
-        """Build a safe HTML id/anchor slug from arbitrary text (sector names, entity names, etc.)."""
-        return "".join(ch if ch.isalnum() else "-" for ch in text.lower()).strip("-")
-
-    def _render_confidence_bar(self, confidence_score: Optional[float]) -> str:
-        """Render a small horizontal confidence bar, color-coded green/amber/red by score."""
-        if confidence_score is None:
-            return ""
-        pct = max(0, min(100, round(confidence_score * 100)))
-        if confidence_score >= 0.7:
-            color = "#3ecf7e"
-        elif confidence_score >= 0.5:
-            color = "#e8c547"
-        else:
-            color = "#8a8f98"
-        return f"""
-        <div class="conf-track"><div class="conf-fill" style="width:{pct}%; background:{color};"></div></div>
-        <div class="conf-label">{self._escape(confidence_score)}</div>
-        """
-
-    def _render_verified_badge(
-        self, entity: str, verified_track_record: Optional[Dict[str, Optional[bool]]]
-    ) -> str:
-        """Render a checkmark/cross badge if this entity's most recent recommendation has already been checked by Backtest Engine."""
-        if not verified_track_record or entity not in verified_track_record:
-            return ""
-        was_correct = verified_track_record[entity]
-        if was_correct is None:
-            return ""
-        if was_correct:
-            return '<span class="badge-pill verified-ok">correct verificat</span>'
-        return '<span class="badge-pill verified-bad">gresit verificat</span>'
-
-    def _change_badge(self, entity: str, upgrade_downgrade_map: Optional[Dict[str, Dict[str, Any]]]) -> str:
-        """Render an upgrade/downgrade badge if this entity's recommendation changed since it was last logged."""
-        if not upgrade_downgrade_map or entity not in upgrade_downgrade_map:
-            return ""
-        change = upgrade_downgrade_map[entity].get("change")
-        if change == "upgrade":
-            return '<span class="badge-pill change-up">upgrade</span>'
-        if change == "downgrade":
-            return '<span class="badge-pill change-down">downgrade</span>'
-        return ""
-
-    def _render_breakdown(self, rec: Dict[str, Any]) -> str:
-        """Render the Volume/Diversity/Consistency/Impact chips backing a recommendation's confidence score."""
-        chips = []
-        if rec.get("volume_score") is not None:
-            chips.append(f'<span class="chip">Volum {self._escape(rec["volume_score"])}/1</span>')
-        if rec.get("source_diversity_score") is not None:
-            chips.append(f'<span class="chip">Diversitate surse {self._escape(rec["source_diversity_score"])}/1</span>')
-        if rec.get("sentiment_consistency") is not None:
-            chips.append(f'<span class="chip">Consistență {self._escape(rec["sentiment_consistency"])}/1</span>')
-        if rec.get("average_impact") is not None:
-            chips.append(f'<span class="chip">Impact {self._escape(rec["average_impact"])}/1</span>')
-        if not chips:
-            return ""
-        return f'<div class="breakdown">{"".join(chips)}</div>'
-
-    def _recency_weight_for_display(self, timestamp_str: Optional[str], half_life_days: float = 7.0) -> float:
-        """
-        Compute an exponential recency weight in (0, 1] for a
-        timestamp, used ONLY to help pick which single article best
-        represents an entity's card right now — a separate, much
-        shorter-lived concern than Confidence Score's own Time Decay
-        (which uses a 480h/20-day half-life to keep historical
-        coverage meaningfully weighted in the SCORE). Here, the
-        question is "what's the best article to SHOW someone today",
-        where a 3-week-old article should rarely keep outranking a
-        good recent one just because it once scored a slightly higher
-        raw impact — a 7-day half-life reflects that.
-
-        Returns 1.0 for a missing/unparseable timestamp (treated as
-        "unknown age", not penalized) — the same resilience pattern
-        used everywhere else timestamps are parsed in this project.
-        """
-        if not timestamp_str:
-            return 1.0
+    def _collect_health(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        size_bytes = None
         try:
-            published = datetime.fromisoformat(str(timestamp_str).replace("Z", "+00:00"))
-            if published.tzinfo is None:
-                published = published.replace(tzinfo=timezone.utc)
-        except (ValueError, TypeError):
-            return 1.0
+            page_count = _scalar(conn, "PRAGMA page_count", default=0)
+            page_size = _scalar(conn, "PRAGMA page_size", default=0)
+            if page_count and page_size:
+                size_bytes = page_count * page_size
+        except sqlite3.OperationalError:
+            pass
 
-        age_days = (datetime.now(timezone.utc) - published).total_seconds() / 86400.0
-        if age_days < 0:
-            age_days = 0.0
-        return 0.5 ** (age_days / half_life_days)
+        total_articles = _scalar(conn, "SELECT COUNT(*) FROM articles", default=0) if _table_exists(conn, "articles") else 0
+        linked_articles = _scalar(
+            conn, "SELECT COUNT(DISTINCT article_id) FROM article_entities", default=0
+        ) if _table_exists(conn, "article_entities") else 0
+        sources = _scalar(conn, "SELECT COUNT(DISTINCT source) FROM articles WHERE source IS NOT NULL", default=0) \
+            if _table_exists(conn, "articles") else 0
+        latest_article = _scalar(conn, "SELECT MAX(published_at) FROM articles") if _table_exists(conn, "articles") else None
+        return {
+            "size_bytes": size_bytes,
+            "total_articles": total_articles,
+            "linked_articles": linked_articles,
+            "entity_coverage": (linked_articles / total_articles) if total_articles else None,
+            "sources": sources,
+            "latest_article": latest_article,
+        }
 
-    def _representative_article(
-        self, rec: Dict[str, Any], entity_articles: Optional[List[Dict[str, Any]]]
-    ) -> str:
-        """
-        Pick the single article that best represents this entity's
-        recommendation RIGHT NOW, and render it as a clickable link to
-        the real source — so the person can verify the actual news in
-        one click. Returns an empty string if no articles are
-        available.
+    def _collect_events(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        if not _table_exists(conn, "canonical_events"):
+            return {"available": False}
+        total = _scalar(conn, "SELECT COUNT(*) FROM canonical_events", default=0)
+        corroboration = _rows(conn, """
+            SELECT corroboration_state, COUNT(*) FROM canonical_events
+            GROUP BY corroboration_state ORDER BY 2 DESC""")
+        by_type = _rows(conn, """
+            SELECT event_type, COUNT(*) FROM canonical_events
+            GROUP BY event_type ORDER BY 2 DESC""")
+        return {"available": True, "total": total, "corroboration": corroboration, "by_type": by_type}
 
-        WHY RECENCY IS NOW FACTORED IN (previously picked by raw
-        impact alone): a single high-impact article from weeks ago
-        could stay "the representative article" indefinitely, even
-        once dozens of more recent (if less dramatic) articles had
-        appeared — exactly the "the linked articles are always old"
-        problem observed in real use. Impact is now weighted by
-        recency before picking the best one, so a strong recent
-        article can win out over a stale old one, while a genuinely
-        much more impactful older article can still surface if
-        nothing recent comes close — it's down-weighted, not excluded.
-        """
-        if not entity_articles:
-            return ""
+    def _collect_impact(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        if not _table_exists(conn, "event_studies"):
+            return {"available": False}
+        total = _scalar(conn, "SELECT COUNT(*) FROM event_studies", default=0)
+        quality = _rows(conn, "SELECT quality_level, COUNT(*) FROM event_studies GROUP BY quality_level ORDER BY 2 DESC")
+        by_window = _rows(conn, """
+            SELECT window_name, COUNT(*), AVG(abnormal_return) FROM event_study_returns
+            WHERE abnormal_return IS NOT NULL GROUP BY window_name
+        """) if _table_exists(conn, "event_study_returns") else []
+        return {"available": True, "total": total, "quality": quality, "by_window": by_window}
 
-        def combined_score(article: Dict[str, Any]) -> float:
-            impact = (article.get("impact") or {}).get("score", 0.0) or 0.0
-            published = article.get("published_at") or article.get("collected_at")
-            return impact * self._recency_weight_for_display(published)
+    def _collect_research(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        if not _table_exists(conn, "research_observations"):
+            return {"available": False}
+        total = _scalar(conn, "SELECT COUNT(*) FROM research_observations", default=0)
+        quality = _rows(conn, "SELECT quality_level, COUNT(*) FROM research_observations GROUP BY quality_level ORDER BY 2 DESC")
+        feature_coverage = _rows(conn, """
+            SELECT qualified_name, COUNT(DISTINCT observation_id) FROM research_features
+            WHERE source='phase8_feature_engine' AND value_json != 'null'
+            GROUP BY qualified_name ORDER BY 2 DESC
+        """) if _table_exists(conn, "research_features") else []
+        total_features_attempted = _scalar(conn, """
+            SELECT COUNT(DISTINCT qualified_name) FROM research_features WHERE source='phase8_feature_engine'
+        """, default=0) if _table_exists(conn, "research_features") else 0
+        return {"available": True, "total": total, "quality": quality,
+                "feature_coverage": feature_coverage, "feature_count": total_features_attempted}
 
-        best = max(entity_articles, key=combined_score, default=None)
-        if not best or not best.get("title"):
-            return ""
+    def _collect_models(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        if not _table_exists(conn, "trained_models"):
+            return {"available": False}
+        models = _rows(conn, """
+            SELECT m.model_qualified_id, m.label_name, m.train_sample_size, m.train_cluster_count,
+                   e.small_sample, e.beats_all_baselines, e.metrics_json
+            FROM trained_models m LEFT JOIN model_evaluations e ON e.trained_model_id = m.trained_model_id
+            ORDER BY m.trained_at DESC LIMIT 20
+        """)
+        predictions = _scalar(conn, "SELECT COUNT(*) FROM predictions", default=0) if _table_exists(conn, "predictions") else 0
+        return {"available": True, "models": models, "predictions": predictions}
 
-        title = self._escape(best["title"])
-        source = self._escape(best.get("source", ""))
-        url = best.get("url")
+    def _collect_signals(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        if not _table_exists(conn, "signals"):
+            return {"available": False}
+        total = _scalar(conn, "SELECT COUNT(*) FROM signals", default=0)
+        by_status = _rows(conn, "SELECT status, COUNT(*) FROM signals GROUP BY status ORDER BY 2 DESC")
+        by_direction = _rows(conn, """
+            SELECT direction, COUNT(*) FROM signals WHERE status='active' GROUP BY direction ORDER BY 2 DESC
+        """)
+        suppression = _rows(conn, """
+            SELECT reason, COUNT(*) FROM signal_suppressions GROUP BY reason ORDER BY 2 DESC
+        """) if _table_exists(conn, "signal_suppressions") else []
+        recent = _rows(conn, """
+            SELECT signal_id, instrument_id, direction, status, strength, confidence,
+                   expected_return, source_information_cutoff
+            FROM signals ORDER BY source_information_cutoff DESC LIMIT 40
+        """)
+        evaluations = _rows(conn, """
+            SELECT cohort_kind, cohort_value, horizon, sample_size, hit_rate,
+                   baseline_hit_rate, beats_baseline, small_sample
+            FROM signal_evaluations WHERE cohort_kind='overall' ORDER BY horizon
+        """) if _table_exists(conn, "signal_evaluations") else []
+        return {"available": True, "total": total, "by_status": by_status,
+                "by_direction": by_direction, "suppression": suppression,
+                "recent": recent, "evaluations": evaluations}
 
-        label = f'"{title}" — {source}' if source else f'"{title}"'
-        if url:
-            safe_url = self._escape(url)
-            return f'<a class="source-link" href="{safe_url}" target="_blank" rel="noopener noreferrer">Vezi articolul sursa: {label}</a>'
-        return f'<span class="source-link-inactive">{label}</span>'
+    def _sector_breakdown(self, conn: sqlite3.Connection) -> List[Tuple[str, int]]:
+        """Companies with >=1 recommendation, grouped by sector — using the SAME
+        in-process registry the rest of this module already imports (no fragile
+        sys.path import, unlike this figure's earlier incarnation)."""
+        if not _table_exists(conn, "recommendations"):
+            return []
+        from collections import Counter
+        active_entities = {r[0] for r in _rows(conn, "SELECT DISTINCT entity FROM recommendations")}
+        counts = Counter(sector for company, sector in COMPANY_SECTOR_MAP.items() if company in active_entities)
+        return counts.most_common(20)
 
-    def _render_price_sparkline(self, entity: str, price_history: Optional[List[Dict[str, Any]]]) -> str:
-        """Render one small sparkline chart (<canvas> + Chart.js config) for a single entity's recent closing prices."""
-        if not price_history:
-            return ""
+    def _collect_legacy(self, conn: sqlite3.Connection, watchlist: Optional[List[str]]) -> Dict[str, Any]:
+        if not _table_exists(conn, "recommendations"):
+            return {"available": False}
 
-        canvas_id = "spark-" + self._anchor_id(entity)
-        labels = [self._escape(p.get("date", "")) for p in price_history]
-        values = [p.get("close") for p in price_history]
-        is_up = len(values) >= 2 and values[-1] is not None and values[0] is not None and values[-1] >= values[0]
-        line_color = "#3ecf7e" if is_up else "#f0645f"
+        total_recs = _scalar(conn, "SELECT COUNT(*) FROM recommendations", default=0)
+        by_rec = _rows(conn, "SELECT recommendation, COUNT(*) FROM recommendations GROUP BY recommendation ORDER BY 2 DESC")
+        checked = _scalar(conn, "SELECT COUNT(*) FROM recommendations WHERE was_correct IS NOT NULL", default=0)
+        correct = _scalar(conn, "SELECT COUNT(*) FROM recommendations WHERE was_correct = 1", default=0)
 
-        return f"""
-        <canvas id="{canvas_id}" height="26" class="sparkline"></canvas>
-        <script>
-          (function() {{
-            var el = document.getElementById('{canvas_id}');
-            if (el && window.Chart) {{
-              new Chart(el, {{
-                type: 'line',
-                data: {{
-                  labels: {self._json_for_script(labels)},
-                  datasets: [{{
-                    data: {self._json_for_script(values)},
-                    borderColor: '{line_color}',
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                  }}]
-                }},
-                options: {{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {{ legend: {{ display: false }}, tooltip: {{ enabled: false }} }},
-                  scales: {{ x: {{ display: false }}, y: {{ display: false }} }},
-                  elements: {{ point: {{ radius: 0 }} }}
-                }}
-              }});
-            }}
-          }})();
-        </script>
-        """
+        recent = _rows(conn, """
+            SELECT entity, ticker, recommendation, confidence_score, time_horizon,
+                   generated_at, was_correct
+            FROM recommendations ORDER BY generated_at DESC LIMIT 40
+        """)
 
-    def _render_hold_gap(self, hold_gap: Optional[Dict[str, Any]]) -> str:
-        """
-        Render a small "how close to actionable" indicator for a HOLD
-        blocked by a specific numeric gate (confidence or impact).
-        Returns an empty string for anything else (BUY/SELL/STRONG_*,
-        or a HOLD from insufficient data, which has no hold_gap).
-        """
-        if not hold_gap:
-            return ""
-        label = "încredere" if hold_gap["blocked_by"] == "confidence" else "impact"
-        gap = hold_gap["gap"]
-        # A small gap (close to crossing the threshold) is highlighted
-        # more attentively than a large one — both are shown, but a
-        # near-miss is visually distinct from "nowhere close".
-        color = "#e8c547" if gap <= 0.1 else "#8c8470"
-        return f'<div class="hold-gap" style="color:{color};">la {gap} de prag ({label})</div>'
+        verified = _rows(conn, """
+            SELECT entity, was_correct FROM recommendations r
+            WHERE was_correct IS NOT NULL
+              AND generated_at = (
+                  SELECT MAX(generated_at) FROM recommendations r2
+                  WHERE r2.entity = r.entity AND r2.was_correct IS NOT NULL
+              )
+            ORDER BY entity
+        """)
+        verified_correct = sum(1 for _, w in verified if w)
 
-    def _render_recommendation_card(
-        self,
-        rec: Dict[str, Any],
-        upgrade_downgrade_map: Optional[Dict[str, Dict[str, Any]]] = None,
-        verified_track_record: Optional[Dict[str, Optional[bool]]] = None,
-        entity_articles_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-        price_history_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-        pinned: bool = False,
-    ) -> str:
-        """Render one entity as a styled card: confidence bar, badges, a price sparkline, and a hidden, source-linked argument."""
-        color = self._RECOMMENDATION_COLORS.get(rec["recommendation"], "#8a8f98")
-        horizon = rec.get("time_horizon")
-        horizon_badge = f'<span class="badge-pill">{self._escape(horizon)}</span>' if horizon else ""
-        change_badge = self._change_badge(rec["entity"], upgrade_downgrade_map)
-        verified_badge = self._render_verified_badge(rec["entity"], verified_track_record)
-        entity_articles = (entity_articles_map or {}).get(rec["entity"])
-        representative = self._representative_article(rec, entity_articles)
-        sparkline = self._render_price_sparkline(rec["entity"], (price_history_map or {}).get(rec["entity"]))
-        hold_gap_html = self._render_hold_gap(rec.get("hold_gap"))
-        pin_class = " pinned" if pinned else ""
-        pin_icon = '<span class="pin-icon">*</span>' if pinned else ""
-        # "STRONG_BUY" -> "★ STRONG BUY" for display — the underlying
-        # value stays exactly "STRONG_BUY" everywhere else (data-search,
-        # comparisons, etc.); only the label shown to the person changes.
-        verdict_label = rec["recommendation"].replace("_", " ")
-        if rec["recommendation"].startswith("STRONG_"):
-            verdict_label = f"★ {verdict_label}"
+        checked_rows = _rows(conn, """
+            SELECT checked_at, was_correct FROM recommendations
+            WHERE was_correct IS NOT NULL AND checked_at IS NOT NULL
+            ORDER BY checked_at ASC
+        """)
+        daily_accuracy: Dict[str, Tuple[int, int]] = {}
+        running_correct, running_total = 0, 0
+        for checked_at, was_correct in checked_rows:
+            running_total += 1
+            running_correct += int(bool(was_correct))
+            day = str(checked_at)[:10]
+            daily_accuracy[day] = (running_correct, running_total)
+        accuracy_trend = [(day, c / t) for day, (c, t) in sorted(daily_accuracy.items())][-30:]
 
-        return f"""
-        <div class="rec-card{pin_class}" style="box-shadow: inset 3px 0 0 {color};" data-search="{self._escape(rec['entity'].lower())}">
-          <div class="rc-top">
-            <div>
-              <div class="rc-name">{pin_icon}{self._escape(rec['entity'])}</div>
-              <div class="rc-tags">{horizon_badge}{change_badge}{verified_badge}</div>
-              {hold_gap_html}
-            </div>
-            <span class="rc-verdict" style="background:{color}22; color:{color};">{self._escape(verdict_label)}</span>
-          </div>
-          {sparkline}
-          {self._render_confidence_bar(rec.get('confidence_score'))}
-          <details class="argument">
-            <summary><span class="icon">i</span> Vezi argumentul</summary>
-            <div class="argument-body">
-              {self._escape(rec.get('explanation', ''))}
-              {self._render_breakdown(rec)}
-              {representative}
-            </div>
-          </details>
-        </div>
-        """
+        calibration_rows = _rows(conn, """
+            SELECT confidence_score, was_correct FROM recommendations
+            WHERE was_correct IS NOT NULL AND confidence_score IS NOT NULL AND confidence_score >= 0.5
+        """)
+        buckets: Dict[float, List[int]] = {}
+        for confidence, was_correct in calibration_rows:
+            bucket = round((confidence // 0.1) * 0.1, 2)
+            buckets.setdefault(bucket, []).append(int(bool(was_correct)))
+        calibration = [(f"{b:.1f}-{b+0.1:.1f}", len(v), sum(v) / len(v))
+                       for b, v in sorted(buckets.items())]
 
-    def _group_by_sector(
-        self, recommendations: List[Dict[str, Any]], entity_sector_map: Optional[Dict[str, str]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Group recommendations by sector, using entity_sector_map. Unmapped entities fall back to an 'Altele' group."""
-        grouped: Dict[str, List[Dict[str, Any]]] = {}
-        entity_sector_map = entity_sector_map or {}
-        for rec in recommendations:
-            sector = entity_sector_map.get(rec["entity"], self._UNCATEGORIZED_SECTOR)
-            grouped.setdefault(sector, []).append(rec)
-        return grouped
+        portfolio_history = _rows(conn, """
+            SELECT recorded_at, total_invested, total_final_value, total_return_pct, trades_simulated
+            FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 20
+        """) if _table_exists(conn, "portfolio_snapshots") else []
 
-    def _render_sector_section(
-        self,
-        sector_name: str,
-        sector_recs: List[Dict[str, Any]],
-        sector_scores_by_name: Dict[str, Dict[str, Any]],
-        upgrade_downgrade_map: Optional[Dict[str, Dict[str, Any]]],
-        verified_track_record: Optional[Dict[str, Optional[bool]]],
-        entity_articles_map: Optional[Dict[str, List[Dict[str, Any]]]],
-        price_history_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-    ) -> str:
-        """Render one sector section: header with sector-level stats, then its entity cards."""
-        stats = sector_scores_by_name.get(sector_name, {})
-        article_count = stats.get("article_count", "-")
-        source_count = stats.get("distinct_source_count", "-")
-        dominant = stats.get("dominant_sentiment", "neutral")
-        consistency = stats.get("sentiment_consistency")
-        tint = self._SECTOR_TINTS.get(dominant, "#1a1f2e")
-        consistency_text = f" · consistență {round(consistency * 100)}%" if consistency is not None else ""
+        return {
+            "available": True, "total_recs": total_recs, "by_rec": by_rec,
+            "checked": checked, "correct": correct,
+            "accuracy": (correct / checked) if checked else None,
+            "recent": recent, "verified_count": len(verified), "verified_correct": verified_correct,
+            "accuracy_trend": accuracy_trend, "calibration": calibration,
+            "portfolio_history": portfolio_history,
+            "sector_breakdown": self._sector_breakdown(conn),
+            "watchlist": watchlist or [],
+        }
 
-        slug = self._anchor_id(sector_name)
-        cards = "".join(
-            self._render_recommendation_card(
-                r, upgrade_downgrade_map, verified_track_record, entity_articles_map, price_history_map
+    def _collect_rec_index(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
+        """entity -> latest recommendation, across the FULL history table (every
+        entity that has ever received one) — used to power the Markets 'call'
+        column and the Company page's last-call panel."""
+        if not _table_exists(conn, "recommendations"):
+            return {}
+        latest = _rows(conn, """
+            SELECT entity, ticker, recommendation, confidence_score, time_horizon, generated_at
+            FROM recommendations r
+            WHERE generated_at = (
+                SELECT MAX(generated_at) FROM recommendations r2 WHERE r2.entity = r.entity
             )
-            for r in sector_recs
-        )
+        """)
+        return {
+            entity: {
+                "ticker": ticker, "recommendation": rec, "confidence_score": conf,
+                "time_horizon": horizon, "generated_at": generated_at,
+            }
+            for entity, ticker, rec, conf, horizon, generated_at in latest
+        }
 
-        return f"""
-        <div class="sector-block" id="sector-{slug}">
-          <div class="sector-header" style="background:{tint};">
-            <span class="sector-name">{self._escape(sector_name)}</span>
-            <span class="sector-meta">{self._escape(article_count)} articole · {self._escape(source_count)} surse</span>
-            <span class="sentiment-tag">{self._escape(dominant)}{consistency_text}</span>
-          </div>
-          <div class="rec-cards">{cards}</div>
-        </div>
-        """
+    # ------------------------------------------------------------------
+    # Static registries — the "universe" (companies/instruments), the
+    # sector directory, and the event-type lexicon. These never touch
+    # the database: they are exactly what COMPANY_REGISTRY /
+    # COMPANY_SECTOR_MAP / EVENT_LEXICON already define in this repo,
+    # so they can never drift stale the way a pre-generated export can.
+    # ------------------------------------------------------------------
 
-    def _render_watchlist_section(
-        self,
-        watchlist_recs: List[Dict[str, Any]],
-        upgrade_downgrade_map: Optional[Dict[str, Dict[str, Any]]],
-        verified_track_record: Optional[Dict[str, Optional[bool]]],
-        entity_articles_map: Optional[Dict[str, List[Dict[str, Any]]]],
-        price_history_map: Optional[Dict[str, List[Dict[str, Any]]]],
-    ) -> str:
-        """Render the pinned Watchlist section — full-detail cards for the person's own chosen companies, shown first."""
-        if not watchlist_recs:
-            return ""
-        cards = "".join(
-            self._render_recommendation_card(
-                r, upgrade_downgrade_map, verified_track_record, entity_articles_map, price_history_map, pinned=True
-            )
-            for r in watchlist_recs
-        )
-        return f"""
-        <div class="section-title" id="watchlist">
-          Watchlist-ul tau
-          <span class="section-hint">companiile pe care le urmaresti, mereu sus, indiferent de sector</span>
-        </div>
-        <div class="rec-cards">{cards}</div>
-        """
+    def _build_universe(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "t": c["ticker"], "n": c["canonical_name"], "a": c["aliases"],
+                "c": c["category"], "s": COMPANY_SECTOR_MAP.get(c["canonical_name"], ""),
+            }
+            for c in COMPANY_REGISTRY
+        ]
 
-    def _render_market_data_table(
-        self,
-        market_data: Optional[Dict[str, Dict[str, Any]]],
-        risk_data: Optional[Dict[str, Dict[str, Any]]] = None,
-    ) -> str:
-        """Render a factual market-data table — never a valuation verdict."""
-        if not market_data:
-            return '<p class="empty-state">Nicio dată de piață disponibilă.</p>'
+    def _build_sector_summary(self) -> List[Dict[str, Any]]:
+        from collections import Counter
+        company_counts = Counter(COMPANY_SECTOR_MAP.values())
+        sectors = sorted(SECTOR_KEYWORDS.keys())
+        return [
+            {
+                "name": s, "company_count": company_counts.get(s, 0),
+                "keyword_count": len(SECTOR_KEYWORDS.get(s, [])),
+            }
+            for s in sectors
+        ]
 
-        rows = []
-        for ticker, snap in market_data.items():
-            risk = (risk_data or {}).get(ticker, {})
-            risk_cell = (
-                f"{self._escape(risk.get('risk_level'))} ({self._escape(risk.get('annualized_volatility_pct'))}%)"
-                if risk and not risk.get("error") else "-"
-            )
-            if snap.get("error"):
-                rows.append(f"""
-                <tr>
-                  <td>{self._escape(ticker)}</td>
-                  <td colspan="6" class="empty-state">{self._escape(snap["error"])}</td>
-                </tr>
-                """)
-                continue
+    def _build_event_lexicon_summary(self, conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
+        fired_types = set()
+        if _table_exists(conn, "canonical_events"):
+            fired_types = {row[0] for row in _rows(conn, "SELECT DISTINCT event_type FROM canonical_events")}
+        return {
+            event_type: {"phrases": phrases, "fired": event_type in fired_types}
+            for event_type, phrases in EVENT_LEXICON.items()
+        }
 
-            rows.append(f"""
-            <tr>
-              <td>{self._escape(ticker)}</td>
-              <td>{self._escape(snap.get('current_price'))}</td>
-              <td>{self._escape(snap.get('daily_change_pct'))}%</td>
-              <td>{self._escape(snap.get('pct_from_52w_high'))}%</td>
-              <td>{self._escape(snap.get('pct_from_52w_low'))}%</td>
-              <td>{self._escape(snap.get('trailing_pe'))}</td>
-              <td>{risk_cell}</td>
-            </tr>
-            """)
-
-        return f"""
-        <table>
-          <thead><tr><th>Ticker</th><th>Preț curent</th><th>Variație zilnică</th><th>Față de max 52săpt</th><th>Față de min 52săpt</th><th>P/E</th><th>Risc (volatilitate anualizată)</th></tr></thead>
-          <tbody>{"".join(rows)}</tbody>
-        </table>
-        """
-
-    def _render_macro_table(self, macro_snapshots: Optional[Dict[str, Dict[str, Any]]]) -> str:
-        """
-        Render a factual price table for Indices/Commodities/Forex —
-        same "facts, no verdict" philosophy as the company market-data
-        table. No BUY/SELL logic applies here (see market_instruments.py
-        — these deliberately aren't news-detected entities), just the
-        current snapshot from real market data.
-        """
-        if not macro_snapshots:
-            return '<p class="empty-state">Nicio dată macro disponibilă.</p>'
-
-        rows = []
-        for name, snap in macro_snapshots.items():
-            if snap.get("error"):
-                rows.append(f'<tr><td>{self._escape(name)}</td><td colspan="2" class="empty-state">{self._escape(snap["error"])}</td></tr>')
-                continue
-            change = snap.get("daily_change_pct")
-            color = "#3ecf7e" if (change or 0) >= 0 else "#d4695a"
-            rows.append(f"""
-            <tr>
-              <td>{self._escape(name)}</td>
-              <td>{self._escape(snap.get('current_price'))}</td>
-              <td style="color:{color};">{self._escape(change)}%</td>
-            </tr>
-            """)
-
-        return f"""
-        <table>
-          <thead><tr><th>Instrument</th><th>Preț curent</th><th>Variație zilnică</th></tr></thead>
-          <tbody>{"".join(rows)}</tbody>
-        </table>
-        """
-
-    def _render_macro_indicators(self, macro_indicators: Optional[List[Dict[str, Any]]]) -> str:
-        """
-        Render real macroeconomic indicators (GDP, inflation,
-        unemployment, interest rates — via FRED) as plain facts, each
-        with the date it was actually published (economic data is
-        often published with a lag, unlike a live stock price).
-        """
-        if not macro_indicators:
-            return '<p class="empty-state">Niciun indicator macroeconomic disponibil (necesită cheie FRED_API_KEY configurată).</p>'
-
-        items = "".join(
-            f"""
-            <div class="index-box-like" style="display:inline-block; background:#1c1810; border:1px solid #33301f; border-radius:6px; padding:10px 16px; margin:0 8px 8px 0;">
-              <div style="font-size:10px; color:#8c8470; text-transform:uppercase;">{self._escape(ind.get('label'))}</div>
-              <div style="font-size:18px; font-weight:700; color:#f5f1e6;">{self._escape(ind.get('value'))}</div>
-              <div style="font-size:10px; color:#8c8470;">la {self._escape(ind.get('date'))}</div>
-            </div>
-            """
-            for ind in macro_indicators
-        )
-        return f'<div>{items}</div>'
-
-    def _render_economic_calendar(self, fomc_meetings: Optional[List[Dict[str, Any]]]) -> str:
-        """
-        Render upcoming FOMC (Federal Reserve) meeting dates — see
-        economic_calendar.py for why this is deliberately scoped to
-        ONLY this one, precisely-known recurring event, rather than a
-        full commercial-style economic calendar.
-        """
-        if not fomc_meetings:
-            return '<p class="empty-state">Niciun eveniment programat disponibil.</p>'
-
-        items = []
-        for m in fomc_meetings:
-            start = m.get("start")
-            end = m.get("end")
-            days_until = m.get("days_until")
-            when = f"{self._escape(start)} – {self._escape(end)}" if start != end else self._escape(start)
-            countdown = f"peste {days_until} zile" if days_until and days_until > 0 else "în curs / azi"
-            items.append(f"""
-            <div class="change-line">
-              <b>Ședință FOMC (Fed)</b> — {when}
-              <span style="color:#8c8470; margin-left:8px;">({countdown})</span>
-            </div>
-            """)
-        return "".join(items)
-
-    def _render_source_credibility(self, source_summary: Optional[List[Dict[str, Any]]]) -> str:
-        """
-        Render the source-tier transparency breakdown — see
-        source_credibility.py for why this is a TRANSPARENCY layer
-        (where did coverage come from), not a "fake news" verdict.
-        """
-        if not source_summary:
-            return '<p class="empty-state">Nicio distribuție pe surse disponibilă încă.</p>'
-
-        blocks = []
-        for tier in source_summary:
-            source_list = ", ".join(
-                f'{self._escape(s["name"])} ({s["article_count"]})' for s in tier.get("sources", [])
-            )
-            blocks.append(f"""
-            <div class="change-line">
-              <b>{self._escape(tier.get('tier_label'))}</b> — {tier.get('article_count')} articole
-              <div style="font-size:11px; color:#8c8470; margin-top:4px;">{source_list}</div>
-            </div>
-            """)
-        return "".join(blocks)
-
-    def _render_portfolio_summary(self, portfolio_result: Optional[Dict[str, Any]]) -> str:
-        """Render the hypothetical portfolio simulation summary cards."""
-        if not portfolio_result or not portfolio_result.get("trades_simulated"):
-            return '<p class="empty-state">Nicio simulare de portofoliu disponibilă (necesită recomandări deja verificate prin Backtest).</p>'
-        r = portfolio_result
-        color = "#3ecf7e" if (r["total_return_pct"] or 0) >= 0 else "#f0645f"
-        return f"""
-        <div class="kpi-row">
-          <div class="kpi"><div class="n">${self._escape(r['total_invested'])}</div><div class="l">Investit (simulat)</div></div>
-          <div class="kpi"><div class="n">${self._escape(r['total_final_value'])}</div><div class="l">Valoare finală</div></div>
-          <div class="kpi"><div class="n" style="color:{color}">{self._escape(r['total_return_pct'])}%</div><div class="l">Randament total</div></div>
-          <div class="kpi"><div class="n">{self._escape(r['trades_simulated'])}</div><div class="l">Tranzacții simulate</div></div>
-        </div>
-        """
-
-    def _render_portfolio_chart(self, portfolio_history: Optional[List[Dict[str, Any]]]) -> str:
-        """Render the portfolio-return-over-time line chart (a <canvas> + Chart.js config)."""
-        if not portfolio_history:
-            return '<p class="empty-state">Niciun istoric de portofoliu încă — apare pe măsură ce pipeline-ul rulează automat, zi de zi.</p>'
-
-        labels = [self._escape((s.get("recorded_at") or "")[:10]) for s in portfolio_history]
-        values = [s.get("total_return_pct") for s in portfolio_history]
-
-        return f"""
-        <canvas id="portfolioChart" height="70"></canvas>
-        <script>
-          (function() {{
-            if (window.Chart) {{
-              new Chart(document.getElementById('portfolioChart'), {{
-                type: 'line',
-                data: {{
-                  labels: {self._json_for_script(labels)},
-                  datasets: [{{
-                    label: 'Randament portofoliu simulat (%)',
-                    data: {self._json_for_script(values)},
-                    borderColor: '#4a90d9',
-                    backgroundColor: 'rgba(74,144,217,0.15)',
-                    fill: true,
-                    tension: 0.25,
-                    pointRadius: 2,
-                  }}]
-                }},
-                options: {{
-                  responsive: true,
-                  plugins: {{ legend: {{ display: false }} }},
-                  scales: {{
-                    x: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }},
-                    y: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }}
-                  }}
-                }}
-              }});
-            }}
-          }})();
-        </script>
-        """
-
-    def _render_accuracy_chart(self, accuracy_history: Optional[List[Dict[str, Any]]]) -> str:
-        """
-        Render the cumulative hit-rate-over-time line chart — makes
-        VISIBLE (instead of just claimed) whether Backtest Engine's
-        track record is actually improving as more recommendations get
-        checked, rather than only ever showing a single current number.
-        """
-        if not accuracy_history:
-            return '<p class="empty-state">Niciun istoric de precizie încă — apare pe măsură ce recomandările ajung la scadență și sunt verificate.</p>'
-
-        labels = [self._escape((s.get("checked_at") or "")[:10]) for s in accuracy_history]
-        values = [round((s.get("cumulative_hit_rate") or 0) * 100, 1) for s in accuracy_history]
-        counts = [s.get("cumulative_checked") for s in accuracy_history]
-
-        return f"""
-        <canvas id="accuracyChart" height="70"></canvas>
-        <script>
-          (function() {{
-            if (window.Chart) {{
-              new Chart(document.getElementById('accuracyChart'), {{
-                type: 'line',
-                data: {{
-                  labels: {self._json_for_script(labels)},
-                  datasets: [{{
-                    label: 'Rată de succes cumulativă (%)',
-                    data: {self._json_for_script(values)},
-                    borderColor: '#e8c547',
-                    backgroundColor: 'rgba(232,197,71,0.12)',
-                    fill: true,
-                    tension: 0.25,
-                    pointRadius: 2,
-                  }}]
-                }},
-                options: {{
-                  responsive: true,
-                  plugins: {{ legend: {{ display: false }} }},
-                  scales: {{
-                    x: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }},
-                    y: {{ min: 0, max: 100, ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }}
-                  }}
-                }}
-              }});
-            }}
-          }})();
-        </script>
-        """
-
-    def _render_calibration_chart(self, calibration_report: Optional[List[Dict[str, Any]]]) -> str:
-        """
-        Render the confidence calibration bar chart — checks whether a
-        HIGHER confidence score actually correlates with being right
-        MORE OFTEN, using real outcomes grouped by confidence bucket,
-        instead of assuming the score means something because the
-        formula that produces it looks reasonable. A count of checked
-        recommendations is listed under each bar, since a bucket with
-        very few checks is far less reliable than one with many.
-        """
-        if not calibration_report:
-            return '<p class="empty-state">Niciun raport de calibrare încă — necesită recomandări verificate în mai multe intervale de încredere.</p>'
-
-        labels = [self._escape(b["bucket_label"]) for b in calibration_report]
-        values = [round((b.get("hit_rate") or 0) * 100, 1) for b in calibration_report]
-        counts_line = " · ".join(
-            f'{self._escape(b["bucket_label"])}: {b["count"]} verificări' for b in calibration_report
-        )
-
-        return f"""
-        <canvas id="calibrationChart" height="70"></canvas>
-        <div style="font-size:11px; color:#8c8470; margin-top:8px;">{counts_line}</div>
-        <script>
-          (function() {{
-            if (window.Chart) {{
-              new Chart(document.getElementById('calibrationChart'), {{
-                type: 'bar',
-                data: {{
-                  labels: {self._json_for_script(labels)},
-                  datasets: [{{
-                    label: 'Rată de succes reală (%)',
-                    data: {self._json_for_script(values)},
-                    backgroundColor: '#4a90d9',
-                  }}]
-                }},
-                options: {{
-                  responsive: true,
-                  plugins: {{ legend: {{ display: false }} }},
-                  scales: {{
-                    x: {{ ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }},
-                    y: {{ min: 0, max: 100, ticks: {{ color: '#9aa0a6' }}, grid: {{ color: '#20232b' }} }}
-                  }}
-                }}
-              }});
-            }}
-          }})();
-        </script>
-        """
-
-    def _render_changes_section(self, upgrade_downgrade_results: Optional[List[Dict[str, Any]]]) -> str:
-        """Render the list of entities whose recommendation changed since it was last logged."""
-        if not upgrade_downgrade_results:
-            return '<p class="empty-state">Nicio schimbare de recomandare de urmărit încă.</p>'
-        changes = [r for r in upgrade_downgrade_results if r.get("change") in ("upgrade", "downgrade")]
-        if not changes:
-            return '<p class="empty-state">Nicio schimbare azi — toate recomandările au rămas neschimbate.</p>'
-        lines = []
-        for r in changes:
-            arrow = "up" if r["change"] == "upgrade" else "down"
-            color = "#3ecf7e" if r["change"] == "upgrade" else "#f0645f"
-            lines.append(
-                f'<div class="change-line" style="color:{color};">{arrow} <b>{self._escape(r["entity"])}</b> '
-                f'{self._escape(r.get("previous"))} -&gt; {self._escape(r.get("current"))}</div>'
-            )
-        return "".join(lines)
-
-    def _render_events_section(self, events: Optional[List[Dict[str, Any]]]) -> str:
-        """
-        Render fused Events (see event_fusion.py) that are CONFIRMED
-        by 2+ independent sources — multi-source confirmation is
-        itself a real credibility signal, worth surfacing separately
-        from the ordinary per-entity cards. Single-source events aren't
-        hidden data, they just don't add anything beyond what that
-        entity's own card in Sectoare already shows, so they're omitted
-        here to keep this section meaningful rather than noisy.
-        """
-        if not events:
-            return '<p class="empty-state">Niciun eveniment confirmat de mai multe surse încă.</p>'
-
-        confirmed = [e for e in events if e.get("confirmed_by_multiple_sources")]
-        if not confirmed:
-            return '<p class="empty-state">Niciun eveniment confirmat de mai multe surse încă.</p>'
-
-        # Most well-corroborated events first; capped so this section
-        # stays scannable even with heavy news days.
-        confirmed = sorted(confirmed, key=lambda e: e.get("source_count", 0), reverse=True)[:15]
-
-        lines = []
-        for e in confirmed:
-            entity = self._escape(e.get("entity"))
-            event_type = self._escape(e.get("event_type"))
-            source_count = e.get("source_count", 0)
-            rep_title = self._escape(e.get("representative_title") or "")
-            rep_source = self._escape(e.get("representative_source") or "")
-            rep_url = e.get("representative_url")
-            label = f'"{rep_title}" — {rep_source}' if rep_source else f'"{rep_title}"'
-            if rep_url:
-                link = f'<a class="source-link" href="{self._escape(rep_url)}" target="_blank" rel="noopener noreferrer">{label}</a>'
-            else:
-                link = f'<span class="source-link-inactive">{label}</span>'
-            lines.append(f"""
-            <div class="change-line">
-              <b>{entity}</b> · {event_type} · confirmat de {source_count} surse independente
-              <div style="margin-top:4px;">{link}</div>
-            </div>
-            """)
-        return "".join(lines)
-
-    def _render_masthead(
-        self,
-        generated_at: str,
-        sector_names: List[str],
-        total_entities: int,
-        watchlist_count: int,
-        changes_count: int,
-    ) -> str:
-        """Render the newspaper-style masthead + horizontal section nav strip (replaces the old sidebar — same anchor ids/hrefs, so every section remains reachable via a plain link, JS or not)."""
-        watchlist_link = (
-            f'<a href="#watchlist">Watchlist <span class="count">{watchlist_count}</span></a>'
-            if watchlist_count else ""
-        )
-        return f"""
-        <div class="masthead">
-          <div class="brand">The MarketLens Journal</div>
-          <div class="sub">{generated_at} · {total_entities} companii urmărite</div>
-        </div>
-        <div class="nav-strip">
-          <a href="#rezumat">Rezumat</a>
-          {watchlist_link}
-          <a href="#sectoare">Sectoare <span class="count">{len(sector_names)}</span></a>
-          <a href="#portofoliu">Portofoliu</a>
-          <a href="#evenimente">Evenimente</a>
-          <a href="#piata">Date de piață</a>
-          <a href="#schimbari">Schimbări <span class="count">{changes_count}</span></a>
-          <span class="count">{total_entities} entități</span>
-        </div>
-        """
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def generate_report(
         self,
-        recommendations: List[Dict[str, Any]],
+        conn: Optional[sqlite3.Connection] = None,
+        recommendations: Optional[List[Dict[str, Any]]] = None,
         articles: Optional[List[Dict[str, Any]]] = None,
         db_stats: Optional[Dict[str, Any]] = None,
         market_data: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -806,239 +389,942 @@ class DashboardGenerator:
         source_summary: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
-        Build the full HTML report as a single string.
+        Build the full MarketLens Terminal HTML document (a string).
 
-        Args:
-            recommendations: output of RecommendationEngine.recommend_all()
-            articles: underlying processed articles; optional (kept for API compatibility)
-            db_stats: output of NewsDatabase.get_stats(); optional
-            market_data: output of MarketDataFetcher.get_snapshots_batch(); optional
-            risk_data: output of RiskScoreCalculator.get_risk_scores_batch(); optional
-            sector_scores: output of SectorAggregator.score_all_sectors(); optional
-            upgrade_downgrade_map: entity -> UpgradeDowngradeTracker.compare_entity() result; optional
-            portfolio_result: output of PortfolioSimulator.simulate(); optional
-            daily_summary_text: output of DailySummaryGenerator.generate(); optional
-            entity_sector_map: entity name -> sector name; drives sector grouping.
-            verified_track_record: entity -> True/False/None, most recent Backtest Engine outcome.
-            entity_articles_map: entity -> its articles, used to pick the
-                representative source article (now shown as a clickable link).
-            price_history_map: entity name -> price history series (sparklines).
-            portfolio_history: output of PortfolioHistory.load_all().
-            watchlist: optional list of entity names (case-insensitive).
-                UNLIKE v1, this does NOT filter out everything else — it
-                PINS those entities in a dedicated "Watchlist" section at
-                the top, removed from their sector group below (so
-                they're never shown twice). None/empty means no pinned
-                section; the rest of the report is unaffected either way.
-            upgrade_downgrade_results: the full list (not just the map) —
-                used to render the "Schimbări" section. Derived from
-                upgrade_downgrade_map's values if omitted.
+        `conn` is an optional SQLite connection used to read every
+        durable phase of the pipeline (health, events, impact,
+        research, models, signals, recommendation history). Without
+        one, those sections render an honest "unavailable" state
+        instead of crashing or inventing numbers.
 
-        Returns:
-            A complete, standalone HTML document (string).
+        Every other argument mirrors what run_daily.py already
+        computes in memory each run (live prices, the daily narrative,
+        today's watchlist) — things that are never persisted to the
+        database, so they can only be shown when the caller passes
+        them directly. All are optional; omitting them degrades the
+        corresponding section gracefully, never the whole page.
         """
-        articles = articles or []
-        db_stats = db_stats or {}
-        sector_scores = sector_scores or []
+        conn = conn or sqlite3.connect(":memory:")
+
         generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-        counts = {"STRONG_BUY": 0, "BUY": 0, "HOLD": 0, "SELL": 0, "STRONG_SELL": 0}
-        for r in recommendations:
-            counts[r["recommendation"]] = counts.get(r["recommendation"], 0) + 1
-        total_buy = counts["BUY"] + counts["STRONG_BUY"]
-        total_sell = counts["SELL"] + counts["STRONG_SELL"]
+        flow = self._collect_flow(conn)
+        health = self._collect_health(conn)
+        events_data = self._collect_events(conn)
+        impact = self._collect_impact(conn)
+        research = self._collect_research(conn)
+        models = self._collect_models(conn)
+        signals = self._collect_signals(conn)
+        legacy = self._collect_legacy(conn, watchlist)
+        rec_index = self._collect_rec_index(conn)
 
-        watchlist_recs: List[Dict[str, Any]] = []
-        remaining_recs = recommendations
-        if watchlist:
-            watchlist_lower = {name.lower() for name in watchlist}
-            watchlist_recs = [r for r in recommendations if r["entity"].lower() in watchlist_lower]
-            remaining_recs = [r for r in recommendations if r["entity"].lower() not in watchlist_lower]
+        universe = self._build_universe()
+        sector_summary = self._build_sector_summary()
+        unmapped = [{"t": c["ticker"], "n": c["canonical_name"]} for c in COMPANY_REGISTRY
+                    if c["canonical_name"] not in COMPANY_SECTOR_MAP]
+        lexicon = self._build_event_lexicon_summary(conn)
 
-        sector_scores_by_name = {s["sector"]: s for s in sector_scores}
-        grouped = self._group_by_sector(remaining_recs, entity_sector_map)
-        sector_names = sorted(
-            grouped.keys(),
-            key=lambda name: sector_scores_by_name.get(name, {}).get("article_count", 0),
-            reverse=True,
-        )
+        # Prefer this run's freshly computed recommendations (has the full
+        # explanation/breakdown a person can read); fall back to the
+        # DB-derived index so the page is still complete when generated
+        # DB-only (scripts/build_dashboard.py, no in-memory run).
+        current_recs_by_entity: Dict[str, Dict[str, Any]] = {}
+        if recommendations:
+            for r in recommendations:
+                current_recs_by_entity[r["entity"]] = r
 
-        sector_sections = "".join(
-            self._render_sector_section(
-                name, grouped[name], sector_scores_by_name,
-                upgrade_downgrade_map, verified_track_record, entity_articles_map, price_history_map,
-            )
-            for name in sector_names
-        )
+        data: Dict[str, Any] = {
+            "meta": {
+                "generated_at": generated_at,
+                "db_size_mb": round(health["size_bytes"] / (1024 * 1024), 1) if health.get("size_bytes") else None,
+                "total_companies": len(universe),
+                "total_sectors": len(sector_summary),
+                "watchlist_count": len(watchlist or []),
+                "daily_summary": daily_summary_text,
+            },
+            "flow": flow,
+            "health": health,
+            "events": events_data,
+            "impact": impact,
+            "research": research,
+            "models": models,
+            "signals": signals,
+            "legacy": legacy,
+            "rec_index": rec_index,
+            "current_recs": current_recs_by_entity,
+            "universe": universe,
+            "sector_summary": sector_summary,
+            "unmapped": unmapped,
+            "lexicon": lexicon,
+            "market_data": market_data or None,
+            "risk_data": risk_data or None,
+            "price_history": price_history_map or None,
+            "macro": {
+                "snapshots": macro_snapshots or None,
+                "indicators": macro_indicators or None,
+                "fomc": fomc_meetings or None,
+            },
+            "source_summary": source_summary or None,
+            "portfolio_result": portfolio_result if (portfolio_result and portfolio_result.get("trades_simulated")) else None,
+        }
 
-        watchlist_section = self._render_watchlist_section(
-            watchlist_recs, upgrade_downgrade_map, verified_track_record, entity_articles_map, price_history_map,
-        )
-
-        if upgrade_downgrade_results is None:
-            upgrade_downgrade_results = list((upgrade_downgrade_map or {}).values())
-        changes_count = sum(1 for r in upgrade_downgrade_results if r.get("change") in ("upgrade", "downgrade"))
-
-        masthead = self._render_masthead(generated_at, sector_names, len(recommendations), len(watchlist_recs), changes_count)
-
-        return f"""<!DOCTYPE html>
-<html lang="ro">
-<head>
-<meta charset="utf-8">
-<title>MarketLens — Raport de Investiții</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<style>
-  * {{ box-sizing: border-box; }}
-  body {{ font-family:'Source Sans 3', Georgia, serif; background:#0d0c0a; color:#eae6da; margin:0; padding:0; }}
-
-  .masthead {{ text-align:center; border-bottom:4px double #eae6da; padding:28px 24px 16px 24px; }}
-  .masthead .brand {{ font-family:'Playfair Display', serif; font-size:38px; font-weight:900; margin:0; letter-spacing:1px; color:#f5f1e6; }}
-  .masthead .sub {{ font-size:11px; letter-spacing:3px; text-transform:uppercase; color:#8c8470; margin-top:6px; }}
-
-  .nav-strip {{ display:flex; justify-content:center; flex-wrap:wrap; gap:26px; padding:12px 24px; border-bottom:1px solid #33301f; font-size:11px; letter-spacing:1px; text-transform:uppercase; position:sticky; top:0; background:#0d0c0a; z-index:10; }}
-  .nav-strip a, .nav-strip span.count:last-child {{ margin:0 13px; }}
-  .nav-strip a {{ color:#c8c2ae; text-decoration:none; }}
-  .nav-strip a:hover {{ color:#d4915a; }}
-  .nav-strip .count {{ color:#5f5a48; margin-left:3px; }}
-
-  .main {{ max-width:1400px; margin:0 auto; padding:28px 40px 48px 40px; }}
-
-  .hero-eyebrow {{ display:none; }}
-  .hero-number {{ font-family:'Playfair Display', serif; font-size:52px; font-weight:800; text-align:center; margin:12px 0; color:#3ecf7e; background:none; -webkit-text-fill-color:initial; }}
-  .hero-summary {{ max-width:720px; margin:0 auto 20px auto; text-align:center; font-size:13.5px; color:#c8c2ae; font-style:italic; line-height:1.6; }}
-
-  .kpi-row {{ display:flex; justify-content:center; flex-wrap:wrap; gap:44px; border-top:1px solid #33301f; border-bottom:1px solid #33301f; padding:16px 0; margin:16px 0 8px 0; }}
-  .kpi {{ text-align:center; background:none; padding:0; margin:0 22px; }}
-  .kpi .n {{ font-size:20px; font-weight:700; display:block; color:#f5f1e6; }}
-  .kpi .l {{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:#8c8470; margin-top:2px; }}
-
-  .search-box {{ display:block; margin:22px auto; max-width:340px; width:100%; background:transparent; border:1px solid #33301f; border-radius:0; padding:9px 14px; color:#eae6da; font-family:'Source Sans 3', sans-serif; font-size:13px; text-align:center; }}
-  .search-box::placeholder {{ color:#5f5a48; font-style:italic; }}
-
-  .section-title {{ font-family:'Playfair Display', serif; font-size:23px; font-weight:800; text-transform:none; letter-spacing:0; border-bottom:2px solid #eae6da; padding-bottom:8px; margin:40px 0 18px 0; color:#f5f1e6; scroll-margin-top:56px; }}
-  .section-hint {{ font-family:'Source Sans 3', sans-serif; font-size:11px; color:#8c8470; font-weight:400; text-transform:none; margin-left:10px; }}
-
-  .rec-cards {{ columns:3; column-gap:32px; }}
-  .rec-card {{ background:none; border-radius:0; padding:0; break-inside:avoid; display:block; margin-bottom:24px; padding-bottom:18px; border-bottom:1px solid #2a2717; }}
-  .rec-card.pinned {{ box-shadow:none !important; background:#1c1810; padding:14px 16px; border-bottom:none; border-left:3px solid #d4b545; margin-bottom:16px; }}
-  .rc-top {{ display:flex; justify-content:space-between; align-items:flex-start; }}
-  .rc-name {{ font-family:'Playfair Display', serif; font-size:18px; font-weight:700; color:#f5f1e6; }}
-  .pin-icon {{ color:#d4b545; margin-right:5px; }}
-  .rc-tags {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }}
-  .hold-gap {{ font-size:10px; margin-top:4px; font-style:italic; }}
-  .badge-pill {{ font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; background:none; color:#8c8470; border:1px solid #33301f; padding:2px 7px; border-radius:0; }}
-  .badge-pill.change-up {{ background:none; color:#3ecf7e; border-color:#254a35; }}
-  .badge-pill.change-down {{ background:none; color:#d4695a; border-color:#4a2a28; }}
-  .badge-pill.verified-ok {{ background:none; color:#3ecf7e; border-color:#254a35; }}
-  .badge-pill.verified-bad {{ background:none; color:#d4695a; border-color:#4a2a28; }}
-  .rc-verdict {{ font-family:'Source Sans 3', sans-serif; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:3px 10px; border-radius:0; }}
-  .sparkline {{ width:100%; max-height:24px; margin-top:8px; }}
-
-  .conf-track {{ height:2px; border-radius:0; background:#2a2717; margin-top:10px; overflow:hidden; }}
-  .conf-fill {{ height:100%; }}
-  .conf-label {{ font-size:10px; color:#8c8470; margin-top:3px; }}
-
-  details.argument {{ margin-top:10px; }}
-  details.argument summary {{ cursor:pointer; list-style:none; font-size:11px; color:#8c8470; display:flex; align-items:center; gap:5px; user-select:none; }}
-  details.argument summary::-webkit-details-marker {{ display:none; }}
-  details.argument summary .icon {{ display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; border:1px solid #5f5a48; color:#8c8470; font-size:9px; font-weight:800; }}
-  details.argument[open] summary .icon {{ background:#d4915a; border-color:#d4915a; color:#0d0c0a; }}
-  .argument-body {{ background:none; border-radius:0; padding:0; margin-top:8px; font-size:12.5px; line-height:1.6; color:#c8c2ae; border-left:2px solid #2a2717; padding-left:12px; }}
-  .breakdown {{ display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }}
-  .breakdown .chip {{ font-size:9.5px; background:none; color:#8c8470; border:1px solid #33301f; padding:2px 7px; border-radius:0; }}
-  .source-link {{ display:block; color:#d4915a; text-decoration:none; margin-top:8px; font-style:italic; }}
-  .source-link:hover {{ text-decoration:underline; }}
-  .source-link-inactive {{ display:block; color:#5f5a48; font-style:italic; margin-top:8px; }}
-
-  .sector-block {{ margin-bottom:8px; scroll-margin-top:56px; }}
-  .sector-header {{ display:flex; align-items:baseline; gap:14px; padding:0 0 10px 0; margin-bottom:18px; border-bottom:1px solid #33301f; background:none !important; border-radius:0; }}
-  .sector-name {{ font-family:'Playfair Display', serif; font-size:19px; font-weight:800; text-transform:none; letter-spacing:0; color:#f5f1e6; }}
-  .sector-meta {{ font-size:11px; opacity:0.7; color:#8c8470; }}
-  .sentiment-tag {{ margin-left:auto; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; padding:0; border-radius:0; background:none !important; color:#8c8470; }}
-
-  table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-  th {{ text-align:left; font-family:'Playfair Display', serif; font-weight:700; color:#f5f1e6; padding:8px 10px; border-bottom:2px solid #eae6da; font-size:12px; text-transform:none; }}
-  td {{ padding:8px 10px; border-bottom:1px solid #2a2717; color:#c8c2ae; }}
-
-  .change-line {{ font-size:13px; padding:8px 0; border-bottom:1px solid #2a2717; }}
-  .empty-state {{ color:#8c8470; font-size:13px; font-style:italic; }}
-  .footer {{ margin-top:48px; padding:20px 0 32px 0; border-top:1px solid #33301f; font-size:11px; color:#5f5a48; text-align:center; }}
-</style>
-</head>
-<body>
-  {masthead}
-
-  <div class="main">
-    <div id="rezumat"></div>
-    <div class="hero-number">{total_buy} BUY · {total_sell} SELL · {counts['HOLD']} HOLD</div>
-    {f'<div class="hero-summary">{self._escape(daily_summary_text)}</div>' if daily_summary_text else ''}
-
-    <div class="kpi-row">
-      <div class="kpi"><div class="n" style="color:#2ecc71">{counts['STRONG_BUY']}</div><div class="l">Strong Buy</div></div>
-      <div class="kpi"><div class="n" style="color:#3ecf7e">{counts['BUY']}</div><div class="l">Buy</div></div>
-      <div class="kpi"><div class="n">{counts['HOLD']}</div><div class="l">Hold</div></div>
-      <div class="kpi"><div class="n" style="color:#d4695a">{counts['SELL']}</div><div class="l">Sell</div></div>
-      <div class="kpi"><div class="n" style="color:#e63946">{counts['STRONG_SELL']}</div><div class="l">Strong Sell</div></div>
-      <div class="kpi"><div class="n">{self._escape(db_stats.get('total_articles', '-'))}</div><div class="l">Articole</div></div>
-      <div class="kpi"><div class="n">{self._escape(db_stats.get('distinct_sources', '-'))}</div><div class="l">Surse</div></div>
-    </div>
-
-    <input class="search-box" type="text" placeholder="Caută o companie..." oninput="marketlensFilter(this.value)">
-
-    {watchlist_section}
-
-    <div class="section-title" id="sectoare">Sectoare <span class="section-hint">{len(sector_names)} sectoare, toate entitățile urmărite</span></div>
-    {sector_sections}
-
-    <div class="section-title" id="portofoliu">Simulare portofoliu <span class="section-hint">(recomandări deja verificate prin Backtest)</span></div>
-    {self._render_portfolio_summary(portfolio_result)}
-    <div class="chart-frame" style="margin-top:16px;">{self._render_portfolio_chart(portfolio_history)}</div>
-
-    <div class="section-title">Rată de succes în timp <span class="section-hint">(precizie cumulativă a Backtest Engine)</span></div>
-    <div class="chart-frame">{self._render_accuracy_chart(accuracy_history)}</div>
-
-    <div class="section-title">Calibrarea încrederii <span class="section-hint">(înseamnă cu adevărat ceva scorul de încredere?)</span></div>
-    <div class="chart-frame">{self._render_calibration_chart(calibration_report)}</div>
-
-    <div class="section-title" id="evenimente">Evenimente confirmate <span class="section-hint">(aceeași știre, raportată independent de mai multe surse)</span></div>
-    {self._render_events_section(events)}
-
-    <div class="section-title" id="piata">Date de piață <span class="section-hint">(fapte reale — fără verdict de subevaluare/supraevaluare)</span></div>
-    {self._render_market_data_table(market_data, risk_data)}
-
-    <div class="section-title">Prezentare macro <span class="section-hint">(indici, mărfuri — fapte reale, fără verdict)</span></div>
-    {self._render_macro_table(macro_snapshots)}
-
-    <div class="section-title">Indicatori macroeconomici <span class="section-hint">(date reale, publicate de Fed St. Louis — FRED)</span></div>
-    {self._render_macro_indicators(macro_indicators)}
-
-    <div class="section-title">Calendar economic <span class="section-hint">(ședințe Fed cunoscute, anunțate oficial)</span></div>
-    {self._render_economic_calendar(fomc_meetings)}
-
-    <div class="section-title">Credibilitate surse <span class="section-hint">(transparență — de unde vine acoperirea, nu un verdict de adevăr)</span></div>
-    {self._render_source_credibility(source_summary)}
-
-    <div class="section-title" id="schimbari">Schimbări recente</div>
-    {self._render_changes_section(upgrade_downgrade_results)}
-
-    <div class="footer">MarketLens — raport generat automat. Nu constituie sfat financiar.</div>
-  </div>
-
-  <script>
-    function marketlensFilter(query) {{
-      var q = query.trim().toLowerCase();
-      document.querySelectorAll('.rec-card').forEach(function(card) {{
-        var match = card.getAttribute('data-search').indexOf(q) !== -1;
-        card.style.display = match ? '' : 'none';
-      }});
-    }}
-  </script>
-</body>
-</html>"""
+        json_blob = json.dumps(data, ensure_ascii=False, default=str).replace("</", "<\\/")
+        return _HTML_TEMPLATE.replace("__DATA_JSON__", json_blob)
 
     def save_report(self, html: str, path: str) -> None:
         """Write the generated HTML report to a file."""
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)
+
+
+_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarketLens Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink:#201e1d; --bg:#f3f2f2; --bg2:#f8f4f4; --panel:#eae9e9;
+  --line:#d7d3d3; --line-strong:#201e1d; --muted:#605d5d; --faint:#7d7979; --border-mid:#bab6b6;
+  --accent:#ec3013; --accent-dark:#ae1800; --accent-darker:#7c1405; --accent-bg:#ffe0d9;
+  --up:#00795a; --down:#ae1800; --mono:'Fira Code',ui-monospace,Menlo,monospace;
+}
+* { box-sizing:border-box; }
+html,body { margin:0; padding:0; background:var(--bg); }
+body { font-family:'Archivo',system-ui,sans-serif; color:var(--ink); -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; }
+a { color:var(--accent-dark); text-decoration:none; }
+a:hover { color:var(--accent); text-decoration:underline; }
+button, select, input { font-family:'Archivo',sans-serif; }
+table { border-collapse:collapse; width:100%; }
+::selection { background:var(--accent-bg); }
+.hidden { display:none !important; }
+
+#header { display:flex; align-items:stretch; border-bottom:2px solid var(--line-strong); background:var(--bg); position:sticky; top:0; z-index:40; }
+.brand { width:232px; flex:none; display:flex; align-items:center; gap:8px; padding:0 16px; border-right:2px solid var(--line-strong); height:56px; cursor:pointer; }
+.brand .dot { width:12px; height:12px; background:var(--accent); flex:none; }
+.brand .name { font-weight:800; font-size:15px; letter-spacing:-0.01em; }
+.headbar { flex:1; display:flex; align-items:center; gap:16px; padding:0 16px; min-width:0; }
+.search-wrap { position:relative; flex:1; max-width:460px; }
+.search-wrap input { width:100%; height:34px; padding:0 46px 0 10px; border:2px solid var(--line-strong); background:var(--bg2); font-size:13px; color:var(--ink); border-radius:0; }
+.search-wrap .kbd { position:absolute; right:8px; top:9px; font-size:10px; font-weight:700; color:var(--faint); letter-spacing:0.06em; pointer-events:none; }
+.search-results { position:absolute; top:38px; left:0; right:0; background:var(--bg2); border:2px solid var(--line-strong); box-shadow:0 12px 32px rgba(45,43,43,0.22); max-height:420px; overflow:auto; z-index:50; }
+.sr-group-head { display:flex; justify-content:space-between; padding:6px 10px; background:var(--panel); font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); }
+.sr-item { display:flex; align-items:baseline; gap:10px; padding:7px 10px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--line); }
+.sr-item:hover { background:var(--accent-bg); }
+.sr-item .k { font-weight:700; min-width:62px; }
+.sr-item .n { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sr-item .m { font-size:11px; color:var(--muted); }
+.headbar-fill { flex:1; }
+.headbar .lastrun { font-size:11px; line-height:1.35; color:var(--muted); text-align:right; }
+.headbar .lastrun b { font-weight:700; color:var(--ink); }
+
+#shell { display:flex; align-items:stretch; min-height:calc(100vh - 56px); }
+#nav { width:232px; flex:none; border-right:2px solid var(--line-strong); padding:0 0 32px 0; background:var(--bg); }
+.nav-group { border-bottom:1px solid var(--line); padding:12px 0 10px 0; }
+.nav-group-label { padding:0 16px 8px 16px; font-size:10px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--faint); }
+.nav-item { display:flex; align-items:center; gap:8px; padding:7px 16px; font-size:13px; font-weight:500; cursor:pointer; color:var(--ink); }
+.nav-item:hover { background:var(--accent-bg); }
+.nav-item.active { background:var(--ink); color:var(--bg); font-weight:700; }
+.nav-item .lbl { flex:1; min-width:0; }
+.nav-item .tag { font-size:9px; font-weight:700; letter-spacing:0.06em; padding:1px 4px; background:var(--panel); color:var(--muted); }
+.nav-item.active .tag { background:var(--accent); color:var(--bg); }
+.nav-item.stub { opacity:0.55; }
+.nav-note { padding:12px 16px; font-size:11px; line-height:1.5; color:var(--faint); }
+
+#main { flex:1; min-width:0; padding:0 0 64px 0; }
+.page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; padding:24px 24px 16px 24px; border-bottom:2px solid var(--line-strong); flex-wrap:wrap; }
+.kicker { font-size:10px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:var(--faint); margin-bottom:6px; }
+.page-head h1 { margin:0; font-size:30px; font-weight:800; letter-spacing:-0.02em; line-height:1.05; }
+.stat-pill-row { display:flex; border:2px solid var(--line-strong); flex:none; }
+.stat-pill { padding:6px 12px; }
+.stat-pill + .stat-pill { border-left:2px solid var(--line-strong); }
+.stat-pill .l { font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); }
+.stat-pill .v { font-size:15px; font-weight:800; }
+
+section.blk { border-bottom:2px solid var(--line-strong); }
+.blk-head { display:flex; align-items:baseline; justify-content:space-between; padding:14px 24px 10px 24px; gap:12px; flex-wrap:wrap; }
+.blk-head h2 { margin:0; font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; }
+.blk-note { font-size:11px; color:var(--muted); }
+.blk-note.warn { color:var(--accent-dark); font-weight:700; }
+.blk-body { border-top:1px solid var(--line); padding:16px 24px 20px 24px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; }
+.grid2 > div:first-child { border-right:2px solid var(--line-strong); }
+.grid32 { display:grid; grid-template-columns:3fr 2fr; }
+.grid32 > div:first-child { border-right:2px solid var(--line-strong); }
+
+.flowstrip { display:grid; grid-template-columns:repeat(9,1fr); border-top:1px solid var(--line); }
+.flow-cell { padding:12px 12px 14px 12px; border-right:1px solid var(--line); }
+.flow-cell .lbl { font-size:9px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--faint); margin-bottom:8px; }
+.flow-cell .n { font-size:22px; font-weight:800; letter-spacing:-0.02em; line-height:1; }
+.flow-cell .u { font-size:10px; color:var(--muted); margin-top:3px; }
+.flow-cell .bartrack { height:4px; margin-top:10px; background:var(--line); }
+.flow-cell .barfill { height:4px; background:var(--ink); }
+
+.statgrid { display:grid; border-top:1px solid var(--line); }
+.statgrid .cell { padding:12px; border-right:1px solid var(--line); }
+.statgrid .cell:last-child { border-right:0; }
+.statgrid .cell .n { font-size:20px; font-weight:800; letter-spacing:-0.02em; }
+.statgrid .cell .l { font-size:10px; line-height:1.3; color:var(--muted); margin-top:4px; }
+
+.barrow { display:grid; grid-template-columns:150px 1fr 46px; align-items:center; gap:10px; margin-bottom:7px; }
+.barrow .lbl { font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.barrow .track { height:10px; background:var(--line); }
+.barrow .fill { display:block; height:10px; background:var(--ink); }
+.barrow .val { font-size:12px; font-weight:700; text-align:right; }
+.barrow.clickable { cursor:pointer; padding:2px 4px; margin:0 -4px 5px -4px; }
+.barrow.clickable:hover { background:var(--accent-bg); }
+
+.mono { font-family:var(--mono); }
+p.copy { margin:0; font-size:12px; line-height:1.55; color:#444141; max-width:60ch; }
+p.copy.wide { max-width:80ch; }
+
+table.data { width:100%; font-size:12px; }
+table.data th { padding:7px 24px; font-size:10px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; border-bottom:2px solid var(--line-strong); background:var(--panel); text-align:left; }
+table.data th.r { text-align:right; }
+table.data th:first-child, table.data td:first-child { padding-left:24px; }
+table.data th:last-child, table.data td:last-child { padding-right:24px; }
+table.data td { padding:8px; border-bottom:1px solid var(--line); }
+table.data td.r { text-align:right; }
+table.data tr.rowlink { cursor:pointer; }
+table.data tr.rowlink:hover { background:#fff2ef; }
+table.data tr.sel { background:var(--accent-bg); }
+
+.pill { display:inline-block; font-size:10px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; padding:2px 5px; }
+.pill.outline-up { border:1px solid var(--up); color:var(--up); }
+.pill.solid { background:var(--ink); color:var(--bg); }
+.pill.ghost { border:1px solid var(--border-mid); color:var(--border-mid); }
+.pill.warn-outline { border:2px solid var(--accent); padding:3px 8px; }
+
+.callout { border:2px solid var(--accent); padding:14px 16px; max-width:92ch; }
+.callout .t { font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--accent-dark); margin-bottom:6px; }
+.hatched { border:1px solid var(--border-mid); background:repeating-linear-gradient(135deg,var(--panel) 0 6px,var(--bg) 6px 12px); padding:24px; }
+
+.filterbar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:12px 24px; border-bottom:1px solid var(--line); }
+.segbtns { display:flex; border:2px solid var(--line-strong); }
+.segbtns button { height:28px; padding:0 12px; border:0; background:transparent; font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; color:var(--ink); }
+.segbtns button + button { border-left:2px solid var(--line-strong); }
+.segbtns button.active { background:var(--ink); color:var(--bg); }
+.field { height:32px; padding:0 10px; border:2px solid var(--line-strong); background:var(--bg2); font-size:12px; color:var(--ink); border-radius:0; }
+.grow { flex:1; }
+
+.regcard { border:2px solid var(--line-strong); padding:12px; }
+.regcard .rc-top { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px; }
+.regcard .rc-key { font-size:12px; font-weight:800; font-family:var(--mono); }
+.sector-tile { padding:12px 14px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); cursor:pointer; }
+.sector-tile:hover { background:var(--accent-bg); }
+.sectorgrid { display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid var(--line); border-left:1px solid var(--line); }
+@media (max-width:1100px) { .sectorgrid { grid-template-columns:repeat(2,1fr); } .grid2, .grid32 { grid-template-columns:1fr; } .grid2 > div:first-child, .grid32 > div:first-child { border-right:0; border-bottom:2px solid var(--line-strong); } .flowstrip { grid-template-columns:repeat(3,1fr); } }
+@media (max-width:760px) { #nav { display:none; } .brand { width:auto; } }
+
+.backbtn { height:28px; padding:0 12px; border:2px solid var(--line-strong); background:transparent; font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; color:var(--ink); }
+.backbtn:hover { background:var(--accent-bg); }
+.aliaschip { font-size:12px; font-family:var(--mono); padding:3px 8px; border:2px solid var(--line-strong); display:inline-block; margin:0 6px 6px 0; }
+.phrasechip { font-size:12px; font-family:var(--mono); padding:3px 8px; border:1px solid var(--border-mid); display:inline-block; margin:0 6px 6px 0; }
+.unfired-chip { font-size:11px; font-family:var(--mono); padding:3px 8px; border:1px solid var(--accent); color:var(--accent-darker); display:inline-block; margin:0 6px 6px 0; }
+
+.footer { border-top:2px solid var(--line-strong); padding:16px 24px; font-size:11px; line-height:1.6; color:var(--muted); max-width:90ch; }
+.empty { color:var(--muted); font-size:12.5px; font-style:italic; padding:6px 0; }
+</style>
+</head>
+<body>
+<div id="header">
+  <div class="brand" onclick="MLGo('overview')">
+    <span class="dot"></span><span class="name">MarketLens</span>
+  </div>
+  <div class="headbar">
+    <div class="search-wrap">
+      <input id="ml-search-input" type="text" placeholder="Cauta companii, instrumente, sectoare, tipuri de eveniment..." oninput="MLSearchInput(this.value)" onfocus="MLSearchOpen(true)">
+      <span class="kbd">/</span>
+      <div id="ml-search-results" class="search-results hidden"></div>
+    </div>
+    <div class="headbar-fill"></div>
+    <div class="lastrun" id="ml-lastrun"></div>
+  </div>
+</div>
+<div id="shell">
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var D = __DATA_JSON__;
+
+  // ---------------------------------------------------------------
+  // small helpers
+  // ---------------------------------------------------------------
+  function esc(v) {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmtNum(n, digits) {
+    if (n === null || n === undefined) return "—";
+    return Number(n).toLocaleString("ro-RO", { maximumFractionDigits: digits === undefined ? 0 : digits, minimumFractionDigits: digits === undefined ? 0 : digits });
+  }
+  function fmtPct(x, digits) {
+    if (x === null || x === undefined) return "—";
+    return (x * 100).toFixed(digits === undefined ? 1 : digits) + "%";
+  }
+  function fmtSignedPct(x, digits) {
+    if (x === null || x === undefined) return "—";
+    var v = x * 100;
+    return (v >= 0 ? "+" : "") + v.toFixed(digits === undefined ? 2 : digits) + "%";
+  }
+  function fmtDate(s) { return s ? esc(String(s).slice(0, 16)).replace("T", " ") : "—"; }
+  function cap(s) { return s === null || s === undefined ? "—" : String(s); }
+
+  function barRows(pairs, valueFmt) {
+    valueFmt = valueFmt || function (v) { return fmtNum(v); };
+    if (!pairs || !pairs.length) return '<div class="empty">Fara date.</div>';
+    var max = Math.max.apply(null, pairs.map(function (p) { return p[1] || 0; })) || 1;
+    return pairs.map(function (p) {
+      var pct = (100 * (p[1] || 0) / max).toFixed(1);
+      return '<div class="barrow"><div class="lbl mono">' + esc(p[0]) + '</div>' +
+        '<div class="track"><span class="fill" style="width:' + pct + '%"></span></div>' +
+        '<div class="val">' + valueFmt(p[1]) + '</div></div>';
+    }).join("");
+  }
+
+  function statPillRow(pills) {
+    return '<div class="stat-pill-row">' + pills.map(function (p) {
+      return '<div class="stat-pill"><div class="l">' + esc(p[0]) + '</div><div class="v">' + esc(p[1]) + '</div></div>';
+    }).join("") + '</div>';
+  }
+
+  function pageHead(kicker, title, pills) {
+    return '<div class="page-head"><div><div class="kicker">' + esc(kicker) + '</div><h1>' + esc(title) + '</h1></div>' +
+      (pills ? statPillRow(pills) : "") + '</div>';
+  }
+
+  function blk(title, note, bodyHtml, noteClass) {
+    return '<section class="blk"><div class="blk-head"><h2>' + esc(title) + '</h2>' +
+      (note ? '<span class="blk-note' + (noteClass ? " " + noteClass : "") + '">' + note + '</span>' : "") +
+      '</div><div class="blk-body">' + bodyHtml + '</div></section>';
+  }
+
+  function sparkline(series, width, height) {
+    width = width || 160; height = height || 28;
+    var vals = series.map(function (p) { return p.close !== undefined ? p.close : p; }).filter(function (v) { return v !== null && v !== undefined; });
+    if (vals.length < 2) return "";
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var range = (max - min) || 1;
+    var up = vals[vals.length - 1] >= vals[0];
+    var pts = vals.map(function (v, i) {
+      var x = (i / (vals.length - 1)) * width;
+      var y = height - ((v - min) / range) * height;
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    return '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '" preserveAspectRatio="none" style="display:block;margin-top:8px;">' +
+      '<polyline points="' + pts + '" fill="none" stroke="' + (up ? "#00795a" : "#ae1800") + '" stroke-width="1.5"></polyline></svg>';
+  }
+
+  // ---------------------------------------------------------------
+  // navigation state
+  // ---------------------------------------------------------------
+  var STUB_META = {
+    watchlist: { kicker: "Sectiune", title: "Watchlist", stat: [String(D.meta.watchlist_count), "companii urmarite"],
+      body: D.meta.watchlist_count
+        ? "Companiile urmarite (" + D.meta.watchlist_count + ") sunt pinuite pe pagina Rezumat de mai sus fiecare data cand pipeline-ul zilnic ruleaza cu un fisier watchlist.txt prezent. O vedere dedicata (alerte, comparatie side-by-side) este un punct de extindere viitor, nu o functie neimplementata azi."
+        : "Nicio companie urmarita momentan. Adauga nume de companii (unul pe linie) in watchlist.txt la radacina repo-ului, iar urmatoarea rulare zilnica le va pinui pe pagina Rezumat." },
+    portfolio: { kicker: "Sectiune", title: "Portofoliu", stat: [D.portfolio_result ? String(D.portfolio_result.trades_simulated) : "0", "tranzactii simulate"],
+      body: D.portfolio_result
+        ? "Simularea de portofoliu curenta are " + D.portfolio_result.trades_simulated + " tranzactii, pe baza recomandarilor deja verificate prin Backtest Engine. O pagina dedicata (alocare, expunere pe sector, P&L per pozitie) este urmatorul pas — datele brute exista deja in portfolio_snapshots."
+        : "Nicio simulare de portofoliu disponibila inca — necesita recomandari deja verificate prin Backtest Engine. Portofoliul real (holdings, alocare, expunere, P&L) este planificat pentru o faza ulterioara (MT5 / Interactive Brokers) si nu exista inca in pipeline." },
+    research: { kicker: "Sectiune", title: "Cercetare", stat: [fmtNum(D.research.available ? D.research.total : 0), "observatii"],
+      body: D.research.available
+        ? "Setul de cercetare are " + fmtNum(D.research.total) + " observatii (Faza 7) si " + fmtNum(D.research.feature_count) + " caracteristici in registru (Faza 8) — vezi sectiunea Modele pentru acoperirea lor pe nume. O pagina dedicata de explorare (filtrare pe fereastra, export, comparatie intre versiuni de dataset) este un punct de extindere viitor."
+        : "Faza 7 (setul de date de cercetare) nu a rulat inca pe aceasta baza de date." },
+    features: { kicker: "Sectiune", title: "Caracteristici", stat: [fmtNum(D.research.available ? D.research.feature_count : 0), "in registru"],
+      body: "Acoperirea caracteristicilor per nume calificat este afisata in sectiunea Modele. O bibliotecă dedicată (definiție, formulă, distribuție per caracteristică) este un punct de extindere viitor." }
+  };
+
+  var NAV = [
+    { label: "Prezentare", items: [
+      { id: "overview", label: "Rezumat", tag: "" }
+    ]},
+    { label: "Piata", items: [
+      { id: "markets", label: "Piete", tag: String(D.meta.total_companies) },
+      { id: "sectors", label: "Sectoare", tag: String(D.meta.total_sectors) },
+      { id: "watchlist", label: "Watchlist", tag: D.meta.watchlist_count ? String(D.meta.watchlist_count) : "0", stub: true }
+    ]},
+    { label: "Inteligenta", items: [
+      { id: "news", label: "Stiri", tag: fmtNum(D.health.total_articles) },
+      { id: "events", label: "Evenimente", tag: D.events.available ? fmtNum(D.events.total) : "0" },
+      { id: "signals", label: "Semnale", tag: D.signals.available ? fmtNum(D.signals.total) : "0" }
+    ]},
+    { label: "Performanta", items: [
+      { id: "outcomes", label: "Rezultate", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
+      { id: "models", label: "Modele", tag: D.models.available ? String(D.models.models.length) : "0" },
+      { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true },
+      { id: "portfolio", label: "Portofoliu", tag: D.portfolio_result ? String(D.portfolio_result.trades_simulated) : "0", stub: true }
+    ]}
+  ];
+
+  var state = { view: "overview", param: null, mktFilter: "all", mktSector: "", mktQuery: "", sigIdx: 0, searchOpen: false };
+
+  function parseHash() {
+    var h = location.hash.replace(/^#\/?/, "");
+    var parts = h.split("/").filter(Boolean).map(decodeURIComponent);
+    state.view = parts[0] || "overview";
+    state.param = parts[1] || null;
+  }
+
+  window.MLGo = function (view, param) {
+    location.hash = "#/" + view + (param ? "/" + encodeURIComponent(param) : "");
+  };
+  window.MLSetMktFilter = function (f) { state.mktFilter = f; render(); };
+  window.MLSetMktSector = function (s) { state.mktSector = s; render(); };
+  window.MLSetMktQuery = function (v) { state.mktQuery = v; render(); };
+  window.MLSetSigIdx = function (i) { state.sigIdx = i; render(); };
+
+  window.MLSearchOpen = function (open) {
+    state.searchOpen = open;
+    document.getElementById("ml-search-results").classList.toggle("hidden", !open);
+  };
+  window.MLSearchInput = function (q) {
+    var box = document.getElementById("ml-search-results");
+    q = (q || "").trim().toLowerCase();
+    if (!q) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+    var companies = D.universe.filter(function (i) {
+      return i.n.toLowerCase().indexOf(q) !== -1 || i.t.toLowerCase().indexOf(q) !== -1;
+    }).slice(0, 8);
+    var sectors = D.sector_summary.filter(function (s) { return s.name.toLowerCase().indexOf(q) !== -1; }).slice(0, 5);
+    var eventTypes = Object.keys(D.lexicon).filter(function (k) { return k.toLowerCase().indexOf(q) !== -1; }).slice(0, 5);
+    var groups = [];
+    if (companies.length) groups.push(["Companii / instrumente", companies.map(function (c) {
+      return { key: c.t, name: c.n, meta: c.s || "nemapat", go: "MLGo('company','" + c.t + "')" };
+    })]);
+    if (sectors.length) groups.push(["Sectoare", sectors.map(function (s) {
+      return { key: "—", name: s.name, meta: s.company_count + " companii", go: "MLGo('sectors')" };
+    })]);
+    if (eventTypes.length) groups.push(["Tipuri de eveniment", eventTypes.map(function (k) {
+      return { key: "—", name: k, meta: D.lexicon[k].fired ? "are evenimente" : "fara evenimente inca", go: "MLGo('events','" + k + "')" };
+    })]);
+    if (!groups.length) {
+      box.innerHTML = '<div class="sr-item">Niciun rezultat pentru “' + esc(q) + '”</div>';
+    } else {
+      box.innerHTML = groups.map(function (g) {
+        return '<div class="sr-group-head"><span>' + esc(g[0]) + '</span><span>' + g[1].length + '</span></div>' +
+          g[1].map(function (it) {
+            return '<div class="sr-item" onclick="' + it.go + '"><span class="k mono">' + esc(it.key) + '</span><span class="n">' + esc(it.name) + '</span><span class="m">' + esc(it.meta) + '</span></div>';
+          }).join("");
+      }).join("");
+    }
+    box.classList.remove("hidden");
+  };
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest(".search-wrap")) MLSearchOpen(false);
+  });
+
+  // ---------------------------------------------------------------
+  // view renderers
+  // ---------------------------------------------------------------
+
+  function viewOverview() {
+    var html = pageHead("Panou de control · pipeline zilnic", "Ce a produs sistemul", [
+      ["Baza de date", D.meta.db_size_mb ? D.meta.db_size_mb + " MB" : "—"],
+      ["Cel mai recent articol", fmtDate(D.health.latest_article)]
+    ]);
+
+    if (D.meta.daily_summary) {
+      html += '<section class="blk"><div class="blk-body"><p class="copy wide" style="font-style:italic;">' + esc(D.meta.daily_summary) + '</p></div></section>';
+    }
+
+    var flowHtml = '<div class="flowstrip">' + D.flow.map(function (s) {
+      var max = Math.max.apply(null, D.flow.map(function (x) { return x.count || 0; })) || 1;
+      var w = s.count ? (100 * s.count / max).toFixed(1) : 0;
+      return '<div class="flow-cell"><div class="lbl">' + esc(s.label) + '</div>' +
+        '<div class="n">' + (s.count === null ? "n/a" : fmtNum(s.count)) + '</div>' +
+        '<div class="u">' + esc(s.unit) + '</div>' +
+        '<div class="bartrack"><div class="barfill" style="width:' + w + '%"></div></div></div>';
+    }).join("") + '</div>';
+    html += blk("Pipeline · fazele 1-10", "volume reale din baza de date", flowHtml);
+
+    var healthLeft = '<div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+      ['<div class="cell"><div class="n">' + fmtNum(D.health.total_articles) + '</div><div class="l">articole totale</div></div>',
+       '<div class="cell"><div class="n">' + fmtPct(D.health.entity_coverage) + '</div><div class="l">acoperire entitati</div></div>',
+       '<div class="cell"><div class="n">' + fmtNum(D.health.sources) + '</div><div class="l">surse active</div></div>',
+       '<div class="cell"><div class="n">' + fmtNum(D.meta.total_companies) + '</div><div class="l">companii in registru</div></div>'].join("") + '</div>';
+    var marketRight = D.market_data
+      ? '<p class="copy">Preturi live disponibile pentru ' + Object.keys(D.market_data).length + ' instrumente urmarite in aceasta rulare.</p>' +
+        Object.keys(D.market_data).slice(0, 6).map(function (t) {
+          var s = D.market_data[t]; if (!s || s.error) return "";
+          var chg = s.daily_change_pct; var up = (chg || 0) >= 0;
+          return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line);font-size:12px;"><span class="mono" style="font-weight:700;">' + esc(t) + '</span><span>' + fmtNum(s.current_price, 2) + '</span><span style="color:' + (up ? "#00795a" : "#ae1800") + ';font-weight:700;">' + fmtSignedPct(chg / 100, 2) + '</span></div>';
+        }).join("")
+      : '<div class="hatched" style="text-align:center;"><span class="mono" style="font-size:11px;color:var(--muted);">price_candle_cache — indisponibil</span></div>' +
+        '<p class="copy" style="margin-top:12px;">Preturile live nu sunt persistate in baza de date — se calculeaza doar in timpul rularii zilnice. Aceasta sectiune se populeaza cand run_daily.py transmite instantaneul de piata generatorului.</p>';
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Sanatatea datelor</h2></div><div class="blk-body">' + healthLeft + '</div></div>' +
+      '<div><div class="blk-head"><h2>Date de piata</h2></div><div class="blk-body">' + marketRight + '</div></div>' +
+      '</div></section>';
+
+    if (D.events.available) {
+      var singleSrc = 0, multiSrc = 0;
+      D.events.corroboration.forEach(function (p) { if (p[0] === "single_source") singleSrc = p[1]; else multiSrc += p[1]; });
+      var totalCorrob = singleSrc + multiSrc || 1;
+      var corrobPct = (100 * singleSrc / totalCorrob).toFixed(1);
+      var evLeft = barRows(D.events.by_type.slice(0, 8));
+      var evRight = '<div style="display:flex;height:28px;border:2px solid var(--line-strong);">' +
+        '<div style="width:' + corrobPct + '%;background:var(--ink);"></div><div style="width:' + (100 - corrobPct) + '%;background:var(--accent);"></div></div>' +
+        '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;"><span><b>' + fmtNum(singleSrc) + '</b> single_source</span><span><b>' + fmtNum(multiSrc) + '</b> multi_source</span></div>' +
+        '<p class="copy" style="margin-top:14px;">' + (singleSrc / totalCorrob > 0.5
+          ? "Majoritatea evenimentelor canonice se sprijina pe o singura sursa independenta. Pana cand numarul de surse creste, increderea in evenimente trebuie citita ca provizorie."
+          : "Majoritatea evenimentelor canonice sunt confirmate de mai multe surse independente.") + '</p>';
+      html += '<section class="blk"><div class="grid2">' +
+        '<div><div class="blk-head"><h2>Evenimente pe tip</h2><span class="blk-note">' + fmtNum(D.events.total) + ' evenimente canonice</span></div><div class="blk-body">' + evLeft + '</div></div>' +
+        '<div><div class="blk-head"><h2>Corroborare</h2><span class="blk-note warn">' + corrobPct + '% o singura sursa</span></div><div class="blk-body">' + evRight + '</div></div>' +
+        '</div></section>';
+    } else {
+      html += blk("Evenimente si fuziune", null, '<div class="empty">Fazele 4-5 nu au rulat inca pe aceasta baza de date.</div>');
+    }
+
+    if (D.impact.available && D.impact.by_window.length) {
+      var rows = D.impact.by_window.map(function (w) {
+        var color = (w[2] || 0) < 0 ? "#ae1800" : "#00795a";
+        return '<tr><td class="mono" style="font-weight:700;">' + esc(w[0]) + '</td><td class="r">' + fmtNum(w[1]) + '</td><td class="r" style="font-weight:700;color:' + color + ';">' + fmtSignedPct(w[2]) + '</td></tr>';
+      }).join("");
+      html += blk("Randament anormal mediu pe fereastra", fmtNum(D.impact.total) + " studii de impact · benchmark-ajustat",
+        '<table class="data"><thead><tr><th>Fereastra</th><th class="r">N</th><th class="r">Randament</th></tr></thead><tbody>' + rows + '</tbody></table>');
+    } else {
+      html += blk("Impact de piata", null, '<div class="empty">Faza 6 nu a rulat inca pe aceasta baza de date.</div>');
+    }
+
+    if (D.signals.available) {
+      var sigRows = D.signals.recent.slice(0, 8).map(function (s) {
+        return '<tr><td style="font-weight:700;">' + esc(s[1]) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
+      }).join("");
+      var activeCount = 0; D.signals.by_status.forEach(function (p) { if (p[0] === "active") activeCount = p[1]; });
+      html += '<section class="blk"><div class="grid32">' +
+        '<div><div class="blk-head"><h2>Semnale recente</h2><span class="blk-note warn">' + activeCount + ' / ' + D.signals.total + ' active</span></div>' +
+        '<table class="data"><thead><tr><th>Instrument</th><th>Directie</th><th class="r">Forta</th><th class="r">Incredere</th><th class="r">R. asteptat</th></tr></thead><tbody>' + (sigRows || '<tr><td colspan="5" class="empty">Niciun semnal</td></tr>') + '</tbody></table></div>' +
+        '<div><div class="blk-head"><h2>Suprimari</h2></div><div class="blk-body">' + barRows(D.signals.suppression) + '</div></div>' +
+        '</div></section>';
+    } else {
+      html += blk("Semnale", null, '<div class="empty">Faza 10 nu a rulat inca pe aceasta baza de date.</div>');
+    }
+
+    if (D.legacy.available) {
+      var accColor = (D.legacy.accuracy || 0) >= 0.5 ? "var(--ink)" : "var(--accent-dark)";
+      var legLeft = '<div class="statgrid" style="grid-template-columns:repeat(3,1fr);">' +
+        '<div class="cell"><div class="n">' + fmtNum(D.legacy.total_recs) + '</div><div class="l">recomandari emise</div></div>' +
+        '<div class="cell"><div class="n" style="color:' + accColor + ';">' + fmtPct(D.legacy.accuracy) + '</div><div class="l">acuratete bruta (' + fmtNum(D.legacy.checked) + ' verificate)</div></div>' +
+        '<div class="cell"><div class="n">' + fmtNum(D.legacy.verified_count) + '</div><div class="l">un apel per companie</div></div></div>';
+      var mixRows = D.legacy.by_rec.map(function (p) { return [p[0], p[1]]; });
+      html += '<section class="blk"><div class="grid2">' +
+        '<div><div class="blk-head"><h2>Istoric recomandari</h2></div><div class="blk-body">' + legLeft + '</div></div>' +
+        '<div><div class="blk-head"><h2>Distributia recomandarilor</h2></div><div class="blk-body">' + barRows(mixRows) + '</div></div>' +
+        '</div></section>';
+    }
+
+    html += blk("Sectoare active", D.legacy.available ? "companii cu recomandari, pe sector" : null,
+      D.legacy.available ? barRows(D.legacy.sector_breakdown) : '<div class="empty">Necesita istoric de recomandari.</div>');
+
+    return html;
+  }
+
+  function callFor(entity) {
+    var r = D.current_recs[entity] || D.rec_index[entity];
+    return r ? r.recommendation : null;
+  }
+
+  function viewMarkets() {
+    var counts = { all: D.universe.length, stocks: 0, bvb: 0, crypto: 0, unmapped: 0 };
+    D.universe.forEach(function (i) { counts[i.c] = (counts[i.c] || 0) + 1; if (!i.s) counts.unmapped++; });
+    var CAT_LABEL = { stocks: "actiuni SUA", bvb: "BVB", crypto: "crypto" };
+
+    var rows = D.universe.filter(function (i) {
+      if (state.mktFilter === "unmapped" && i.s) return false;
+      if (state.mktFilter !== "all" && state.mktFilter !== "unmapped" && i.c !== state.mktFilter) return false;
+      if (state.mktSector && i.s !== state.mktSector) return false;
+      if (state.mktQuery) {
+        var q = state.mktQuery.toLowerCase();
+        if (i.n.toLowerCase().indexOf(q) === -1 && i.t.toLowerCase().indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+
+    var html = pageHead("Piata · registrul companiilor", "Piete", [
+      ["Instrumente", String(D.universe.length)], ["Companii", String(D.universe.length)]
+    ]);
+
+    html += '<div class="filterbar"><div class="segbtns">' +
+      ["all", "stocks", "bvb", "crypto", "unmapped"].map(function (f) {
+        return '<button class="' + (state.mktFilter === f ? "active" : "") + '" onclick="MLSetMktFilter(\'' + f + '\')">' + (f === "all" ? "toate" : (f === "unmapped" ? "nemapate" : CAT_LABEL[f])) + ' · ' + counts[f] + '</button>';
+      }).join("") + '</div>' +
+      '<select class="field" onchange="MLSetMktSector(this.value)"><option value="">toate sectoarele</option>' +
+      D.sector_summary.map(function (s) { return '<option value="' + esc(s.name) + '"' + (state.mktSector === s.name ? " selected" : "") + '>' + esc(s.name) + ' · ' + s.company_count + '</option>'; }).join("") +
+      '</select><input class="field" type="text" placeholder="filtreaza dupa nume sau ticker" value="' + esc(state.mktQuery) + '" oninput="MLSetMktQuery(this.value)"><div class="grow"></div>' +
+      '<span style="font-size:11px;font-weight:700;">se afiseaza ' + rows.length + ' / ' + D.universe.length + '</span></div>';
+
+    var trs = rows.slice(0, 400).map(function (i) {
+      var call = callFor(i.n);
+      var callHtml = call ? '<span class="pill solid">' + esc(call) + '</span>' : '<span style="color:var(--border-mid);">—</span>';
+      var mkt = D.market_data && D.market_data[i.t];
+      var priceHtml = (mkt && !mkt.error) ? fmtNum(mkt.current_price, 2) : '<span class="mono" style="color:var(--faint);">n/a</span>';
+      return '<tr class="rowlink" onclick="MLGo(\'company\',\'' + esc(i.t) + '\')">' +
+        '<td class="mono" style="font-weight:700;">' + esc(i.t) + '</td><td>' + esc(i.n) + '</td>' +
+        '<td style="font-size:11px;color:var(--muted);">' + esc(CAT_LABEL[i.c] || i.c) + '</td>' +
+        '<td style="font-size:11px;color:' + (i.s ? "var(--muted)" : "var(--accent-dark)") + ';">' + esc(i.s || "nemapat") + '</td>' +
+        '<td>' + callHtml + '</td><td class="r">' + priceHtml + '</td>' +
+        '</tr>';
+    }).join("");
+
+    html += '<table class="data"><thead><tr><th>Instrument</th><th>Companie</th><th>Clasa</th><th>Sector</th><th>Apel</th><th class="r">Pret</th></tr></thead>' +
+      '<tbody>' + (trs || '<tr><td colspan="6" class="empty">Niciun rezultat pentru filtrele curente.</td></tr>') + '</tbody></table>';
+
+    html += '<div class="blk-body" style="border-top:2px solid var(--line-strong);"><p class="copy wide">Coloana "Apel" arata ultima recomandare emisa pentru companie, din tabela recommendations — nu doar cele mai recente ' + D.legacy.total_recs + ' randuri, ci istoricul complet per companie. "—" inseamna ca nicio recomandare nu a fost emisa inca pentru acea companie.</p></div>';
+    return html;
+  }
+
+  function viewCompany(ticker) {
+    var sel = D.universe.find(function (i) { return i.t === ticker; }) || D.universe[0];
+    if (!sel) return pageHead("Piata", "Companie negasita", null);
+    var CAT_LABEL = { stocks: "actiuni SUA", bvb: "BVB", crypto: "crypto" };
+    var rec = D.current_recs[sel.n] || D.rec_index[sel.n];
+
+    var html = '<div class="blk-body" style="border-bottom:1px solid var(--line);padding:14px 24px;"><button class="backbtn" onclick="MLGo(\'markets\')">← inapoi la Piete</button></div>';
+    html += pageHead((CAT_LABEL[sel.c] || sel.c) + " · " + sel.t, sel.n, null);
+
+    var mkt = D.market_data && D.market_data[sel.t];
+    var hist = D.price_history && D.price_history[sel.n];
+    var priceHtml;
+    if (mkt && !mkt.error) {
+      var chg = mkt.daily_change_pct; var up = (chg || 0) >= 0;
+      priceHtml = '<div style="font-size:28px;font-weight:800;">' + fmtNum(mkt.current_price, 2) + '</div>' +
+        '<div style="font-size:13px;font-weight:700;color:' + (up ? "#00795a" : "#ae1800") + ';">' + fmtSignedPct(chg / 100, 2) + ' azi</div>' +
+        (hist ? sparkline(hist, 400, 60) : "");
+    } else {
+      priceHtml = '<div class="hatched" style="text-align:center;"><span class="mono" style="font-size:11px;color:var(--muted);">price_candle_cache — indisponibil</span></div>' +
+        '<p class="copy" style="margin-top:12px;">Pretul live nu este persistat in baza de date pentru acest instrument in aceasta rulare.</p>';
+    }
+    var callHtml = rec
+      ? '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;"><span class="pill solid" style="font-size:11px;padding:3px 7px;">' + esc(rec.recommendation) + '</span><span style="font-size:22px;font-weight:800;">' + fmtPct(rec.confidence_score, 0) + '</span><span style="font-size:11px;color:var(--muted);">incredere</span></div>' +
+        '<p class="copy">Orizont: ' + esc(rec.time_horizon || "—") + ' · emisa ' + fmtDate(rec.generated_at) + '.</p>'
+      : '<p class="copy">Nicio recomandare emisa inca pentru aceasta companie.</p>';
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Istoric pret</h2></div><div class="blk-body">' + priceHtml + '</div></div>' +
+      '<div><div class="blk-head"><h2>Ultimul apel</h2></div><div class="blk-body">' + callHtml + '</div></div>' +
+      '</div></section>';
+
+    var sigs = D.signals.available ? D.signals.recent.filter(function (s) {
+      return String(s[1]).replace("crypto-", "").toUpperCase() === sel.t.toUpperCase();
+    }) : [];
+    var sigHtml = sigs.length ? sigs.map(function (s) {
+      return '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:10px 24px;border-bottom:1px solid var(--line);">' +
+        '<span class="pill outline-up">' + esc(s[2]) + '</span><span>forta <b>' + fmtNum(s[4], 2) + '</b></span><span>r. asteptat <b>' + fmtSignedPct(s[6]) + '</b></span></div>';
+    }).join("") : '<div class="blk-body"><p class="copy">Niciun semnal pentru acest instrument inca.</p></div>';
+
+    var path = sel.s ? "source = company" : "source = keyword";
+    var pathBody = sel.s
+      ? "Numele canonic exista in COMPANY_SECTOR_MAP, deci articolele care mentioneaza aceasta companie se clasifica determinist in sectorul de mai sus."
+      : "Numele canonic lipseste din COMPANY_SECTOR_MAP. Articolele care o mentioneaza pot ajunge intr-un sector doar prin calea de rezerva, pe cuvinte-cheie — sau in niciunul.";
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Semnale</h2></div>' + sigHtml + '</div>' +
+      '<div><div class="blk-head"><h2>Suprafata de detectie</h2><span class="blk-note">' + sel.a.length + ' alias(uri)</span></div><div class="blk-body">' +
+      sel.a.map(function (a) { return '<span class="aliaschip">' + esc(a) + '</span>'; }).join("") +
+      '<div style="padding-top:14px;margin-top:14px;border-top:1px solid var(--line);">' +
+      '<div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;">Cale de clasificare</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="width:9px;height:9px;background:' + (sel.s ? "var(--ink)" : "var(--accent)") + ';display:inline-block;"></span><span class="mono" style="font-weight:700;font-size:12px;">' + path + '</span></div>' +
+      '<p class="copy">' + pathBody + '</p></div></div></div>' +
+      '</div></section>';
+
+    return html;
+  }
+
+  function viewSectors() {
+    var html = pageHead("Piata · registrul sectoarelor", "Sectoare", [["Definite", String(D.sector_summary.length)]]);
+
+    html += '<section class="blk"><div class="blk-body"><div class="callout"><div class="t">Clasificare pe doua cai</div>' +
+      '<p style="margin:0 0 8px 0;font-size:13px;line-height:1.55;">Un sector se determina fie determinist (compania e in COMPANY_SECTOR_MAP), fie prin cuvinte-cheie de rezerva (SECTOR_KEYWORDS), fie deloc.</p>' +
+      '<p style="margin:0;font-size:13px;line-height:1.55;color:#444141;">' + D.unmapped.length + ' din ' + D.meta.total_companies + ' companii din registru nu sunt in COMPANY_SECTOR_MAP si cad pe calea de rezerva.</p></div></div></section>';
+
+    var tiles = D.sector_summary.map(function (s) {
+      var max = Math.max.apply(null, D.sector_summary.map(function (x) { return x.company_count; })) || 1;
+      var w = (100 * s.company_count / max).toFixed(0);
+      return '<div class="sector-tile" onclick="MLGo(\'markets-sector\',\'' + esc(s.name) + '\')" data-sector="' + esc(s.name) + '">' +
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;"><span style="font-size:14px;font-weight:700;">' + esc(s.name) + '</span><span style="font-size:17px;font-weight:800;">' + s.company_count + '</span></div>' +
+        '<div style="height:6px;margin-top:8px;background:var(--line);"><div style="height:6px;width:' + w + '%;background:var(--ink);"></div></div>' +
+        '<div style="font-size:10px;color:var(--faint);margin-top:6px;" class="mono">' + s.keyword_count + ' cuvinte-cheie</div></div>';
+    }).join("");
+    html += blk("Registru sectoare", "src/sector_registry.py", '<div class="sectorgrid">' + tiles + '</div>');
+
+    var unmappedChips = D.unmapped.slice(0, 24).map(function (u) {
+      return '<span class="unfired-chip" style="cursor:pointer;" onclick="MLGo(\'company\',\'' + esc(u.t) + '\')">' + esc(u.t) + ' · ' + esc(u.n) + '</span>';
+    }).join("");
+    html += '<section class="blk"><div class="blk-body"><div class="callout">' +
+      '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px;"><span style="font-size:24px;font-weight:800;color:var(--accent-dark);">' + D.unmapped.length + '</span><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent-dark);">companii fara sector mapat</span></div>' +
+      '<p style="margin:0 0 12px 0;font-size:12px;line-height:1.5;color:#444141;">Sunt in COMPANY_REGISTRY, dar lipsesc din COMPANY_SECTOR_MAP. Pentru ele, clasificarea cade pe calea de rezerva, cu cuvinte-cheie.</p>' +
+      '<div>' + unmappedChips + '</div></div></div></section>';
+
+    return html;
+  }
+
+  function viewNews() {
+    var html = pageHead("Inteligenta · fluxul de stiri", "Stiri", [["Cel mai recent", fmtDate(D.health.latest_article)]]);
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(D.health.total_articles) + '</div><div class="l">articole</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(D.health.sources) + '</div><div class="l">surse</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(D.health.linked_articles) + '</div><div class="l">articole cu entitate</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtPct(D.health.entity_coverage) + '</div><div class="l">acoperire entitati</div></div>' +
+      '</div></section>';
+
+    var withE = D.health.linked_articles, withoutE = Math.max(0, D.health.total_articles - D.health.linked_articles);
+    var totalA = withE + withoutE || 1;
+    var covPct = (100 * withE / totalA).toFixed(1);
+    var covHtml = '<div style="display:flex;height:28px;border:2px solid var(--line-strong);"><div style="width:' + covPct + '%;background:var(--ink);"></div>' +
+      '<div style="width:' + (100 - covPct) + '%;background:repeating-linear-gradient(135deg,var(--panel) 0 6px,var(--bg) 6px 12px);"></div></div>' +
+      '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;"><span><b>' + fmtNum(withE) + '</b> cu entitate</span><span style="color:var(--muted);"><b>' + fmtNum(withoutE) + '</b> fara entitate</span></div>' +
+      '<p class="copy" style="margin-top:14px;">Un articol "fara entitate" nu a fost inca legat de nicio companie/instrument cunoscut de Company/Ticker Detector — fie pentru ca nu mentioneaza una, fie pentru ca alias-ul folosit nu e inca in registru.</p>';
+
+    var taxHtml = ['company · ' + D.meta.total_companies + ' in registru', 'instrument · ' + D.meta.total_companies + ' in registru',
+      'sector · ' + D.meta.total_sectors + ' in registru', 'event · ' + (D.events.available ? D.events.total : 0)].map(function (t) {
+      var parts = t.split(" · ");
+      return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:5px 0;font-size:12px;"><span class="mono">' + esc(parts[0]) + '</span><span style="color:var(--faint);">' + esc(parts[1]) + '</span></div>';
+    }).join("") + '<p class="copy" style="margin-top:12px;">Taxonomia de entitati folosita de sistem — fiecare tip are propriul registru sau propria tabela.</p>';
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Acoperire entitati</h2></div><div class="blk-body">' + covHtml + '</div></div>' +
+      '<div><div class="blk-head"><h2>Taxonomie</h2></div><div class="blk-body">' + taxHtml + '</div></div>' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="blk-body"><div class="hatched"><div style="font-size:13px;font-weight:800;margin-bottom:6px;">Flux de stiri per articol — punct de extindere</div>' +
+      '<div style="font-size:12px;line-height:1.5;color:#444141;max-width:60ch;">Un tabel filtrabil, cautabil, per articol (sursa, companie, sector, tip eveniment, sentiment, impact, incredere) este planificat, dar articolele individuale nu sunt inca exportate in acest instantaneu — doar agregatele de mai sus.</div></div></div></section>';
+
+    return html;
+  }
+
+  function viewEvents(highlightType) {
+    if (!D.events.available) {
+      return pageHead("Inteligenta · evenimente", "Evenimente", null) +
+        blk("Fara date", null, '<div class="empty">Fazele 4-5 (detectie si fuziune) nu au rulat inca pe aceasta baza de date.</div>');
+    }
+    var html = pageHead("Inteligenta · evenimente canonice", "Evenimente", [["Canonice", fmtNum(D.events.total)]]);
+
+    var typeRows = D.events.by_type.map(function (p) {
+      var max = Math.max.apply(null, D.events.by_type.map(function (x) { return x[1]; })) || 1;
+      var w = (100 * p[1] / max).toFixed(1);
+      var active = p[0] === highlightType;
+      return '<div class="barrow clickable' + (active ? '" style="background:var(--accent-bg);' : '') + '" onclick="MLGo(\'events\',\'' + esc(p[0]) + '\')"><div class="lbl mono">' + esc(p[0]) + '</div>' +
+        '<div class="track"><span class="fill" style="width:' + w + '%"></span></div><div class="val">' + p[1] + '</div></div>';
+    }).join("");
+
+    var single = 0, multi = 0;
+    D.events.corroboration.forEach(function (p) { if (p[0] === "single_source") single = p[1]; else multi += p[1]; });
+    var fusionRight = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">' +
+      '<div style="flex:1;"><div style="height:24px;background:var(--line);"><div style="height:24px;width:100%;background:var(--ink);"></div></div><div style="font-size:11px;margin-top:4px;">' + fmtNum(D.events.total + 0) + ' rapoarte</div></div>' +
+      '<span style="font-size:16px;font-weight:800;color:var(--faint);">→</span>' +
+      '<div style="flex:1;"><div style="height:24px;background:var(--line);"><div style="height:24px;width:100%;background:var(--accent);"></div></div><div style="font-size:11px;margin-top:4px;">' + fmtNum(D.events.total) + ' canonice</div></div></div>' +
+      '<div style="display:flex;gap:24px;padding-top:12px;border-top:1px solid var(--line);"><div><span style="font-size:20px;font-weight:800;">' + fmtNum(single) + '</span> <span style="font-size:12px;color:var(--muted);">single_source</span></div><div><span style="font-size:20px;font-weight:800;">' + fmtNum(multi) + '</span> <span style="font-size:12px;color:var(--muted);">multi_source</span></div></div>';
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Evenimente pe tip</h2></div><div class="blk-body">' + typeRows + '<div style="margin-top:6px;font-size:11px;color:var(--faint);">Click pe un tip pentru detaliu.</div></div></div>' +
+      '<div><div class="blk-head"><h2>Rapoarte → canonice</h2></div><div class="blk-body">' + fusionRight + '</div></div>' +
+      '</div></section>';
+
+    if (D.impact.available && D.impact.by_window.length) {
+      var wRows = D.impact.by_window.map(function (w) {
+        var color = (w[2] || 0) < 0 ? "#ae1800" : "#00795a";
+        var reliable = w[1] >= 100;
+        return '<tr><td class="mono" style="font-weight:700;">' + esc(w[0]) + '</td><td class="r" style="color:var(--muted);">' + w[1] + '</td><td class="r" style="font-weight:700;color:' + color + ';">' + fmtSignedPct(w[2]) + '</td><td><span class="pill" style="border:1px solid ' + (reliable ? "#00795a" : "#ae1800") + ';color:' + (reliable ? "#00795a" : "#ae1800") + ';">' + (reliable ? "solid" : "subtire") + '</span></td></tr>';
+      }).join("");
+      html += blk("Studii de impact pe fereastra", fmtNum(D.impact.total) + " studii · benchmark-ajustat",
+        '<table class="data"><thead><tr><th>Fereastra</th><th class="r">N</th><th class="r">Randament anormal</th><th>Fiabilitate</th></tr></thead><tbody>' + wRows + '</tbody></table>');
+    }
+
+    var firedTypes = {}; D.events.by_type.forEach(function (p) { firedTypes[p[0]] = true; });
+    var unfired = Object.keys(D.lexicon).filter(function (k) { return !firedTypes[k]; });
+    if (unfired.length) {
+      var chips = unfired.map(function (k) { return '<span class="unfired-chip" onclick="MLGo(\'events\',\'' + esc(k) + '\')" style="cursor:pointer;">' + esc(k) + ' · ' + D.lexicon[k].phrases.length + ' fraze</span>'; }).join("");
+      html += blk("Tipuri din lexicon fara evenimente inca", unfired.length + " / " + Object.keys(D.lexicon).length + " tipuri de lexicon",
+        '<p class="copy wide">Aceste tipuri au fraze declanșatoare definite in event_lexicon.py, dar nicio stire nu a produs inca un eveniment canonic din aceasta categorie.</p><div style="margin-top:12px;">' + chips + '</div>');
+    }
+
+    if (highlightType && D.lexicon[highlightType]) {
+      var lex = D.lexicon[highlightType];
+      var count = 0; D.events.by_type.forEach(function (p) { if (p[0] === highlightType) count = p[1]; });
+      html += blk("Detaliu tip: " + highlightType, count + " evenimente canonice",
+        '<p class="copy" style="margin-bottom:10px;">Fraze declansatoare din lexicon:</p>' +
+        (lex.phrases.length ? lex.phrases.map(function (p) { return '<span class="phrasechip">' + esc(p) + '</span>'; }).join("") : '<div class="empty">Fara fraze definite.</div>'));
+    }
+
+    return html;
+  }
+
+  function viewSignals() {
+    if (!D.signals.available) {
+      return pageHead("Inteligenta · semnale", "Semnale", null) + blk("Fara date", null, '<div class="empty">Faza 10 nu a rulat inca pe aceasta baza de date.</div>');
+    }
+    var activeCount = 0; D.signals.by_status.forEach(function (p) { if (p[0] === "active") activeCount = p[1]; });
+    var html = pageHead("Centrul de semnale", "Semnale", [["Active", activeCount + " / " + D.signals.total]]);
+
+    var sig = D.signals.recent[state.sigIdx] || D.signals.recent[0];
+    var rows = D.signals.recent.map(function (s, idx) {
+      var active = idx === state.sigIdx;
+      return '<tr class="rowlink' + (active ? " sel" : "") + '" onclick="MLSetSigIdx(' + idx + ')"><td style="font-weight:700;">' + esc(s[1]) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
+    }).join("");
+
+    var detail = "";
+    if (sig) {
+      detail = '<div style="font-size:20px;font-weight:800;letter-spacing:-0.02em;margin-bottom:2px;">' + esc(sig[1]) + '</div>' +
+        '<div style="font-size:11px;color:var(--muted);" class="mono">cutoff ' + esc(sig[7] || "—") + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding:14px 0;margin-top:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);">' +
+        '<div><div style="font-size:17px;font-weight:800;">' + fmtNum(sig[4], 2) + '</div><div style="font-size:10px;color:var(--muted);">forta</div></div>' +
+        '<div><div style="font-size:17px;font-weight:800;color:var(--accent-dark);">' + fmtNum(sig[5], 2) + '</div><div style="font-size:10px;color:var(--muted);">incredere</div></div>' +
+        '<div><div style="font-size:17px;font-weight:800;">' + fmtSignedPct(sig[6]) + '</div><div style="font-size:10px;color:var(--muted);">r. asteptat</div></div></div>' +
+        '<div style="padding:14px 0;"><div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;">stare</div>' +
+        '<span class="pill" style="border:1px solid var(--line-strong);">' + esc(sig[3]) + '</span></div>';
+    }
+
+    html += '<section class="blk"><div class="grid32">' +
+      '<div><table class="data"><thead><tr><th>Instrument</th><th>Directie</th><th class="r">Forta</th><th class="r">Incredere</th><th class="r">R. asteptat</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="empty">Niciun semnal</td></tr>') + '</tbody></table></div>' +
+      '<div><div class="blk-head"><h2>Detaliu semnal</h2></div><div class="blk-body">' + detail + '</div></div>' +
+      '</div></section>';
+
+    if (D.signals.evaluations.length) {
+      var evalRows = D.signals.evaluations.map(function (e) {
+        return '<tr><td>' + esc(e[2]) + '</td><td class="r">' + e[3] + (e[7] ? ' <span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);">esantion mic</span>' : '') + '</td><td class="r">' + fmtPct(e[4]) + '</td><td class="r">' + fmtPct(e[5]) + '</td><td>' + (e[6] ? '<span class="pill" style="border:1px solid #00795a;color:#00795a;">da</span>' : '<span class="pill" style="border:1px solid #ae1800;color:#ae1800;">nu</span>') + '</td></tr>';
+      }).join("");
+      html += blk("Evaluare vs. baseline", null, '<table class="data"><thead><tr><th>Orizont</th><th class="r">N</th><th class="r">Rata succes</th><th class="r">Baseline</th><th>Bate</th></tr></thead><tbody>' + evalRows + '</tbody></table>');
+    }
+    if (D.signals.suppression.length) {
+      html += blk("Motive de suprimare", null, barRows(D.signals.suppression));
+    }
+
+    return html;
+  }
+
+  function viewOutcomes() {
+    if (!D.legacy.available) {
+      return pageHead("Performanta · rezultate", "Rezultate", null) + blk("Fara date", null, '<div class="empty">Nicio recomandare in baza de date.</div>');
+    }
+    var html = pageHead("Performanta · track record", "Rezultate", [["Emise", fmtNum(D.legacy.total_recs)]]);
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(D.legacy.checked) + '</div><div class="l">verificate</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtPct(D.legacy.accuracy) + '</div><div class="l">acuratete bruta</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtPct(D.legacy.verified_correct / (D.legacy.verified_count || 1)) + '</div><div class="l">un apel per companie (' + D.legacy.verified_count + ')</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + D.legacy.verified_count + '</div><div class="l">companii unice</div></div></div></section>';
+
+    var calibRows = D.legacy.calibration.map(function (c) {
+      return '<tr><td class="mono" style="font-weight:700;">' + esc(c[0]) + '</td><td class="r" style="color:var(--muted);">' + c[1] + '</td><td class="r" style="font-weight:700;">' + fmtPct(c[2]) + '</td></tr>';
+    }).join("");
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Calibrare</h2></div><table class="data"><thead><tr><th>Interval incredere</th><th class="r">N</th><th class="r">Rata reala</th></tr></thead><tbody>' + (calibRows || '<tr><td colspan="3" class="empty">Fara date</td></tr>') + '</tbody></table></div>' +
+      '<div><div class="blk-head"><h2>Distributia recomandarilor</h2></div><div class="blk-body">' + barRows(D.legacy.by_rec) + '</div></div>' +
+      '</div></section>';
+
+    if (D.legacy.accuracy_trend.length) {
+      html += blk("Acuratete cumulativa in timp", "ultimele " + D.legacy.accuracy_trend.length + " zile cu verificari",
+        barRows(D.legacy.accuracy_trend, function (v) { return fmtPct(v); }));
+    }
+
+    var recRows = D.legacy.recent.map(function (r) {
+      var verify = r[6] === 1 ? '<span class="pill" style="border:1px solid #00795a;color:#00795a;">corect</span>' : (r[6] === 0 ? '<span class="pill" style="border:1px solid #ae1800;color:#ae1800;">gresit</span>' : '<span style="color:var(--faint);font-size:11px;">neverificat</span>');
+      return '<tr><td>' + esc(r[0]) + '</td><td style="font-weight:700;">' + esc(r[1] || "") + '</td><td><span class="pill solid">' + esc(r[2]) + '</span></td><td class="r" style="font-weight:700;">' + fmtPct(r[3]) + '</td><td class="r">' + verify + '</td></tr>';
+    }).join("");
+    html += blk("Recomandari recente", null, '<table class="data"><thead><tr><th>Companie</th><th>Ticker</th><th>Apel</th><th class="r">Incredere</th><th class="r">Verificare</th></tr></thead><tbody>' + (recRows || '<tr><td colspan="5" class="empty">Fara recomandari</td></tr>') + '</tbody></table>');
+
+    return html;
+  }
+
+  function viewModels() {
+    if (!D.models.available) {
+      return pageHead("Performanta · modele", "Modele", null) + blk("Fara date", null, '<div class="empty">Faza 9 nu a rulat inca pe aceasta baza de date.</div>');
+    }
+    var html = pageHead("Performanta · inteligenta modelelor", "Modele", [["Antrenate", String(D.models.models.length)], ["Predictii", fmtNum(D.models.predictions)]]);
+
+    var cards = D.models.models.map(function (m) {
+      var qid = m[0], label = m[1], n = m[2], clusters = m[3], small = m[4], beats = m[5], metricsJson = m[6];
+      var metrics = {}; try { metrics = metricsJson ? JSON.parse(metricsJson) : {}; } catch (e) {}
+      var verdict = beats ? '<span class="pill" style="border:1px solid #00795a;color:#00795a;">bate baseline</span>' : (beats === 0 ? '<span class="pill" style="border:1px solid #ae1800;color:#ae1800;">nu bate baseline</span>' : "");
+      return '<div class="regcard" style="margin-bottom:14px;"><div class="rc-top"><span class="rc-key">' + esc(qid) + '</span>' + (small ? '<span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);">esantion mic</span>' : '') + '</div>' +
+        '<div style="font-size:11px;color:var(--muted);" class="mono">' + esc(label) + '</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">' +
+        '<div><div style="font-size:17px;font-weight:800;">' + fmtNum(n) + '</div><div style="font-size:10px;color:var(--muted);">N antrenare</div></div>' +
+        '<div><div style="font-size:17px;font-weight:800;">' + (clusters === null ? "—" : fmtNum(clusters)) + '</div><div style="font-size:10px;color:var(--muted);">clustere</div></div>' +
+        '<div><div style="font-size:17px;font-weight:800;">' + (metrics.mae !== undefined ? Number(metrics.mae).toFixed(4) : "—") + '</div><div style="font-size:10px;color:var(--muted);">MAE</div></div></div>' +
+        (verdict ? '<div style="margin-top:12px;">' + verdict + '</div>' : "") + '</div>';
+    }).join("");
+
+    var featHtml = D.research.available && D.research.feature_coverage.length
+      ? D.research.feature_coverage.slice(0, 16).map(function (f) {
+          var max = Math.max.apply(null, D.research.feature_coverage.map(function (x) { return x[1]; })) || 1;
+          var pct = (100 * f[1] / max).toFixed(0);
+          return '<div style="display:grid;grid-template-columns:1fr 80px 48px;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding:5px 0;font-size:11px;">' +
+            '<span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(f[0]) + '</span>' +
+            '<span style="height:8px;background:var(--line);"><span style="display:block;height:8px;width:' + pct + '%;background:var(--ink);"></span></span>' +
+            '<span style="text-align:right;font-weight:700;">' + f[1] + '</span></div>';
+        }).join("")
+      : '<div class="empty">Faza 8 nu a rulat inca.</div>';
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Modele antrenate</h2></div><div class="blk-body">' + cards + '</div></div>' +
+      '<div><div class="blk-head"><h2>Acoperire caracteristici</h2><span class="blk-note">' + (D.research.available ? D.research.feature_count : 0) + ' in registru</span></div><div class="blk-body">' + featHtml + '</div></div>' +
+      '</div></section>';
+
+    return html;
+  }
+
+  function viewStub(id) {
+    var meta = STUB_META[id] || STUB_META.watchlist;
+    var html = pageHead(meta.kicker, meta.title, [meta.stat]);
+    html += '<section class="blk" style="border-bottom:0;"><div class="blk-body"><div class="hatched" style="max-width:72ch;"><div style="font-size:13px;line-height:1.55;color:#444141;">' + meta.body + '</div></div></div></section>';
+    return html;
+  }
+
+  function renderNav() {
+    var nav = document.getElementById("nav");
+    var html = "";
+    NAV.forEach(function (grp) {
+      html += '<div class="nav-group"><div class="nav-group-label">' + esc(grp.label) + '</div>';
+      grp.items.forEach(function (item) {
+        var active = state.view === item.id || (item.id === "markets" && state.view === "company");
+        html += '<div class="nav-item' + (active ? " active" : "") + (item.stub ? " stub" : "") + '" onclick="MLGo(\'' + item.id + '\')">' +
+          '<span class="lbl">' + esc(item.label) + '</span><span class="tag">' + esc(item.tag) + '</span></div>';
+      });
+      html += '</div>';
+    });
+    html += '<div class="nav-note">Fiecare cifra provine dintr-o interogare reala pe baza de date curenta — niciuna nu e inventata.</div>';
+    nav.innerHTML = html;
+  }
+
+  var STUB_IDS = ["watchlist", "portfolio", "research", "features"];
+
+  function render() {
+    renderNav();
+    document.getElementById("ml-lastrun").innerHTML = "<b>Ultima actualizare</b><br>" + esc(D.meta.generated_at);
+    var main = document.getElementById("main");
+    var v = state.view;
+    if (v === "markets-sector") { state.view = "markets"; v = "markets"; state.mktSector = state.param || ""; }
+    if (v === "overview") main.innerHTML = viewOverview();
+    else if (v === "markets") main.innerHTML = viewMarkets();
+    else if (v === "company") main.innerHTML = viewCompany(state.param);
+    else if (v === "sectors") main.innerHTML = viewSectors();
+    else if (v === "news") main.innerHTML = viewNews();
+    else if (v === "events") main.innerHTML = viewEvents(state.param);
+    else if (v === "signals") main.innerHTML = viewSignals();
+    else if (v === "outcomes") main.innerHTML = viewOutcomes();
+    else if (v === "models") main.innerHTML = viewModels();
+    else if (STUB_IDS.indexOf(v) !== -1) main.innerHTML = viewStub(v);
+    else main.innerHTML = viewOverview();
+    document.title = "MarketLens Terminal";
+    window.scrollTo(0, 0);
+  }
+
+  window.addEventListener("hashchange", function () { parseHash(); render(); });
+  parseHash();
+  render();
+})();
+</script>
+</body>
+</html>"""
