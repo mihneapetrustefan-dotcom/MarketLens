@@ -77,6 +77,16 @@ def _scalar(conn: sqlite3.Connection, sql: str, params: tuple = (), default=None
         return default
 
 
+def _safe_json(raw, default):
+    """Parse a stored JSON blob, or fall back rather than crash the page."""
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        return default
+
+
 def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> List[tuple]:
     try:
         return conn.execute(sql, params).fetchall()
@@ -570,6 +580,162 @@ class DashboardGenerator:
 
         return {"available": True, "runs": runs, "detail": detail}
 
+    def _collect_execution(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Phase 14: brokers, accounts, orders and the execution boundary.
+
+        Every broker is listed, including the ones with no adapter, and
+        each carries `implemented` plus the reason. A venue hidden
+        because it is not built yet is worse than one shown as absent —
+        the reader would have to guess whether it exists.
+
+        No connection is ever displayed as live, because none is. The
+        workspace states that the phase has no real-money path rather
+        than leaving it to be inferred from an empty table.
+        """
+        if not _table_exists(conn, "execution_orders"):
+            return {"available": False, "live_execution": False,
+                    "reason": "Phase 14 tables are not present in this database"}
+
+        brokers = [{
+            "broker_id": r[0], "name": r[1], "environment": r[2],
+            "adapter": r[3], "enabled": bool(r[4]), "implemented": bool(r[5]),
+        } for r in _rows(conn, """
+            SELECT broker_id, name, environment, adapter, enabled, implemented
+            FROM brokers ORDER BY implemented DESC, broker_id
+        """)]
+
+        capabilities: Dict[str, Any] = {}
+        for broker_id, raw, notes in _rows(conn,
+                "SELECT broker_id, capability_json, notes FROM broker_capability"):
+            try:
+                capabilities[broker_id] = json.loads(raw) if raw else {}
+            except (ValueError, TypeError):
+                capabilities[broker_id] = {}
+            capabilities[broker_id]["notes"] = notes or ""
+
+        accounts = [{
+            "account_id": r[0], "broker_id": r[1], "name": r[2],
+            "environment": r[3], "base_currency": r[4], "enabled": bool(r[5]),
+            "position_accounting": r[6],
+        } for r in _rows(conn, """
+            SELECT account_id, broker_id, name, environment, base_currency,
+                   enabled, position_accounting
+            FROM broker_accounts ORDER BY broker_id, account_id
+        """)]
+
+        orders = [{
+            "order_id": r[0], "broker_id": r[1], "account_id": r[2],
+            "instrument_id": r[3], "side": r[4], "quantity": r[5],
+            "order_type": r[6], "state": r[7], "filled": r[8],
+            "average_price": r[9], "reject_code": r[10],
+            "reject_detail": r[11], "broker_order_id": r[12],
+            "client_order_id": r[13], "correlation_id": r[14],
+            "signal_id": r[15], "strategy_id": r[16], "policy": r[17],
+            "environment": r[18], "intent_at": r[19],
+            "decision_price": r[20], "commission": r[21],
+        } for r in _rows(conn, """
+            SELECT order_id, broker_id, account_id, instrument_id, side,
+                   quantity, order_type, state, filled_quantity,
+                   average_fill_price, reject_code, reject_detail,
+                   broker_order_id, client_order_id, correlation_id, signal_id,
+                   strategy_id, execution_policy, environment, intent_at,
+                   decision_price, commission
+            FROM execution_orders ORDER BY COALESCE(intent_at, '') DESC LIMIT 60
+        """)]
+
+        by_state = {r[0]: r[1] for r in _rows(conn,
+            "SELECT state, COUNT(*) FROM execution_orders GROUP BY state")}
+        rejections = [{"code": r[0] or "unspecified", "count": r[1]}
+                      for r in _rows(conn, """
+            SELECT reject_code, COUNT(*) FROM execution_orders
+            WHERE state = 'rejected' GROUP BY reject_code ORDER BY COUNT(*) DESC
+        """)]
+
+        detail: Dict[str, Any] = {}
+        for order in orders[:25]:
+            order_id = order["order_id"]
+            detail[order_id] = {
+                "states": [{"seq": r[0], "from": r[1], "to": r[2], "at": r[3],
+                            "reason": r[4]}
+                           for r in _rows(conn, """
+                    SELECT sequence, from_state, to_state, at, reason
+                    FROM order_state_history WHERE order_id = ?
+                    ORDER BY sequence ASC
+                """, (order_id,))],
+                "fills": [{"fill_id": r[0], "quantity": r[1], "price": r[2],
+                           "reference_price": r[3], "commission": r[4],
+                           "fees": r[5], "at": r[6], "broker_order_id": r[7]}
+                          for r in _rows(conn, """
+                    SELECT fill_id, quantity, price, reference_price, commission,
+                           fees, filled_at, broker_order_id
+                    FROM execution_fills WHERE order_id = ?
+                    ORDER BY COALESCE(filled_at, '') ASC
+                """, (order_id,))],
+            }
+
+        reconciliations = [{
+            "reconciliation_id": r[0], "broker_id": r[1], "account_id": r[2],
+            "at": r[3], "checks": r[4], "clean": bool(r[5]),
+            "mismatches": _safe_json(r[6], []),
+        } for r in _rows(conn, """
+            SELECT reconciliation_id, broker_id, account_id, at,
+                   checks_performed, is_clean, mismatches_json
+            FROM reconciliation_records ORDER BY at DESC LIMIT 20
+        """)]
+
+        errors = [{"error_id": r[0], "at": r[1], "code": r[2], "message": r[3],
+                   "broker_id": r[4], "order_id": r[5]}
+                  for r in _rows(conn, """
+            SELECT error_id, at, code, message, broker_id, order_id
+            FROM execution_errors ORDER BY COALESCE(at, '') DESC LIMIT 30
+        """)]
+
+        events = [{"event_id": r[0], "type": r[1], "at": r[2],
+                   "broker_id": r[3], "order_id": r[4], "instrument_id": r[5]}
+                  for r in _rows(conn, """
+            SELECT event_id, event_type, at, broker_id, order_id, instrument_id
+            FROM execution_events ORDER BY COALESCE(at, '') DESC LIMIT 40
+        """)]
+
+        audit = [{"at": r[0], "action": r[1], "actor": r[2],
+                  "subject_id": r[3], "detail": r[4]}
+                 for r in _rows(conn, """
+            SELECT at, action, actor, subject_id, detail
+            FROM execution_audit ORDER BY COALESCE(at, '') DESC LIMIT 30
+        """)]
+
+        mappings = [{"instrument_id": r[0], "broker_id": r[1], "symbol": r[2],
+                     "asset_class": r[3], "currency": r[4],
+                     "increment": r[5], "minimum": r[6], "tradable": bool(r[7])}
+                    for r in _rows(conn, """
+            SELECT canonical_instrument_id, broker_id, broker_symbol,
+                   asset_class, currency, quantity_increment, minimum_quantity,
+                   tradable
+            FROM broker_instrument_mapping ORDER BY broker_id, broker_symbol
+            LIMIT 60
+        """)]
+
+        return {
+            "available": True,
+            #: Structurally False. No adapter in this repository can
+            #: place a real-money order.
+            "live_execution": False,
+            "brokers": brokers, "capabilities": capabilities,
+            "accounts": accounts, "orders": orders, "detail": detail,
+            "orders_by_state": by_state, "rejections": rejections,
+            "reconciliations": reconciliations, "errors": errors,
+            "events": events, "audit": audit, "mappings": mappings,
+            "totals": {
+                "orders": _scalar(conn, "SELECT COUNT(*) FROM execution_orders",
+                                  default=0),
+                "fills": _scalar(conn, "SELECT COUNT(*) FROM execution_fills",
+                                 default=0),
+                "brokers": len(brokers),
+                "implemented_brokers": sum(1 for b in brokers if b["implemented"]),
+            },
+        }
+
     def _collect_paper(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         """
         Phase 13: paper trading sessions.
@@ -934,6 +1100,7 @@ class DashboardGenerator:
         constraints = self._collect_constraints(conn)
         backtests = self._collect_backtests(conn)
         paper = self._collect_paper(conn)
+        execution = self._collect_execution(conn)
 
         universe = self._build_universe()
         sector_summary = self._build_sector_summary()
@@ -971,6 +1138,7 @@ class DashboardGenerator:
             "constraints": constraints,
             "backtests": backtests,
             "paper": paper,
+            "execution": execution,
             "rec_index": rec_index,
             "current_recs": current_recs_by_entity,
             "universe": universe,
@@ -1165,6 +1333,25 @@ table.data tr.sel { background:var(--accent-bg); }
 .headbar .papertag { font-size:10px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase;
   background:var(--accent); color:#fff; padding:3px 8px; margin-right:12px; }
 .headbar .papertag.hidden { display:none; }
+
+/* --- Phase 14: the execution boundary -----------------------------
+   The banner states what the phase cannot do, in the same place every
+   time. A workspace showing brokers, accounts and orders reads at a
+   glance like one attached to a real account without it. */
+.xbanner { position:sticky; top:56px; z-index:40; display:flex; align-items:center; gap:12px;
+  background:var(--ink); color:var(--bg); padding:9px 24px; border-bottom:2px solid var(--accent); }
+.xbanner .tagname { font-size:12px; font-weight:800; letter-spacing:0.14em; text-transform:uppercase;
+  background:var(--accent); color:#fff; padding:2px 8px; flex:none; }
+.xbanner .msg { font-size:11.5px; line-height:1.4; }
+.xbanner .msg b { font-weight:800; }
+.envrow { display:flex; gap:8px; flex-wrap:wrap; padding:12px 24px; border-bottom:1px solid var(--line); }
+.envchip { font-size:10px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase;
+  border:2px solid var(--line-strong); padding:4px 9px; }
+.envchip.on { background:var(--ink); color:var(--bg); }
+.envchip.off { opacity:0.5; }
+.envchip.danger { border-color:var(--accent); color:var(--accent-dark); }
+.xstate { font-size:10px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase;
+  padding:2px 6px; border:1px solid currentColor; white-space:nowrap; }
 .pp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); border-top:1px solid var(--line); }
 .pp-hstate { display:inline-block; width:8px; height:8px; margin-right:6px; }
 </style>
@@ -1601,6 +1788,20 @@ table.data tr.sel { background:var(--accent-bg); }
     invalid: "invalide", unavailable: "indisponibile"
   };
 
+  var XE = D.execution || { available: false, live_execution: false };
+  var XE_BROKERS = XE.brokers || [];
+  var XE_ORDERS = XE.orders || [];
+
+  var XSTATE_COLOR = {
+    filled: "var(--up)", partially_filled: "var(--up)",
+    working: "var(--ink)", acknowledged: "var(--ink)", submitted: "var(--ink)",
+    approved: "var(--muted)", validating: "var(--muted)", created: "var(--muted)",
+    submitting: "var(--muted)",
+    rejected: "var(--accent-dark)", failed: "var(--accent-dark)",
+    cancelled: "var(--muted)", expired: "var(--muted)",
+    unknown: "#b07000", reconciliation_required: "#b07000"
+  };
+
   var BT = D.backtests || { available: false };
   var BT_RUNS = BT.runs || [];
 
@@ -1951,7 +2152,8 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "portfolio", label: "Portofoliu", tag: PF_COUNT ? String(PF_COUNT) : "0" },
       { id: "risk", label: "Risc", tag: RISK_TAG },
       { id: "backtests", label: "Backtesting", tag: BT_RUNS.length ? String(BT_RUNS.length) : "0" },
-      { id: "paper", label: "Paper trading", tag: PP_SESSIONS.length ? String(PP_SESSIONS.length) : "0" }
+      { id: "paper", label: "Paper trading", tag: PP_SESSIONS.length ? String(PP_SESSIONS.length) : "0" },
+      { id: "execution", label: "Executie", tag: XE_BROKERS.length ? String(XE_BROKERS.length) : "0" }
     ]},
     { label: "Performanta", items: [
       { id: "outcomes", label: "Rezultate", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
@@ -2769,6 +2971,259 @@ table.data tr.sel { background:var(--accent-bg); }
     return html;
   }
 
+  // -----------------------------------------------------------------
+  // Phase 14 - broker abstraction and execution
+  // -----------------------------------------------------------------
+  function xBanner() {
+    return '<div class="xbanner"><span class="tagname">Live execution disabled</span>' +
+      '<span class="msg"><b>Nu exista executie cu bani reali in aceasta faza.</b> ' +
+      'Nu exista integrare MetaTrader 5 sau Interactive Brokers, nu exista credentiale ' +
+      'de broker si niciun cont real nu e citit sau modificat. Calea nu e dezactivata — ' +
+      'lipseste din cod.</span></div>';
+  }
+
+  function xEnvironments() {
+    var envs = [
+      ["Backtest", true, "Faza 12 — bare istorice"],
+      ["Paper", true, "Faza 13 — umpleri simulate"],
+      ["Demo", false, "niciun adaptor implementat"],
+      ["Live", false, "bani reali — refuzat structural"]
+    ];
+    return '<div class="envrow">' + envs.map(function (e) {
+      var danger = e[0] === "Live";
+      return '<span class="envchip ' + (e[1] ? "on" : "off") + (danger ? " danger" : "") +
+        '" title="' + esc(e[2]) + '">' + esc(e[0]) +
+        (e[1] ? "" : " · indisponibil") + '</span>';
+    }).join("") + '</div>';
+  }
+
+  function xEmptyState() {
+    if (!XE.available) {
+      return blk("Executie", "Faza 14",
+        '<div class="callout"><b>Tabelele Fazei 14 nu exista in aceasta baza de date.</b>' +
+        '<p>Abstractia de broker este implementata, dar schema nu a fost creata aici. ' +
+        'Ruleaza <span class="mono">python scripts/run_execution.py</span> pentru a o ' +
+        'crea si a inregistra brokerii.</p></div>');
+    }
+    return blk("Executie", "niciun ordin inregistrat",
+      '<div class="callout"><b>Niciun ordin nu a trecut inca prin orchestrator.</b>' +
+      '<p>Aceasta nu este o eroare si nu se afiseaza ordine inventate in loc.</p>' +
+      '<div class="mono" style="margin-top:8px;font-size:11px;background:var(--panel);padding:10px;">' +
+      'python scripts/run_execution.py --dry-run-order</div></div>');
+  }
+
+  function viewExecution() {
+    var html = pageHead("Executie - abstractie de broker", "Brokeri si executie", [
+      ["Brokeri", String((XE.totals || {}).brokers || 0)],
+      ["Implementati", String((XE.totals || {}).implemented_brokers || 0)],
+      ["Ordine", String((XE.totals || {}).orders || 0)]
+    ]);
+    html += xBanner();
+    html += xEnvironments();
+
+    if (!XE.available || !XE_BROKERS.length) return html + xEmptyState();
+
+    // --- brokers ---
+    var caps = XE.capabilities || {};
+    var brokerHtml = XE_BROKERS.map(function (b) {
+      var c = caps[b.broker_id] || {};
+      var types = (c.order_types || []);
+      var border = b.implemented ? "var(--line-strong)" : "var(--border-mid)";
+      return '<div style="border:2px solid ' + border + ';padding:12px 14px;margin-bottom:10px;' +
+        (b.implemented ? "" : "opacity:0.75;") + '">' +
+        '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;">' +
+        '<span style="font-weight:800;font-size:14px;">' + esc(b.name) + '</span>' +
+        '<span class="xstate" style="color:' + (b.implemented ? "var(--up)" : "var(--muted)") + ';">' +
+        (b.implemented ? "adaptor implementat" : "fara adaptor") + '</span></div>' +
+        '<div class="mono" style="font-size:11px;color:var(--muted);margin-top:5px;">' +
+        esc(b.broker_id) + ' · mediu ' + esc(b.environment) + ' · adaptor ' + esc(b.adapter || "—") +
+        '</div>' +
+        '<div style="font-size:11.5px;margin-top:8px;">tipuri de ordine: ' +
+        (types.length ? '<span class="mono">' + esc(types.join(", ")) + '</span>'
+                      : '<i>niciunul declarat</i>') + '</div>' +
+        (c.notes ? '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;">' +
+                   esc(c.notes) + '</div>' : "") + '</div>';
+    }).join("");
+    html += blk("Brokeri inregistrati",
+      "cei fara adaptor sunt listati, nu ascunsi", brokerHtml);
+
+    // --- accounts ---
+    var accounts = XE.accounts || [];
+    var accHtml = accounts.length ? '<table class="data"><thead><tr><th>Cont</th>' +
+      '<th>Broker</th><th>Mediu</th><th>Moneda</th><th>Contabilitate</th>' +
+      '<th>Stare</th></tr></thead><tbody>' + accounts.map(function (a) {
+        return '<tr><td class="mono">' + esc(a.account_id) + '</td>' +
+          '<td class="mono">' + esc(a.broker_id) + '</td>' +
+          '<td>' + esc(a.environment) + '</td>' +
+          '<td>' + esc(a.base_currency) + '</td>' +
+          '<td>' + esc(a.position_accounting) + '</td>' +
+          '<td>' + (a.enabled ? "activ" : "dezactivat") + '</td></tr>';
+      }).join("") + '</tbody></table>'
+      : '<div class="empty">Niciun cont inregistrat.</div>';
+    html += blk("Conturi", "niciunul nu e real", accHtml);
+
+    // --- orders by state and rejections ---
+    var byState = XE.orders_by_state || {};
+    var stateRows = Object.keys(byState).sort().map(function (k) { return [k, byState[k]]; });
+    var rejRows = (XE.rejections || []).map(function (r) { return [r.code, r.count]; });
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Ordine dupa stare</h2>' +
+      '<span class="blk-note">' + fmtNum((XE.totals || {}).orders) + ' in total</span></div>' +
+      '<div class="blk-body">' + (stateRows.length ? barRows(stateRows) :
+        '<div class="empty">Niciun ordin.</div>') + '</div></div>' +
+      '<div><div class="blk-head"><h2>Motive de respingere</h2>' +
+      '<span class="blk-note">coduri enumerate</span></div>' +
+      '<div class="blk-body">' + (rejRows.length ? barRows(rejRows) :
+        '<div class="empty">Niciun ordin respins.</div>') + '</div></div></section>';
+
+    // --- orders ---
+    var orderHtml = XE_ORDERS.length ? '<table class="data"><thead><tr><th>Ordin</th>' +
+      '<th>Instrument</th><th>Sens</th><th class="r">Cantitate</th><th class="r">Umplut</th>' +
+      '<th>Tip</th><th>Stare</th><th>Broker</th></tr></thead><tbody>' +
+      XE_ORDERS.map(function (o) {
+        var col = XSTATE_COLOR[o.state] || "var(--muted)";
+        return '<tr class="rowlink" onclick="MLGo(\'execution\',\'' + esc(o.order_id) + '\')">' +
+          '<td class="mono" style="font-size:10px;">' + esc(o.order_id) + '</td>' +
+          '<td class="mono">' + esc(o.instrument_id) + '</td>' +
+          '<td>' + esc(o.side) + '</td>' +
+          '<td class="r">' + fmtNum(o.quantity, 4) + '</td>' +
+          '<td class="r">' + fmtNum(o.filled, 4) + '</td>' +
+          '<td>' + esc(o.order_type) + '</td>' +
+          '<td><span class="xstate" style="color:' + col + ';">' + esc(o.state) + '</span></td>' +
+          '<td class="mono">' + esc(o.broker_id) + '</td></tr>';
+      }).join("") + '</tbody></table>'
+      : '<div class="empty">Niciun ordin inregistrat.</div>';
+    html += blk("Ordine", "apasa un rand pentru lantul complet", orderHtml);
+
+    // --- one order in full, when selected ---
+    if (state.param && (XE.detail || {})[state.param]) {
+      html += xOrderDetail(state.param);
+    }
+
+    // --- instrument mappings ---
+    var maps = XE.mappings || [];
+    var mapHtml = maps.length ? '<table class="data"><thead><tr><th>Instrument canonic</th>' +
+      '<th>Broker</th><th>Simbol la broker</th><th>Clasa</th><th class="r">Increment</th>' +
+      '<th class="r">Minim</th></tr></thead><tbody>' + maps.map(function (m) {
+        return '<tr><td class="mono">' + esc(m.instrument_id) + '</td>' +
+          '<td class="mono">' + esc(m.broker_id) + '</td>' +
+          '<td class="mono"><b>' + esc(m.symbol) + '</b></td>' +
+          '<td>' + esc(m.asset_class) + '</td>' +
+          '<td class="r">' + fmtNum(m.increment, 4) + '</td>' +
+          '<td class="r">' + fmtNum(m.minimum, 4) + '</td></tr>';
+      }).join("") + '</tbody></table>'
+      : '<div class="empty">Nicio corespondenta inregistrata.</div>';
+    html += blk("Corespondenta instrumentelor",
+      "nucleul nu invata niciodata simbolul unui broker", mapHtml);
+
+    // --- reconciliation ---
+    var recs = XE.reconciliations || [];
+    var recHtml = recs.length ? recs.map(function (r) {
+      var col = r.clean ? "var(--up)" : "var(--accent-dark)";
+      return '<div style="border-bottom:1px solid var(--line);padding:8px 0;font-size:11.5px;">' +
+        '<span class="xstate" style="color:' + col + ';">' +
+        (r.clean ? "curata" : (r.mismatches || []).length + " neconcordante") + '</span> ' +
+        esc(fmtDate(r.at)) + ' · <span class="mono">' + esc(r.broker_id) + '</span> · ' +
+        r.checks + ' verificari' +
+        ((r.mismatches || []).length ? '<ul style="margin:6px 0 0 16px;color:var(--muted);">' +
+          r.mismatches.slice(0, 6).map(function (m) {
+            return '<li>[' + esc(m.kind) + '] ' + esc(m.detail) + '</li>';
+          }).join("") + '</ul>' : "") + '</div>';
+    }).join("") : '<div class="empty">Nicio reconciliere inregistrata.</div>';
+    html += blk("Reconciliere",
+      "starea noastra comparata cu a brokerului; nimic nu se rescrie in tacere", recHtml);
+
+    // --- errors and audit ---
+    var errs = XE.errors || [];
+    var errHtml = errs.length ? errs.map(function (e) {
+      return '<div style="border-bottom:1px solid var(--line);padding:6px 0;font-size:11.5px;">' +
+        '<span class="mono" style="font-weight:700;">' + esc(e.code) + '</span> · ' +
+        esc(fmtDate(e.at)) + '<div style="color:var(--muted);">' + esc(e.message) + '</div></div>';
+    }).join("") : '<div class="empty">Nicio eroare de executie.</div>';
+
+    var audit = XE.audit || [];
+    var auditHtml = audit.length ? audit.map(function (a) {
+      return '<div style="border-bottom:1px solid var(--line);padding:6px 0;font-size:11.5px;">' +
+        '<span class="mono" style="font-weight:700;">' + esc(a.action) + '</span> · ' +
+        esc(a.actor) + ' · ' + esc(fmtDate(a.at)) +
+        (a.detail ? '<div style="color:var(--muted);">' + esc(a.detail) + '</div>' : "") +
+        '</div>';
+    }).join("") : '<div class="empty">Niciun eveniment de audit.</div>';
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Erori de executie</h2>' +
+      '<span class="blk-note">structurate, nu text liber</span></div>' +
+      '<div class="blk-body">' + errHtml + '</div></div>' +
+      '<div><div class="blk-head"><h2>Jurnal de audit</h2>' +
+      '<span class="blk-note">append-only</span></div>' +
+      '<div class="blk-body">' + auditHtml + '</div></div></section>';
+
+    // --- the boundary, restated ---
+    html += blk("Limita fazei", "",
+      '<div class="callout"><b>Faza 14 construieste granita, nu un broker.</b>' +
+      '<p>Nucleul se opreste la <span class="mono">OrderIntent</span>. Sub el, un ' +
+      'singur adaptor per loc de executie traduce catre si dinspre tipurile canonice. ' +
+      'Nimic din strategie, semnale, portofoliu sau risc nu stie cu ce broker vorbeste.</p>' +
+      '<p>MetaTrader 5 (Faza 15) si Interactive Brokers (Faza 16) vor fi adaptoare ' +
+      'scrise pe aceasta interfata. Niciunul nu exista acum, iar ' +
+      '<span class="mono">ExecutionEnvironment.LIVE</span> e refuzat structural: ' +
+      'nu se poate construi un cont, un broker sau un gateway pe el.</p></div>');
+
+    return html;
+  }
+
+  function xOrderDetail(orderId) {
+    var d = (XE.detail || {})[orderId];
+    var order = null;
+    for (var i = 0; i < XE_ORDERS.length; i++) {
+      if (XE_ORDERS[i].order_id === orderId) { order = XE_ORDERS[i]; break; }
+    }
+    if (!d || !order) return "";
+
+    var chain = [
+      ["model", order.model_version], ["semnal", order.signal_id],
+      ["strategie", order.strategy_id], ["decizie", order.decision_id],
+      ["intentie", order.intent_id], ["ordin", order.order_id],
+      ["client order id", order.client_order_id],
+      ["broker order id", order.broker_order_id],
+      ["broker", order.broker_id], ["cont", order.account_id],
+      ["mediu", order.environment], ["politica", order.policy],
+      ["corelatie", order.correlation_id]
+    ];
+    var chainHtml = '<div class="mono" style="font-size:11.5px;line-height:1.9;">' +
+      chain.map(function (c) {
+        return esc(c[0]) + ': ' + (c[1] ? esc(c[1]) : '—');
+      }).join("<br>") + '</div>';
+
+    var stepsHtml = (d.states || []).map(function (t) {
+      return '<div style="display:grid;grid-template-columns:24px 1fr 150px;gap:10px;' +
+        'border-bottom:1px solid var(--line);padding:5px 0;font-size:11.5px;">' +
+        '<span class="mono">' + t.seq + '</span>' +
+        '<span><span class="mono">' + esc(t.from || "start") + '</span> &rarr; ' +
+        '<span class="mono"><b>' + esc(t.to) + '</b></span>' +
+        '<div style="color:var(--muted);">' + esc(t.reason) + '</div></span>' +
+        '<span class="mono" style="text-align:right;">' + esc(fmtDate(t.at)) + '</span></div>';
+    }).join("") || '<div class="empty">Niciun istoric de stare.</div>';
+
+    var fillsHtml = (d.fills || []).length ? '<table class="data"><thead><tr>' +
+      '<th class="r">Cantitate</th><th class="r">Pret</th><th class="r">Referinta</th>' +
+      '<th class="r">Comision</th><th>Moment</th></tr></thead><tbody>' +
+      d.fills.map(function (f) {
+        return '<tr><td class="r">' + fmtNum(f.quantity, 4) + '</td>' +
+          '<td class="r">' + fmtNum(f.price, 4) + '</td>' +
+          '<td class="r">' + fmtNum(f.reference_price, 4) + '</td>' +
+          '<td class="r">' + fmtNum(f.commission, 4) + '</td>' +
+          '<td>' + esc(fmtDate(f.at)) + '</td></tr>';
+      }).join("") + '</tbody></table>' : '<div class="empty">Nicio executie.</div>';
+
+    return '<section class="blk"><div class="blk-head"><h2>Lantul ordinului</h2>' +
+      '<span class="blk-note mono">' + esc(orderId) + '</span></div>' +
+      '<div class="grid2">' +
+      '<div class="blk-body">' + chainHtml + '</div>' +
+      '<div class="blk-body">' + stepsHtml + '</div></div>' +
+      '<div class="blk-body">' + fillsHtml + '</div></section>';
+  }
+
   function viewStub(id) {
     var meta = STUB_META[id] || STUB_META.watchlist;
     var html = pageHead(meta.kicker, meta.title, [meta.stat]);
@@ -2818,6 +3273,7 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "risk") main.innerHTML = viewRisk();
     else if (v === "backtests") main.innerHTML = viewBacktests();
     else if (v === "paper") main.innerHTML = viewPaper();
+    else if (v === "execution") main.innerHTML = viewExecution();
     else if (STUB_IDS.indexOf(v) !== -1) main.innerHTML = viewStub(v);
     else main.innerHTML = viewOverview();
     document.title = "MarketLens Terminal";

@@ -250,10 +250,91 @@ Workspace-ul **Paper trading** din dashboard poartă permanent un banner
 fără eticheta aia arată, la o privire rapidă, exact ca una despre un
 cont real.
 
+## Abstractie de broker si executie (Faza 14)
+
+Faza 14 construieste **granita**, nu un broker. Nucleul se opreste la
+`OrderIntent`; sub el, un singur adaptor per loc de executie traduce
+catre si dinspre tipurile canonice.
+
+```
+SEMNAL -> PORTOFOLIU -> RISC -> ORDER INTENT
+                                     |
+========== granita neutra fata de broker ==========
+                                     |
+                        EXECUTION ORCHESTRATOR
+                                     |
+                        BROKER GATEWAY (abstract)
+                                     |
+                        BROKER ADAPTER (concret)
+                                     |
+                             BROKER EXTERN
+```
+
+**Nu exista executie cu bani reali.** Nu exista integrare MetaTrader 5
+sau Interactive Brokers, nu exista credentiale de broker, nu exista API
+de ordine si niciun cont real nu e citit sau modificat. Calea nu e
+dezactivata — lipseste din cod, iar asta e impus in cinci locuri
+independente:
+
+1. `ExecutionEnvironment.LIVE` nu poate fi atasat unui `Broker` care se
+   declara implementat, nici unui `BrokerAccount` deloc — tipurile
+   refuza constructia.
+2. `ExecutionSafety.allow_real_orders` e o proprietate **fara setter**.
+3. Poarta de siguranta refuza `LIVE` inaintea oricarei alte verificari.
+4. Nicio permisiune nu acorda executie reala — `LIVE_EXECUTION_ADMIN` e
+   refuzata chiar si cand e detinuta.
+5. Niciun adaptor capabil de un ordin real nu exista.
+
+Variabila `MARKETLENS_ALLOW_REAL_ORDERS` e *citita* — dar numai ca
+sistemul sa poata spune ca cineva a setat-o. Nu schimba nimic.
+
+### Ce garanteaza stratul
+
+- **Ordinea operatiilor e modelul de siguranta.** Siguranta, rutare,
+  idempotenta, corespondenta, capabilitate, sesiune de piata, risc,
+  validare — toate inaintea liniei. Sub linie: un singur pas care poate
+  ajunge la un loc de executie.
+- **Timeout-ul nu e esec.** O submisie care expira devine `UNKNOWN`,
+  niciodata `FAILED`, si **nu se retrimite niciodata** — brokerul poate
+  sa o fi acceptat deja. Se rezolva intrebandu-l.
+- **Idempotenta e derivata, nu atribuita.** Cheia se recalculeaza din
+  decizie, deci o reluare dupa un crash isi recunoaste propria munca.
+  Id-ul semnalului e deliberat exclus (lectia Fazei 13).
+- **Reconcilierea raporteaza, nu repara.** Starea interna e o *credinta*
+  despre broker; brokerul e faptul. Nicio neconcordanta nu se corecteaza
+  in tacere.
+- **Evenimentele pot veni duplicate, tarziu si in dezordine.** Toate trei
+  sunt normale, si fiecare corupe starea altfel daca e tratata naiv.
+
+```bash
+# Stare: brokeri, conturi, comutatoare de siguranta
+python scripts/run_execution.py
+
+# Valideaza un ordin si opreste-te inainte de submisie
+python scripts/run_execution.py --dry-run-order --quantity 25
+
+# Trimite catre PAPER (nevoie de permisiune explicita)
+python scripts/run_execution.py --submit --allow-paper --assume-risk-approved --fill
+
+# Reconciliaza si urmareste lantul complet al unui ordin
+python scripts/run_execution.py --reconcile
+python scripts/run_execution.py --trace <order_id>
+
+# Oprire de urgenta
+python scripts/run_execution.py --kill-switch on --reason "..." --allow-paper
+```
+
+Detaliile complete — masina de stari, cele sase identificatoare,
+ordonarea evenimentelor, modelul de capabilitati si ce trebuie sa faca
+Fazele 15 si 16 — sunt in
+[docs/execution-architecture.md](docs/execution-architecture.md).
+
 ## Structura proiectului
 
 ```
 ├── src/                        # modulele pipeline-ului, testate individual
+│   ├── execution/              # Faza 14 — abstracție de broker, orchestrator
+│   │   └── adapters/           #   un adaptor per loc de execuție
 │   ├── paper/                  # Faza 13 — paper trading, ceas, prospețime, sănătate
 │   ├── backtest/               # Faza 12 — replay istoric, execuție simulată
 │   ├── portfolio/              # Faza 11 — portofoliu, expunere, risc
@@ -263,6 +344,7 @@ cont real.
 ├── tests/                      # suita completă de teste (2000+ teste)
 ├── data/marketlens.db          # baza de date persistentă (creată la prima rulare)
 ├── docs/index.html             # MarketLens Terminal (regenerat la fiecare rulare)
+├── docs/execution-architecture.md  # Faza 14 — arhitectura de execuție
 ├── run_daily.py                # script de orchestrare — rularea zilnică
 ├── run_weekly_backfill.py      # script de orchestrare — backfill istoric săptămânal
 ├── scripts/                    # rulări manuale per fază
