@@ -570,6 +570,215 @@ class DashboardGenerator:
 
         return {"available": True, "runs": runs, "detail": detail}
 
+    def _collect_paper(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Phase 13: paper trading sessions.
+
+        Every number here is simulated. The workspace that renders it
+        says so permanently and in the same words, because a page
+        showing an equity curve, positions and fills without that label
+        would be indistinguishable at a glance from one showing a real
+        account (spec 54, 56).
+
+        Like the backtest collector, this reads only what a session
+        PERSISTED. No session is ticked while a page is being built.
+        """
+        if not _table_exists(conn, "paper_sessions"):
+            return {"available": False, "is_paper": True,
+                    "reason": "Phase 13 tables are not present in this database"}
+
+        accounts = [{
+            "account_id": r[0], "name": r[1], "status": r[2],
+            "initial_capital": r[3], "base_currency": r[4],
+            "account_type": r[5], "generation": r[6],
+        } for r in _rows(conn, """
+            SELECT account_id, name, status, initial_capital, base_currency,
+                   account_type, generation
+            FROM paper_accounts ORDER BY account_id
+        """)]
+
+        rows = _rows(conn, """
+            SELECT session_id, account_id, name, status, config_fingerprint,
+                   clock_kind, started_at, ended_at, last_tick_at,
+                   ticks_processed, code_version, constraint_set_version,
+                   cost_model_version, slippage_model_version,
+                   execution_model_version, config_json
+            FROM paper_sessions
+            -- Ordered by when the session ROW was written, which is the
+            -- one timestamp here that is always wall clock. Ordering by
+            -- last_tick_at would compare a replay session ticking through
+            -- 2026-04 against a session created today, and rank the
+            -- actively-running one last.
+            ORDER BY COALESCE(created_at, started_at) DESC
+            LIMIT 20
+        """)
+        if not rows:
+            return {"available": True, "is_paper": True,
+                    "accounts": accounts, "sessions": [], "detail": {}}
+
+        sessions: List[Dict[str, Any]] = []
+        detail: Dict[str, Any] = {}
+
+        for (session_id, account_id, name, status, fingerprint, clock_kind,
+             started_at, ended_at, last_tick_at, ticks, code_version,
+             constraints, cost_version, slippage_version, execution_version,
+             config_json) in rows:
+            try:
+                config = json.loads(config_json) if config_json else {}
+            except (ValueError, TypeError):
+                config = {}
+
+            latest = _rows(conn, """
+                SELECT at, equity, cash, positions_value, gross_exposure,
+                       net_exposure, leverage, realized_pnl, unrealized_pnl,
+                       drawdown, open_positions, unpriced_positions,
+                       data_freshness, health
+                FROM paper_snapshots WHERE session_id = ?
+                ORDER BY at DESC LIMIT 1
+            """, (session_id,))
+            last = latest[0] if latest else None
+
+            capital = _scalar(conn,
+                "SELECT initial_capital FROM paper_accounts WHERE account_id = ?",
+                (account_id,), default=None)
+            equity = last[1] if last else None
+            # Reported, never framed as a result: a paper period cannot
+            # establish anything about a strategy, so this describes the
+            # simulated book rather than claiming a track record.
+            change = None
+            if equity is not None and capital:
+                change = (equity - capital) / capital
+
+            orders_total = _scalar(conn,
+                "SELECT COUNT(*) FROM paper_orders WHERE session_id = ?",
+                (session_id,), default=0)
+            fills_total = _scalar(conn,
+                "SELECT COUNT(*) FROM paper_fills WHERE session_id = ?",
+                (session_id,), default=0)
+
+            sessions.append({
+                "session_id": session_id, "account_id": account_id,
+                "name": name, "status": status, "fingerprint": fingerprint,
+                "clock_kind": clock_kind, "started_at": started_at,
+                "ended_at": ended_at, "last_tick_at": last_tick_at,
+                "ticks": ticks, "orders": orders_total, "fills": fills_total,
+                "equity": equity, "capital": capital, "change": change,
+                "cash": last[2] if last else None,
+                "drawdown": last[9] if last else None,
+                "open_positions": last[10] if last else 0,
+                "unpriced": last[11] if last else 0,
+                "health": last[13] if last else None,
+                "freshness": last[12] if last else None,
+            })
+
+            by_state = {r[0]: r[1] for r in _rows(conn,
+                "SELECT state, COUNT(*) FROM paper_orders WHERE session_id = ? "
+                "GROUP BY state", (session_id,))}
+            by_reject = [{"reason": r[0] or "unspecified", "count": r[1]}
+                         for r in _rows(conn, """
+                SELECT reject_reason, COUNT(*) FROM paper_orders
+                WHERE session_id = ? AND state = 'rejected'
+                GROUP BY reject_reason ORDER BY COUNT(*) DESC
+            """, (session_id,))]
+
+            recon = _rows(conn, """
+                SELECT at, is_clean, checks_performed, discrepancies_json
+                FROM paper_reconciliations WHERE session_id = ?
+                ORDER BY at DESC LIMIT 1
+            """, (session_id,))
+            reconciliation = None
+            if recon:
+                try:
+                    discrepancies = json.loads(recon[0][3] or "[]")
+                except (ValueError, TypeError):
+                    discrepancies = []
+                reconciliation = {"at": recon[0][0], "clean": bool(recon[0][1]),
+                                  "checks": recon[0][2],
+                                  "discrepancies": discrepancies[:20]}
+
+            detail[session_id] = {
+                "config": config,
+                "versions": {
+                    "code": code_version, "constraints": constraints,
+                    "cost": cost_version, "slippage": slippage_version,
+                    "execution": execution_version,
+                },
+                "equity": [{"t": r[0], "e": r[1], "d": r[2], "f": r[3],
+                            "h": r[4], "u": r[5]}
+                           for r in _rows(conn, """
+                    SELECT at, equity, drawdown, data_freshness, health,
+                           unpriced_positions
+                    FROM paper_snapshots WHERE session_id = ?
+                    ORDER BY at ASC
+                """, (session_id,))],
+                "positions": [{"instrument_id": r[0], "quantity": r[1],
+                               "average_cost": r[2], "opened_at": r[3],
+                               "signal_id": r[4]}
+                              for r in _rows(conn, """
+                    SELECT instrument_id, quantity, average_cost, opened_at,
+                           entry_signal_id
+                    FROM paper_positions WHERE session_id = ? AND quantity != 0
+                    ORDER BY instrument_id
+                """, (session_id,))],
+                "orders_by_state": by_state,
+                "rejections": by_reject,
+                "fills": [{"instrument_id": r[0], "side": r[1], "quantity": r[2],
+                           "price": r[3], "reference_price": r[4],
+                           "commission": r[5], "slippage_cost": r[6],
+                           "at": r[7], "partial": bool(r[8]),
+                           "ambiguous": bool(r[9]), "venue": r[10]}
+                          for r in _rows(conn, """
+                    SELECT instrument_id, side, quantity, price, reference_price,
+                           commission, slippage_cost, filled_at, is_partial,
+                           intrabar_ambiguous, venue
+                    FROM paper_fills WHERE session_id = ?
+                    ORDER BY filled_at DESC LIMIT 60
+                """, (session_id,))],
+                "health": [{"at": r[0], "component": r[1], "state": r[2],
+                            "detail": r[3], "latency_ms": r[4]}
+                           for r in _rows(conn, """
+                    SELECT at, component, state, detail, latency_ms
+                    FROM paper_health WHERE session_id = ?
+                      AND at = (SELECT MAX(at) FROM paper_health WHERE session_id = ?)
+                    ORDER BY component
+                """, (session_id, session_id))],
+                "alerts": [{"code": r[0], "severity": r[1], "message": r[2],
+                            "detail": r[3], "at": r[4]}
+                           for r in _rows(conn, """
+                    SELECT code, severity, message, detail, at FROM paper_alerts
+                    WHERE session_id = ? ORDER BY at DESC LIMIT 40
+                """, (session_id,))],
+                "controls": [{"action": r[0], "at": r[1], "actor": r[2],
+                              "reason": r[3]}
+                             for r in _rows(conn, """
+                    SELECT action, at, actor, reason FROM paper_control_actions
+                    WHERE session_id = ? ORDER BY at DESC LIMIT 30
+                """, (session_id,))],
+                "events": [{"seq": r[0], "at": r[1], "kind": r[2],
+                            "instrument_id": r[3], "message": r[4]}
+                           for r in _rows(conn, """
+                    SELECT sequence, at, kind, instrument_id, message
+                    FROM paper_events WHERE session_id = ?
+                    ORDER BY sequence DESC LIMIT 60
+                """, (session_id,))],
+                "checkpoints": _scalar(conn,
+                    "SELECT COUNT(*) FROM paper_checkpoints WHERE session_id = ?",
+                    (session_id,), default=0),
+                "last_checkpoint": _scalar(conn,
+                    "SELECT MAX(at) FROM paper_checkpoints WHERE session_id = ?",
+                    (session_id,), default=None),
+                "reconciliation": reconciliation,
+                "latency": [{"stage": r[0], "mean": r[1], "worst": r[2]}
+                            for r in _rows(conn, """
+                    SELECT stage, AVG(milliseconds), MAX(milliseconds)
+                    FROM paper_latency WHERE session_id = ?
+                    GROUP BY stage ORDER BY stage
+                """, (session_id,))],
+            }
+
+        return {"available": True, "is_paper": True, "accounts": accounts,
+                "sessions": sessions, "detail": detail}
+
     def _backtest_config(self, conn: sqlite3.Connection, run_id: str) -> Dict[str, Any]:
         raw = _scalar(conn, "SELECT config_json FROM backtest_runs WHERE run_id = ?",
                       (run_id,), default="{}")
@@ -724,6 +933,7 @@ class DashboardGenerator:
         portfolio = self._collect_portfolio(conn)
         constraints = self._collect_constraints(conn)
         backtests = self._collect_backtests(conn)
+        paper = self._collect_paper(conn)
 
         universe = self._build_universe()
         sector_summary = self._build_sector_summary()
@@ -760,6 +970,7 @@ class DashboardGenerator:
             "portfolio": portfolio,
             "constraints": constraints,
             "backtests": backtests,
+            "paper": paper,
             "rec_index": rec_index,
             "current_recs": current_recs_by_entity,
             "universe": universe,
@@ -938,6 +1149,24 @@ table.data tr.sel { background:var(--accent-bg); }
 
 .footer { border-top:2px solid var(--line-strong); padding:16px 24px; font-size:11px; line-height:1.6; color:var(--muted); max-width:90ch; }
 .empty { color:var(--muted); font-size:12.5px; font-style:italic; padding:6px 0; }
+
+/* --- Phase 13: the paper-mode indicator ---------------------------
+   Deliberately loud and deliberately unremovable. Every number in the
+   paper workspace is simulated, and a page showing equity, positions
+   and fills without saying so would be indistinguishable at a glance
+   from one showing a real account. The banner is sticky so it stays on
+   screen however far the reader scrolls. */
+.papermode { position:sticky; top:56px; z-index:40; display:flex; align-items:center; gap:12px;
+  background:var(--accent); color:#fff; padding:9px 24px; border-bottom:2px solid var(--line-strong); }
+.papermode .tagname { font-size:12px; font-weight:800; letter-spacing:0.14em; text-transform:uppercase;
+  border:2px solid #fff; padding:2px 8px; flex:none; }
+.papermode .msg { font-size:11.5px; line-height:1.4; }
+.papermode .msg b { font-weight:800; }
+.headbar .papertag { font-size:10px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase;
+  background:var(--accent); color:#fff; padding:3px 8px; margin-right:12px; }
+.headbar .papertag.hidden { display:none; }
+.pp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); border-top:1px solid var(--line); }
+.pp-hstate { display:inline-block; width:8px; height:8px; margin-right:6px; }
 </style>
 </head>
 <body>
@@ -952,6 +1181,7 @@ table.data tr.sel { background:var(--accent-bg); }
       <div id="ml-search-results" class="search-results hidden"></div>
     </div>
     <div class="headbar-fill"></div>
+    <span class="papertag hidden" id="ml-papertag">Paper mode &middot; simulat</span>
     <div class="lastrun" id="ml-lastrun"></div>
   </div>
 </div>
@@ -1359,6 +1589,18 @@ table.data tr.sel { background:var(--accent-bg); }
   // ---------------------------------------------------------------
   // Phase 12 — backtesting
   // ---------------------------------------------------------------
+  var PP = D.paper || { available: false, is_paper: true };
+  var PP_SESSIONS = PP.sessions || [];
+
+  var PP_HEALTH_COLOR = {
+    healthy: "var(--up)", degraded: "#b07000", stale: "#b07000",
+    failed: "var(--accent-dark)", paused: "var(--muted)"
+  };
+  var PP_FRESH_LABEL = {
+    fresh: "proaspete", aging: "in imbatranire", stale: "invechite",
+    invalid: "invalide", unavailable: "indisponibile"
+  };
+
   var BT = D.backtests || { available: false };
   var BT_RUNS = BT.runs || [];
 
@@ -1708,7 +1950,8 @@ table.data tr.sel { background:var(--accent-bg); }
     { label: "Portofoliu", items: [
       { id: "portfolio", label: "Portofoliu", tag: PF_COUNT ? String(PF_COUNT) : "0" },
       { id: "risk", label: "Risc", tag: RISK_TAG },
-      { id: "backtests", label: "Backtesting", tag: BT_RUNS.length ? String(BT_RUNS.length) : "0" }
+      { id: "backtests", label: "Backtesting", tag: BT_RUNS.length ? String(BT_RUNS.length) : "0" },
+      { id: "paper", label: "Paper trading", tag: PP_SESSIONS.length ? String(PP_SESSIONS.length) : "0" }
     ]},
     { label: "Performanta", items: [
       { id: "outcomes", label: "Rezultate", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
@@ -2225,6 +2468,307 @@ table.data tr.sel { background:var(--accent-bg); }
     return html;
   }
 
+  // -----------------------------------------------------------------
+  // Phase 13 - paper trading
+  // -----------------------------------------------------------------
+  function paperBanner() {
+    return '<div class="papermode"><span class="tagname">Paper mode</span>' +
+      '<span class="msg"><b>Fiecare cifra de pe aceasta pagina este simulata.</b> ' +
+      'Nu exista cont real, broker, credentiale sau ordine trimise undeva. ' +
+      'Executia este simulata local cu aceleasi modele de cost si slippage ' +
+      'folosite la backtesting.</span></div>';
+  }
+
+  function paperSelected() {
+    if (!PP.available || !PP_SESSIONS.length) return null;
+    var id = state.param;
+    var found = null;
+    for (var i = 0; i < PP_SESSIONS.length; i++) {
+      if (PP_SESSIONS[i].session_id === id) { found = PP_SESSIONS[i]; break; }
+    }
+    found = found || PP_SESSIONS[0];
+    return { s: found, d: (PP.detail || {})[found.session_id] || {} };
+  }
+
+  function paperEmptyState() {
+    if (!PP.available) {
+      return blk("Paper trading", "Faza 13",
+        '<div class="callout"><b>Tabelele Fazei 13 nu exista in aceasta baza de date.</b>' +
+        '<p>Motorul de paper trading este implementat, dar schema nu a fost creata aici. ' +
+        'Ruleaza <span class="mono">python scripts/run_paper_session.py</span> pentru a o ' +
+        'crea si a inregistra prima sesiune.</p></div>');
+    }
+    return blk("Paper trading", "nicio sesiune inregistrata",
+      '<div class="callout"><b>Nicio sesiune de paper trading nu a rulat inca.</b>' +
+      '<p>Aceasta nu este o eroare. Nu se afiseaza o sesiune inventata in loc.</p>' +
+      '<div class="mono" style="margin-top:8px;font-size:11px;background:var(--panel);padding:10px;">' +
+      'python scripts/run_paper_session.py --name prima-sesiune</div>' +
+      '<p style="margin-top:10px;">Sesiunea foloseste exact acelasi lant ca productia — ' +
+      'semnal, motor de risc, alocare, intentie de ordin — si difera intr-un singur punct: ' +
+      'executorul, care simuleaza umplerea in loc sa trimita ordinul undeva.</p></div>');
+  }
+
+  function paperEquityChart(series) {
+    var pts = (series || []).filter(function (r) { return r.e !== null && r.e !== undefined; });
+    if (pts.length < 2) {
+      return '<div class="empty">Sub doua observatii — nu se deseneaza o curba din care ' +
+        'nu se poate citi nimic.</div>';
+    }
+    var vals = pts.map(function (r) { return r.e; });
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var range = (max - min) || 1;
+    var w = 1000, h = 180;
+    var line = pts.map(function (r, i) {
+      var x = (i / (pts.length - 1)) * w;
+      var y = h - ((r.e - min) / range) * h;
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="' + h +
+      '" preserveAspectRatio="none" style="display:block;border:1px solid var(--line);">' +
+      '<polyline points="' + line + '" fill="none" stroke="var(--ink)" stroke-width="2" ' +
+      'vector-effect="non-scaling-stroke"></polyline></svg>' +
+      '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px;">' +
+      '<span class="mono">' + esc(fmtDate(pts[0].t)) + '</span>' +
+      '<span class="mono">capital simulat ' + fmtNum(min, 0) + ' – ' + fmtNum(max, 0) + '</span>' +
+      '<span class="mono">' + esc(fmtDate(pts[pts.length - 1].t)) + '</span></div>';
+  }
+
+  function viewPaper() {
+    var sel = paperSelected();
+    if (!sel) return pageHead("Paper trading", "Paper trading") + paperBanner() + paperEmptyState();
+
+    var s = sel.s, d = sel.d;
+    var v = d.versions || {};
+    var cfg = d.config || {};
+
+    var html = pageHead("Paper trading - simulare in timp real", s.name || s.session_id, [
+      ["Stare", (s.status || "").toUpperCase()],
+      ["Ticks", fmtNum(s.ticks)],
+      ["Ordine", fmtNum(s.orders)]
+    ]);
+    html += paperBanner();
+
+    if (PP_SESSIONS.length > 1) {
+      html += '<div class="filterbar"><div class="segbtns">' + PP_SESSIONS.slice(0, 8).map(function (r) {
+        return '<button class="' + (r.session_id === s.session_id ? "on" : "") +
+          '" onclick="MLGo(\'paper\',\'' + esc(r.session_id) + '\')">' +
+          esc((r.name || r.session_id).slice(0, 14)) + '</button>';
+      }).join("") + '</div></div>';
+    }
+
+    // --- state of the session ---
+    var hcolor = PP_HEALTH_COLOR[s.health] || "var(--muted)";
+    html += '<section class="blk"><div class="blk-body">' +
+      '<div style="border:2px solid ' + hcolor + ';padding:14px 16px;">' +
+      '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:' + hcolor + ';">' +
+      esc(s.status || "") + ' &middot; sanatate ' + esc(s.health || "necunoscuta") + '</div>' +
+      '<div style="font-size:14px;margin-top:6px;">ultimul tick ' + esc(fmtDate(s.last_tick_at)) +
+      ' &middot; ' + fmtNum(s.ticks) + ' ticks &middot; ceas <span class="mono">' +
+      esc(s.clock_kind || "system") + '</span></div>' +
+      '<div class="mono" style="font-size:11px;color:var(--muted);margin-top:8px;">' +
+      esc(s.session_id) + ' &middot; amprenta ' + esc(s.fingerprint || "") + '</div>' +
+      '</div></div></section>';
+
+    // --- the book ---
+    function cell(label, value, note) {
+      return '<div class="cell"><div class="n">' + value + '</div><div class="l">' +
+        esc(label) + (note ? '<br><span style="color:var(--faint);">' + esc(note) + '</span>' : "") +
+        '</div></div>';
+    }
+    html += '<section class="blk"><div class="blk-head"><h2>Cont simulat</h2>' +
+      '<span class="blk-note">stare la ultimul snapshot, nu un rezultat</span></div>' +
+      '<div class="statgrid pp-grid">' +
+      cell("capital initial", fmtNum(s.capital, 0)) +
+      cell("valoare curenta", fmtNum(s.equity, 0), "simulata") +
+      cell("numerar", fmtNum(s.cash, 0)) +
+      cell("variatie", fmtSignedPct(s.change, 2), "nu e un rezultat masurabil") +
+      cell("drawdown", fmtPct(s.drawdown, 2)) +
+      cell("pozitii", fmtNum(s.open_positions) + (s.unpriced ? " (" + s.unpriced + " fara pret)" : "")) +
+      '</div></section>';
+
+    html += blk("Evolutia contului simulat",
+      "o perioada scurta de paper trading nu stabileste nimic despre o strategie",
+      paperEquityChart(d.equity));
+
+    // --- data freshness: the honesty that makes the rest readable ---
+    var fresh = s.freshness || "unavailable";
+    html += blk("Prospetimea datelor", esc(PP_FRESH_LABEL[fresh] || fresh),
+      '<div class="callout"><b>Datele folosite sunt ' +
+      esc(PP_FRESH_LABEL[fresh] || fresh) + '.</b>' +
+      '<p>Sesiunea masoara la fiecare tick cat de vechi sunt barele pe care decide si ' +
+      'raporteaza exact asta. Nu exista flux live in acest proiect: se lucreaza pe bare ' +
+      'zilnice cache-uite, iar clasificarea de mai sus este singura care spune cat de ' +
+      'aproape de "acum" sunt de fapt.</p>' +
+      '<p>Doar datele <i>proaspete</i> sau <i>in imbatranire</i> pot sustine un ordin nou. ' +
+      'Restul opresc generarea de ordine in loc sa fie folosite oricum.</p></div>');
+
+    // --- health components ---
+    var comps = d.health || [];
+    var compHtml = comps.length ? comps.map(function (c) {
+      var col = PP_HEALTH_COLOR[c.state] || "var(--muted)";
+      return '<div style="display:grid;grid-template-columns:1fr 110px 90px;gap:10px;align-items:center;' +
+        'border-bottom:1px solid var(--line);padding:6px 0;font-size:11.5px;">' +
+        '<span class="mono"><span class="pp-hstate" style="background:' + col + ';"></span>' +
+        esc(c.component) + '</span>' +
+        '<span style="color:' + col + ';font-weight:700;">' + esc(c.state) + '</span>' +
+        '<span style="text-align:right;" class="mono">' +
+        (c.latency_ms === null || c.latency_ms === undefined ? "—" : Number(c.latency_ms).toFixed(1) + " ms") +
+        '</span></div>';
+    }).join("") : '<div class="empty">Niciun heartbeat inregistrat.</div>';
+    html += blk("Sanatatea componentelor",
+      "starea generala este cea mai proasta componenta, nu media lor", compHtml);
+
+    // --- orders ---
+    var byState = d.orders_by_state || {};
+    var stateRows = Object.keys(byState).sort().map(function (k) { return [k, byState[k]]; });
+    var rejRows = (d.rejections || []).map(function (r) { return [r.reason, r.count]; });
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Ordine dupa stare</h2>' +
+      '<span class="blk-note">' + fmtNum(s.orders) + ' in total</span></div>' +
+      '<div class="blk-body">' + barRows(stateRows) + '</div></div>' +
+      '<div><div class="blk-head"><h2>Motive de respingere</h2>' +
+      '<span class="blk-note">enumerate, deci numarabile</span></div>' +
+      '<div class="blk-body">' + (rejRows.length ? barRows(rejRows) :
+        '<div class="empty">Niciun ordin respins.</div>') + '</div></div>' +
+      '</section>';
+
+    // --- positions ---
+    var pos = d.positions || [];
+    var posHtml = pos.length ? '<table class="data"><thead><tr><th>Instrument</th>' +
+      '<th class="r">Cantitate</th><th class="r">Cost mediu</th><th>Deschisa</th>' +
+      '<th>Semnal de intrare</th></tr></thead><tbody>' + pos.map(function (r) {
+        return '<tr><td class="mono">' + esc(r.instrument_id) + '</td>' +
+          '<td class="r">' + fmtNum(r.quantity, 4) + '</td>' +
+          '<td class="r">' + fmtNum(r.average_cost, 2) + '</td>' +
+          '<td>' + esc(fmtDate(r.opened_at)) + '</td>' +
+          '<td class="mono" style="font-size:10px;">' + esc(r.signal_id || "—") + '</td></tr>';
+      }).join("") + '</tbody></table>'
+      : '<div class="empty">Nicio pozitie deschisa.</div>';
+    html += blk("Pozitii simulate", "niciuna nu exista la vreun broker", posHtml);
+
+    // --- fills ---
+    var fills = d.fills || [];
+    var fillHtml = fills.length ? '<table class="data"><thead><tr><th>Instrument</th><th>Sens</th>' +
+      '<th class="r">Cantitate</th><th class="r">Pret referinta</th><th class="r">Pret executat</th>' +
+      '<th class="r">Comision</th><th class="r">Slippage</th><th>Moment</th><th>Loc</th></tr></thead><tbody>' +
+      fills.map(function (r) {
+        return '<tr><td class="mono">' + esc(r.instrument_id) + '</td>' +
+          '<td>' + esc(r.side) + (r.partial ? ' <span class="pill">partial</span>' : "") +
+          (r.ambiguous ? ' <span class="pill" style="background:var(--accent-bg);color:var(--accent-dark);">ambiguu</span>' : "") + '</td>' +
+          '<td class="r">' + fmtNum(r.quantity, 4) + '</td>' +
+          '<td class="r">' + fmtNum(r.reference_price, 2) + '</td>' +
+          '<td class="r">' + fmtNum(r.price, 2) + '</td>' +
+          '<td class="r">' + fmtNum(r.commission, 2) + '</td>' +
+          '<td class="r">' + fmtNum(r.slippage_cost, 2) + '</td>' +
+          '<td>' + esc(fmtDate(r.at)) + '</td>' +
+          '<td class="mono">' + esc(r.venue) + '</td></tr>';
+      }).join("") + '</tbody></table>'
+      : '<div class="empty">Nicio executie simulata.</div>';
+    html += blk("Executii simulate",
+      "pretul de referinta e pastrat langa cel executat, deci slippage-ul aplicat e verificabil",
+      fillHtml);
+
+    // --- reconciliation ---
+    var rec = d.reconciliation;
+    var recHtml;
+    if (!rec) {
+      recHtml = '<div class="empty">Nicio reconciliere inregistrata.</div>';
+    } else if (rec.clean) {
+      recHtml = '<div class="callout" style="border-color:var(--up);"><b>Reconciliere curata la ' +
+        esc(fmtDate(rec.at)) + '.</b><p>' + fmtNum(rec.checks) + ' verificari: pozitiile, ' +
+        'numerarul si cantitatile umplute derivate din executii corespund starii pastrate.</p></div>';
+    } else {
+      recHtml = '<div class="callout"><b>' + fmtNum((rec.discrepancies || []).length) +
+        ' neconcordante la ' + esc(fmtDate(rec.at)) + '.</b><ul style="margin:8px 0 0 16px;font-size:12px;">' +
+        (rec.discrepancies || []).map(function (x) {
+          return '<li>' + esc(x.detail || x.kind || "") + '</li>';
+        }).join("") + '</ul></div>';
+    }
+    html += blk("Reconciliere", "starea pastrata comparata cu ce spun executiile", recHtml);
+
+    // --- controls and alerts ---
+    var ctrl = d.controls || [];
+    var ctrlHtml = ctrl.length ? ctrl.map(function (c) {
+      return '<div style="border-bottom:1px solid var(--line);padding:6px 0;font-size:11.5px;">' +
+        '<span class="mono" style="font-weight:700;">' + esc(c.action) + '</span> &middot; ' +
+        esc(fmtDate(c.at)) + ' &middot; ' + esc(c.actor) +
+        (c.reason ? '<div style="color:var(--muted);">' + esc(c.reason) + '</div>' : "") + '</div>';
+    }).join("") : '<div class="empty">Niciun control operational aplicat.</div>';
+
+    var alerts = d.alerts || [];
+    var alertHtml = alerts.length ? alerts.map(function (a) {
+      return '<div style="border-bottom:1px solid var(--line);padding:6px 0;font-size:11.5px;">' +
+        '<span class="pill" style="background:var(--panel);">' + esc(a.severity) + '</span> ' +
+        '<span class="mono">' + esc(a.code) + '</span>' +
+        '<div style="color:var(--muted);">' + esc(a.message || a.detail || "") + '</div></div>';
+    }).join("") : '<div class="empty">Nicio alerta.</div>';
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Controale operationale</h2>' +
+      '<span class="blk-note">jurnal append-only</span></div>' +
+      '<div class="blk-body">' + ctrlHtml + '</div></div>' +
+      '<div><div class="blk-head"><h2>Alerte</h2></div>' +
+      '<div class="blk-body">' + alertHtml + '</div></div></section>';
+
+    // --- durability ---
+    var lat = d.latency || [];
+    var latHtml = lat.length ? lat.map(function (r) {
+      return '<div style="display:grid;grid-template-columns:1fr 90px 90px;gap:10px;' +
+        'border-bottom:1px solid var(--line);padding:5px 0;font-size:11.5px;">' +
+        '<span class="mono">' + esc(r.stage) + '</span>' +
+        '<span class="mono" style="text-align:right;">' + fmtNum(r.mean, 1) + ' ms</span>' +
+        '<span class="mono" style="text-align:right;">' + fmtNum(r.worst, 1) + ' ms</span></div>';
+    }).join("") : '<div class="empty">Nicio masuratoare de latenta.</div>';
+
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Durabilitate</h2>' +
+      '<span class="blk-note">o sesiune de paper nu poate fi re-rulata</span></div>' +
+      '<div class="blk-body"><div style="font-size:12px;line-height:1.6;">' +
+      '<b>' + fmtNum(d.checkpoints) + '</b> checkpoint-uri, ultimul la <span class="mono">' +
+      esc(fmtDate(d.last_checkpoint)) + '</span>.' +
+      '<p style="color:var(--muted);margin-top:8px;">Timpul a trecut deja peste ticks-urile ' +
+      'procesate, deci recuperarea reia de la ultimul checkpoint in loc sa porneasca ' +
+      'de la zero.</p></div></div></div>' +
+      '<div><div class="blk-head"><h2>Latenta pe etape</h2>' +
+      '<span class="blk-note">medie / cea mai proasta</span></div>' +
+      '<div class="blk-body">' + latHtml + '</div></div></section>';
+
+    // --- event log ---
+    var evs = d.events || [];
+    var evHtml = evs.length ? '<table class="data"><thead><tr><th class="r">#</th><th>Moment</th>' +
+      '<th>Tip</th><th>Instrument</th><th>Mesaj</th></tr></thead><tbody>' + evs.map(function (e) {
+        return '<tr><td class="num mono">' + e.seq + '</td><td>' + esc(fmtDate(e.at)) + '</td>' +
+          '<td class="mono">' + esc(e.kind) + '</td>' +
+          '<td class="mono">' + esc(e.instrument_id || "—") + '</td>' +
+          '<td>' + esc(e.message || "") + '</td></tr>';
+      }).join("") + '</tbody></table>' : '<div class="empty">Niciun eveniment.</div>';
+    html += blk("Jurnalul sesiunii", "append-only: nicio inregistrare nu e rescrisa", evHtml);
+
+    // --- provenance and the boundary ---
+    html += '<section class="blk"><div class="grid2">' +
+      '<div><div class="blk-head"><h2>Versiuni</h2>' +
+      '<span class="blk-note">aceleasi modele ca la backtesting</span></div>' +
+      '<div class="blk-body"><div class="mono" style="font-size:11.5px;line-height:1.9;">' +
+      'cod: ' + esc(v.code || "—") + '<br>' +
+      'constrangeri: ' + esc(v.constraints || "—") + '<br>' +
+      'cost: ' + esc(v.cost || "—") + '<br>' +
+      'slippage: ' + esc(v.slippage || "—") + '<br>' +
+      'executie: ' + esc(v.execution || "—") + '<br>' +
+      'univers: ' + esc((cfg.universe || []).length) + ' instrumente' +
+      '</div></div></div>' +
+      '<div><div class="blk-head"><h2>Limita fazei</h2></div><div class="blk-body">' +
+      '<div class="callout"><b>Aceasta faza nu are executie reala de niciun fel.</b>' +
+      '<p>Nu exista integrare cu MetaTrader 5 sau Interactive Brokers, nu exista ' +
+      'credentiale de broker, nu exista API de ordine si niciun cont real nu e citit ' +
+      'sau modificat. Codul nu contine o cale catre asa ceva — nu e dezactivata, ' +
+      'ci absenta.</p>' +
+      '<p>Ce difera fata de productie este un singur obiect: executorul. Semnalele, ' +
+      'motorul de risc, alocarea si contabilitatea sunt exact aceleasi.</p></div>' +
+      '</div></div></section>';
+
+    return html;
+  }
+
   function viewStub(id) {
     var meta = STUB_META[id] || STUB_META.watchlist;
     var html = pageHead(meta.kicker, meta.title, [meta.stat]);
@@ -2253,6 +2797,11 @@ table.data tr.sel { background:var(--accent-bg); }
   function render() {
     renderNav();
     document.getElementById("ml-lastrun").innerHTML = "<b>Ultima actualizare</b><br>" + esc(D.meta.generated_at);
+    // The paper-mode chip follows the workspace: shown only where
+    // simulated numbers are on screen, so it never becomes a label
+    // people learn to ignore.
+    var tag = document.getElementById("ml-papertag");
+    if (tag) tag.className = "papertag" + (state.view === "paper" ? "" : " hidden");
     var main = document.getElementById("main");
     var v = state.view;
     if (v === "markets-sector") { state.view = "markets"; v = "markets"; state.mktSector = state.param || ""; }
@@ -2268,6 +2817,7 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "portfolio") main.innerHTML = viewPortfolio();
     else if (v === "risk") main.innerHTML = viewRisk();
     else if (v === "backtests") main.innerHTML = viewBacktests();
+    else if (v === "paper") main.innerHTML = viewPaper();
     else if (STUB_IDS.indexOf(v) !== -1) main.innerHTML = viewStub(v);
     else main.innerHTML = viewOverview();
     document.title = "MarketLens Terminal";

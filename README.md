@@ -173,10 +173,88 @@ reală produce zero tranzacții și raportează exact asta. Un backtest
 afișează scorul de calitate a cercetării (care *nu* este un scor de
 profitabilitate) alături de toate limitările declarate.
 
+## Paper trading (Faza 13)
+
+Faza 13 rulează **exact același lanț ca producția** — semnal → motorul
+real de risc (Faza 11) → alocare → intenție de ordin — și diferă
+într-un singur punct: executorul, care simulează umplerea în loc să
+trimită ordinul undeva.
+
+**Nu plasează niciun ordin real.** Nu există integrare MetaTrader 5 sau
+Interactive Brokers, nu există credențiale de broker, nu există API de
+ordine, și niciun cont real nu e citit sau modificat. `ExecutionVenue`
+are un singur membru, `PAPER`, iar `PaperAccount.is_paper` nu poate fi
+setat pe `False` — construcția eșuează. Nu e o cale dezactivată, e o
+cale absentă.
+
+### Nu e un daemon, și asta e deliberat
+
+Repozitoriul nu are runtime persistent — fiecare fază rulează ca job
+programat. Deci sesiunea e **durabilă**, nu rezidentă: starea ei trăiește
+în baza de date, `tick()` o avansează, iar apelantul decide cadența. Un
+`--ticks 1` programat zilnic *este* un cont de paper care merge continuu.
+
+Ce ține construcția asta onestă e monitorul de prospețime: la fiecare
+tick se măsoară cât de vechi sunt barele pe care se decide și se
+raportează exact asta. O sesiune care lucrează pe bare de acum patru
+zile spune că lucrează pe bare de acum patru zile — nu le prezintă ca
+fiind live.
+
+Garanțiile pe care le impune:
+
+- **Riscul nu poate fi ocolit.** Ordinele se creează *numai* din
+  `evaluation.intents`, iar intențiile există doar când
+  `PortfolioService.evaluate()` a întors o decizie aprobatoare. Nu
+  există drum de la semnal la ordin care să nu treacă prin același
+  apel al Fazei 11 pe care îl face pipeline-ul.
+- **Idempotență.** Fiecare ordin poartă o cheie derivată din intrările
+  care l-au decis, deci un tick re-rulat (workflow reluat, repornire la
+  mijloc, invocare dublă) își recunoaște propria muncă în loc să dubleze
+  poziția.
+- **Recuperare.** Un backtest care crapă se re-rulează; o sesiune de
+  paper nu poate — timpul a trecut deja peste ticks-urile procesate.
+  Checkpoint-urile plus istoricul de umpleri reconstruiesc starea de
+  unde a rămas.
+- **Aceleași costuri ca la backtesting.** Modelele de cost și slippage
+  ale Fazei 12 sunt refolosite, versionate; o divergență între cele două
+  faze e o eroare de configurare, nu o observație de piață.
+- **Reconciliere care nu repară în tăcere.** Cinci verificări la fiecare
+  tick compară starea păstrată cu ce spun execuțiile. O neconcordanță
+  intră în safe mode și e raportată, nu corectată pe ascuns.
+
+```bash
+# Avansează un tick pe semnalele reale stocate
+python scripts/run_paper_session.py --name prima-sesiune --ticks 1
+
+# Reia sesiunea după o oprire, apoi avansează
+python scripts/run_paper_session.py --resume --ticks 1
+
+# Exersează mecanismul pe semnale generate (NU este dovadă despre o strategie)
+python scripts/run_paper_session.py --replay --days 120 --synthetic-signals
+
+# Controale operaționale
+python scripts/run_paper_session.py --status
+python scripts/run_paper_session.py --pause
+python scripts/run_paper_session.py --emergency-stop
+```
+
+**Atenție onestă:** ca și la backtesting, toate semnalele din baza
+actuală sunt *suprimate*, deci o sesiune reală produce zero ordine și
+raportează exact asta. Iar o perioadă scurtă de paper trading **nu
+stabilește nimic** despre o strategie: comparația cu backtestul tratează
+metricile mecanice (rata de umplere, slippage, respingeri) ca
+diagnostice, dar randamentul e raportat explicit ca ne-concluziv.
+
+Workspace-ul **Paper trading** din dashboard poartă permanent un banner
+`PAPER MODE`, pentru că o pagină cu curbă de capital, poziții și execuții
+fără eticheta aia arată, la o privire rapidă, exact ca una despre un
+cont real.
+
 ## Structura proiectului
 
 ```
 ├── src/                        # modulele pipeline-ului, testate individual
+│   ├── paper/                  # Faza 13 — paper trading, ceas, prospețime, sănătate
 │   ├── backtest/               # Faza 12 — replay istoric, execuție simulată
 │   ├── portfolio/              # Faza 11 — portofoliu, expunere, risc
 │   ├── signals/                # Faza 10 — motorul de semnale

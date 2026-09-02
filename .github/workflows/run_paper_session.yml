@@ -1,0 +1,168 @@
+name: Run Paper Session (Phase 13)
+
+# Avanseaza o sesiune de paper trading. Fiecare tick verifica prospetimea
+# datelor, aduna semnalele vii in acel moment, ruleaza motorul de risc
+# REAL al Fazei 11 peste cartea de paper, plaseaza ordine prin executorul
+# de paper, le umple pe lumanari stocate, apoi face snapshot, reconciliaza
+# si persista.
+#
+# ACEST WORKFLOW NU TRANZACTIONEAZA. Nu contacteaza niciun broker, nu
+# trimite niciun ordin, nu detine nicio credentiala si nu citeste sau
+# modifica niciun cont real. `ExecutionVenue.PAPER` este singurul loc de
+# executie care exista in cod — nu e dezactivat, e absent.
+#
+# DE CE NU E UN DAEMON: repozitoriul nu are runtime persistent. Sesiunea
+# traieste in baza de date si acest workflow o AVANSEAZA. Un `--ticks 1`
+# programat periodic este un cont de paper care merge continuu.
+#
+# DE CE NU PORNESTE PE CRON DIN OFICIU: o sesiune programata trebuie sa
+# scrie starea inapoi in release la fiecare rulare, altfel fiecare
+# executie porneste de la snapshot-ul descarcat si isi pierde propria
+# munca. Blocul `schedule` de mai jos e comentat deliberat: pornirea
+# unui cont de paper care se auto-avanseaza si isi publica starea ramane
+# o decizie explicita, nu efectul secundar al unui merge.
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Numele sesiunii'
+        required: true
+        default: 'paper session'
+        type: string
+      session:
+        description: 'Id de sesiune (gol = sess-paper-1; acelasi id continua sesiunea)'
+        required: false
+        default: ''
+        type: string
+      ticks:
+        description: 'Cate ticks se avanseaza'
+        required: false
+        default: '1'
+        type: string
+      universe_limit:
+        description: 'Cate instrumente (cele cu cel mai mult istoric)'
+        required: false
+        default: '10'
+        type: string
+      capital:
+        description: 'Capital initial simulat (doar la crearea contului)'
+        required: false
+        default: '100000'
+        type: string
+      commission_bps:
+        description: 'Comision, in puncte de baza'
+        required: false
+        default: '2'
+        type: string
+      slippage_bps:
+        description: 'Slippage, in puncte de baza'
+        required: false
+        default: '5'
+        type: string
+      resume:
+        description: 'Reconstruieste starea din checkpoint inainte de a avansa'
+        required: false
+        default: true
+        type: boolean
+      synthetic_signals:
+        description: 'Semnale generate (exerseaza mecanismul; NU dovada despre o strategie)'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Doar afiseaza, nu scrie nimic'
+        required: false
+        default: true
+        type: boolean
+      persist:
+        description: 'Scrie baza actualizata inapoi in release (necesar pentru continuitate)'
+        required: false
+        default: false
+        type: boolean
+
+  # Pentru un cont de paper care merge singur, decomenteaza blocul de mai
+  # jos SI lasa `persist` pe true in pasul de upload. Fara persistenta,
+  # fiecare rulare programata reia de la zero si nu inseamna nimic.
+  #
+  # schedule:
+  #   - cron: '30 21 * * 1-5'   # dupa inchiderea pietei US, zilele lucratoare
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  paper-session:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Advance the paper session
+        run: |
+          ARGS="--name '${{ inputs.name }}'"
+          if [ -n "${{ inputs.session }}" ]; then
+            ARGS="$ARGS --session '${{ inputs.session }}'"
+          fi
+          ARGS="$ARGS --ticks ${{ inputs.ticks }}"
+          ARGS="$ARGS --universe-limit ${{ inputs.universe_limit }}"
+          ARGS="$ARGS --capital ${{ inputs.capital }}"
+          ARGS="$ARGS --commission-bps ${{ inputs.commission_bps }}"
+          ARGS="$ARGS --slippage-bps ${{ inputs.slippage_bps }}"
+          if [ "${{ inputs.resume }}" = "true" ]; then
+            ARGS="$ARGS --resume"
+          fi
+          if [ "${{ inputs.synthetic_signals }}" = "true" ]; then
+            ARGS="$ARGS --synthetic-signals"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          eval python scripts/run_paper_session.py $ARGS
+
+      # O sesiune de paper nu poate fi re-rulata: timpul a trecut deja
+      # peste ticks-urile procesate. De aceea persistenta e ce face
+      # diferenta intre un cont care continua si unul care o ia de la
+      # capat la fiecare invocare.
+      - name: Upload updated database to release
+        if: ${{ inputs.persist == true && inputs.dry_run == false }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+
+      - name: Say what was NOT written
+        if: ${{ inputs.persist != true || inputs.dry_run == true }}
+        run: |
+          echo "Baza NU a fost publicata inapoi in release."
+          echo "Sesiunea a avansat doar in runner-ul acesta, iar starea se pierde"
+          echo "la finalul job-ului. Pentru continuitate: persist=true si dry_run=false."
