@@ -471,7 +471,13 @@ def main() -> int:
 
     parser.add_argument("--allow-paper-orders", action="store_true",
                         help="open the paper ordering gate for this run")
-    parser.add_argument("--assume-risk-approved", action="store_true")
+    parser.add_argument(
+        "--assume-risk-approved", action="store_true",
+        help="OPERATOR OVERRIDE for a hand-typed order: assert a risk "
+             "verdict this CLI did not obtain. The real path is "
+             "src/execution/intake.from_decision(), which takes the "
+             "verdict from an actual Phase 11 RiskDecision and cannot "
+             "be told to assume one.")
     parser.add_argument("--as-of", metavar="YYYY-MM-DD",
                         help="evaluate the market session at this moment. "
                              "The cached bars end before today, so wall "

@@ -512,6 +512,75 @@ Arhitectura si deciziile sunt in
 cele 18 proceduri de operare, in
 [docs/PHASE_16_OPERATIONS_RUNBOOK.md](docs/PHASE_16_OPERATIONS_RUNBOOK.md).
 
+## Audit de sistem si reconciliere arhitecturala (Faza 17)
+
+Faza 17 nu adauga o functionalitate. Reconstruieste arhitectura reala
+din repository si o compara cu cea intentionata de Fazele 0-16.
+
+**Concluzia principala: repository-ul contine doua sisteme care abia se
+ating.**
+
+| | Sistem A — stiri si recomandari | Sistem B — quant si executie |
+|---|---|---|
+| Faze | 1-9 | 10-16 |
+| Import | plat (`from news_database import ...`) | pachete (`from src.domain... import ...`) |
+| Rulare | **automat, de 3 ori pe zi** | manual |
+| Produce | 48.392 articole, 22.725 recomandari | 5 semnale, 2 modele, **0 ordine** |
+
+`run_daily.py` — singurul lucru care ruleaza programat — importa
+exclusiv din stratul vechi. Nu atinge niciun modul din
+`src/execution`, `src/portfolio`, `src/signals`, `src/paper`,
+`src/backtest`, `src/modeling` sau `src/research`.
+
+Asta explica aproape tot restul auditului: 38 de tabele goale, cinci
+semnale, doua modele. Arhitectura moderna e construita, testata si
+nerulata.
+
+### Ce s-a schimbat efectiv
+
+**Un singur lucru.** Restul e documentat, nu modificat (regula §1: nu
+rescrie sisteme care functioneaza).
+
+Auditul a urmarit lantul pe care intreg proiectul exista sa-l produca:
+
+```
+semnal -> decizie de portofoliu -> decizie de risc -> intentie de ordin
+       -> ordin de executie -> ordin IBKR -> umplere -> rezultat
+```
+
+si l-a gasit rupt intr-o singura incheietura. `IntentRequest` — unica
+intrare in stiva de executie — era construit in exact doua locuri,
+ambele scripturi CLI, ambele manual, si `risk_approved` venea dintr-un
+flag numit literal `--assume-risk-approved`. Obiectele `RiskDecision`
+produse de motorul de risc din Faza 11 ajungeau in baza de date si in
+dashboard, si nicaieri altundeva.
+
+Toate controalele existau. Firul dintre doua dintre ele, nu.
+
+Mai grav: calea de hartie (Faza 13) consulta motorul real de risc, iar
+calea catre broker nu — asimetria mergea exact invers decat trebuie.
+
+**`src/execution/intake.py`** inchide incheietura.
+`from_decision()` ia `risk_approved` dintr-un obiect `RiskDecision`,
+nu dintr-o afirmatie a apelantului; refuza orice stare care nu
+aproba (`RiskNotApproved`); refuza o intentie care nu poate fi
+urmarita inapoi la un semnal (`LineageIncomplete`); si **nu are
+niciun parametru de suprascriere** — un test verifica absenta lui,
+ca sa nu poata fi adaugat inapoi in tacere.
+
+### Verdict
+
+**READY FOR PAPER.** Nu READY FOR CONTROLLED LIVE, si blocajul e
+deliberat: nu exista cale de executie cu bani reali, iar sase puncte
+independente ar opri una daca ar exista.
+
+Ce blocheaza restul e, in ordine: stratul de semnale nu emite nimic
+(5 semnale, 15 suprimari, de cinci faze), deci nu exista tranzactii,
+deci portile de promovare nu pot fi masurate, deci nimic nu s-a
+rulat vreodata pe un cont IBKR real.
+
+Detaliile, in cele zece documente de audit din `docs/`.
+
 ## Structura proiectului
 
 ```
@@ -530,7 +599,7 @@ cele 18 proceduri de operare, in
 │   ├── signals/                # Faza 10 — motorul de semnale
 │   ├── domain/                 # modelele canonice de domeniu
 │   └── data_access/            # scheme SQL + repository-uri
-├── tests/                      # suita completă de teste (2000+ teste)
+├── tests/                      # suita completă de teste (2.815 teste)
 ├── data/marketlens.db          # baza de date persistentă (creată la prima rulare)
 ├── docs/index.html             # MarketLens Terminal (regenerat la fiecare rulare)
 ├── docs/execution-architecture.md  # Faza 14 — arhitectura de execuție
@@ -538,6 +607,16 @@ cele 18 proceduri de operare, in
 ├── docs/PHASE_15_IBKR_RUNBOOK.md   # Faza 15 — proceduri operaționale
 ├── docs/PHASE_16_IBKR_PRODUCTION_READINESS.md  # Faza 16 — guvernanță și pregătire
 ├── docs/PHASE_16_OPERATIONS_RUNBOOK.md  # Faza 16 — cele 18 proceduri de operare
+├── docs/COMPLETE_SYSTEM_AUDIT.md   # Faza 17 — auditul complet
+├── docs/MASTER_ARCHITECTURE.md     # Faza 17 — arhitectura reala, reconstruita
+├── docs/TECHNICAL_DEBT_REGISTER.md # Faza 17 — datoria tehnica, prioritizata
+├── docs/DATA_LINEAGE_MAP.md        # Faza 17 — lantul cauzal, verig cu veriga
+├── docs/EXECUTION_SAFETY_AUDIT.md  # Faza 17 — graful de executie
+├── docs/SECURITY_AUDIT.md          # Faza 17 — securitate
+├── docs/API_AUDIT.md               # Faza 17 — interfete
+├── docs/DATABASE_AUDIT.md          # Faza 17 — baza de date
+├── docs/TEST_COVERAGE_AUDIT.md     # Faza 17 — acoperire cu teste
+├── docs/PRODUCTION_READINESS.md    # Faza 17 — scorecard si verdict
 ├── .env.example                # variabilele de mediu (doar substituenți)
 ├── run_daily.py                # script de orchestrare — rularea zilnică
 ├── run_weekly_backfill.py      # script de orchestrare — backfill istoric săptămânal

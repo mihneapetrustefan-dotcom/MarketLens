@@ -477,9 +477,13 @@ def main() -> int:
     parser.add_argument("--allow-paper", action="store_true",
                         help="grant this caller paper execution")
     parser.add_argument("--assume-risk-approved", action="store_true",
-                        help="state that risk approved; without it a submit "
-                             "is refused, because 'not consulted' is not "
-                             "approval")
+                        help="OPERATOR OVERRIDE for a hand-typed order: assert "
+                             "a risk verdict this CLI did not obtain. Without "
+                             "it a submit is refused, because 'not consulted' "
+                             "is not approval. The real path is "
+                             "src/execution/intake.from_decision(), which takes "
+                             "the verdict from an actual Phase 11 RiskDecision "
+                             "and cannot be told to assume one.")
     parser.add_argument("--as-of", metavar="YYYY-MM-DD",
                         help="evaluate at this moment instead of now. The "
                              "cached bars end well before today, so wall "
