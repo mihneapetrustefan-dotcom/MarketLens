@@ -10,3 +10,8 @@ data/marketlens.db
 .env
 .env.*
 !.env.example
+
+# Downloaded installers. This is a pure-Python project — a tracked
+# Windows binary would always be a mistake, and a 65 MB one landing in
+# the repo root is easy to commit by reflex with `git add -A`.
+*.exe
