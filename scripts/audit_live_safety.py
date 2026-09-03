@@ -142,12 +142,15 @@ check("Q10 no second broker is planned or stubbed",
       planned_gateways() == {}, f"planned: {planned_gateways()}")
 
 # Q11 -------------------------------------------------------------
-hits = subprocess.run(
+# This file is excluded from its own search: a check that names what
+# it forbids will always contain the word.
+hits = [f for f in subprocess.run(
     ["git", "grep", "-riIl", "-e", "mt5", "-e", "metatrader",
      "--", "src", "tests", "scripts"],
-    capture_output=True, text=True).stdout.strip()
+    capture_output=True, text=True).stdout.split()
+    if not f.endswith("audit_live_safety.py")]
 check("Q11 no MT5 reference remains in src, tests or scripts",
-      not hits, hits or "clean")
+      not hits, ", ".join(hits) or "clean")
 
 # Q12 -------------------------------------------------------------
 SECRET = re.compile(
