@@ -34,7 +34,10 @@ ANCHOR = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
 
 
 def seed(path, candle_days=120, with_articles=True):
-    NewsDatabase(path)
+    # Constructed for its schema side-effect only. Closed rather than
+    # discarded: a live handle keeps the temp file undeletable on
+    # Windows, so tearDown fails after the test itself has passed.
+    NewsDatabase(path).close()
     conn = sqlite3.connect(path)
     for fn in (initialize_schema, initialize_news_schema, initialize_fusion_schema,
                initialize_price_cache_schema, initialize_research_schema):

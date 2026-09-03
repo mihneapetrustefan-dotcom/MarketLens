@@ -92,7 +92,7 @@ class TestFusionEndToEnd(unittest.TestCase):
     def setUp(self):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
-        NewsDatabase(self.db_path)
+        NewsDatabase(self.db_path).close()
         conn = sqlite3.connect(self.db_path)
         initialize_news_schema(conn)
         initialize_event_schema(conn)

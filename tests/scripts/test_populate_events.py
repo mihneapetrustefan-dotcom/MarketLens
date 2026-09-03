@@ -56,7 +56,9 @@ class TestLoadArticlesWithEntities(unittest.TestCase):
     def setUp(self):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
-        NewsDatabase(self.db_path)  # creates the legacy `articles` table
+        # Closed, not discarded: a live handle keeps the temp file
+        # undeletable on Windows and tearDown then fails.
+        NewsDatabase(self.db_path).close()  # creates the legacy `articles` table
         self.conn = sqlite3.connect(self.db_path)
         initialize_news_schema(self.conn)
         self.conn.execute("""
@@ -99,7 +101,7 @@ class TestEndToEndIdempotency(unittest.TestCase):
     def setUp(self):
         fd, self.db_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
-        NewsDatabase(self.db_path)  # creates the legacy `articles` table
+        NewsDatabase(self.db_path).close()  # creates the legacy `articles` table
         conn = sqlite3.connect(self.db_path)
         initialize_news_schema(conn)
         initialize_event_schema(conn)
