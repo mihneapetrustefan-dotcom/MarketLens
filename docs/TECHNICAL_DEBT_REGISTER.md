@@ -34,23 +34,67 @@ real IBKR paper order from an approved decision end to end.
 
 ## HIGH
 
-### TD-02 — Two competing article schemas · **OPEN**
+### TD-02 — Two competing article schemas · **MIGRATED**
 
-**Component:** `articles` (48,392 rows) vs `news_articles` (0 rows) +
-`raw_articles` (0 rows)
+**Component:** `articles` (48,392 rows) → `news_articles` (48,392 rows)
 
-The canonical schema is the better one — provider, provider article id,
-canonical URL, language, country, author, raw payload retained — and it
-is empty. The legacy schema carries all the data and is string-and-
-ticker based.
+The canonical schema was the better one — provider, canonical URL,
+dedup levels, processing state — and it was empty. The Phase 2 domain
+model had been written *expecting* this migration:
+`NormalizedArticle` carries `sentiment_label`, `sentiment_score` and
+`impact_score` with a comment saying they exist so migrated articles
+keep what the legacy engines already produced. The design anticipated
+it; nobody ran it.
 
-**Risk:** two definitions of "an article". Any future ingestion work
-must choose, and choosing wrongly wastes the work.
+**Done:** `scripts/migrate_news_to_canonical.py`. All 48,392 rows
+backfilled and verified:
 
-**Recommended:** migrate ingestion to `news_articles`, backfill from
-`articles`, keep `articles` as a read-only legacy view until the
-dashboard is repointed. **Do not drop `articles`** — it is the only
-copy of 48k rows.
+| Check | Result |
+|---|---|
+| legacy rows with a title | 48,392 |
+| canonical rows | 48,392 |
+| legacy rows not migrated | **0** |
+| `duplicate_of` pointing nowhere | **0** |
+| sentiment carried across | 48,392 |
+| Phase 5 entity links still resolvable | **26,400 / 26,400** |
+| `articles` table modified | **no** — SHA-256 identical before and after |
+
+Wired into `daily.yml` after the pipeline and before archiving, with
+`continue-on-error`: the script is idempotent, so a missed day
+self-heals, whereas a red daily pipeline stops collecting news and
+loses data permanently.
+
+**What was deliberately not done.** `articles` was not dropped, not
+altered, not read-only-ified. It holds the only copy of the legacy rows
+and seven modules still read it. Retiring it is a separate decision
+taken after those readers are repointed — see TD-02b.
+
+**Consequence worth knowing:** the two tables now diverge in retention
+by design. `archive_old_articles.py` prunes `articles` to 60 days;
+nothing prunes `news_articles`. Canonical accumulates the full history,
+which is what spec §50 asks for and what makes Phase 5 entity links
+survive archiving — previously they dangled.
+
+### TD-02b — Seven readers still on the legacy table · **OPEN**
+
+`dashboard.py`, `impact_engine.py`, `news_database.py`,
+`archive_old_articles.py`, `backfill_article_entities.py`,
+`compute_features.py`, `populate_events.py` all read `articles`.
+
+Until they are repointed, `articles` remains the write path and
+`news_articles` is a synchronised projection of it. That is strictly
+better than two independent definitions, one of them empty — but it is
+not yet one source of truth.
+
+**Recommended:** repoint readers one at a time, dashboard last (it is
+the only user-visible one). Then make ingestion write canonical
+natively and demote `articles`.
+
+**Why ingestion was not repointed now:** `run_daily.py` puts only
+`src/` on `sys.path`, not the repository root, so no flat Phase 1–9
+module can import `src.domain.*`. Making the only scheduled production
+job depend on the package layer is a larger change than a backfill
+warrants, and it belongs with the reader migration above.
 
 ### TD-03 — Two competing trade-idea schemas · **OPEN**
 
@@ -168,6 +212,22 @@ documentation, now present in `README` and CI.
 ---
 
 ## LOW
+
+### TD-15 — `archive_old_articles.py` ignores its db argument when writing · **OPEN**
+
+The script accepts a database path but writes archives to a hardcoded
+`REPO_ROOT/data/archives/` (line 49). Running it against a copy of the
+database — the obvious way to test it safely — silently modifies the
+real archive files.
+
+Found the hard way during the TD-02 migration: a test run against a
+throwaway copy appended to the live `articles_2026-07.jsonl.gz`. No
+data was lost (the change was reverted from git), but "run it on a
+copy first" is the standard safety habit and this script defeats it.
+
+**Recommended:** derive the archive directory from the database path,
+or add `--archive-dir`. Low effort, and it restores the ability to
+rehearse a destructive script safely.
 
 ### TD-11 — Stale git worktree · **OPEN**
 

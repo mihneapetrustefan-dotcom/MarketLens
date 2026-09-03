@@ -104,6 +104,20 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python run_daily.py
 
+      # Sincronizeaza tabela canonica `news_articles` cu articolele
+      # nou colectate (Faza 17, TD-02).
+      #
+      # Ruleaza DUPA pipeline si INAINTE de arhivare: articolele scoase
+      # din baza vie la aceeasi rulare sunt deja in tabela canonica.
+      #
+      # continue-on-error e deliberat. Scriptul e idempotent, deci o
+      # zi ratata se recupereaza singura la rularea urmatoare. In
+      # schimb, un pipeline zilnic rosu care nu mai colecteaza stiri
+      # pierde date definitiv. Sincronizarea nu merita acel risc.
+      - name: Sync canonical news table (TD-02)
+        continue-on-error: true
+        run: python scripts/migrate_news_to_canonical.py
+
       # Fereastra de 60 de zile (nu 180): diagnosticul a aratat ca
       # aproape tot volumul provine din articole RECENTE, generate de
       # rularile zilnice — o fereastra de 180 de zile elibera doar 87

@@ -23,7 +23,7 @@ import sqlite3
 import logging
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import List, Optional, Dict, Any
+from typing import Sequence, List, Optional, Dict, Any
 
 from src.domain.news_models import (
     RawArticle, NormalizedArticle, ProcessingStatus, DuplicateMatchLevel, IngestionCheckpoint,
@@ -149,16 +149,22 @@ class NewsRepository:
         self._write(article)
         return "updated"
 
-    def _write(self, article: NormalizedArticle) -> None:
-        self._conn.execute("""
-            INSERT OR REPLACE INTO news_articles (
-                article_id, provider, provider_article_id, raw_id, source_id, source_name,
-                source_url, canonical_url, title, summary, language, country, author,
-                categories_json, published_at, ingested_at, updated_at, fingerprint,
-                content_fingerprint, duplicate_of, duplicate_match_level, sentiment_label,
-                sentiment_score, impact_score, processing_status, rejection_reason, version
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
+    #: One statement, used by both the single-article path and the bulk
+    #: one. Two copies of this INSERT would be two definitions of what
+    #: an article row is, which is the failure this table exists to end.
+    _INSERT = """
+        INSERT OR REPLACE INTO news_articles (
+            article_id, provider, provider_article_id, raw_id, source_id, source_name,
+            source_url, canonical_url, title, summary, language, country, author,
+            categories_json, published_at, ingested_at, updated_at, fingerprint,
+            content_fingerprint, duplicate_of, duplicate_match_level, sentiment_label,
+            sentiment_score, impact_score, processing_status, rejection_reason, version
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """
+
+    @staticmethod
+    def _row_tuple(article: NormalizedArticle) -> tuple:
+        return (
             article.article_id, article.provider, article.provider_article_id, article.raw_id,
             article.source_id, article.source_name, article.source_url, article.canonical_url,
             article.title, article.summary, article.language, article.country, article.author,
@@ -168,8 +174,32 @@ class NewsRepository:
             str(article.sentiment_score) if article.sentiment_score is not None else None,
             str(article.impact_score) if article.impact_score is not None else None,
             article.processing_status.value, article.rejection_reason, article.version,
-        ))
+        )
+
+    def _write(self, article: NormalizedArticle) -> None:
+        self._conn.execute(self._INSERT, self._row_tuple(article))
         self._conn.commit()
+
+    def bulk_write(self, articles: Sequence[NormalizedArticle]) -> int:
+        """
+        Write many articles under one commit.
+
+        For migration and backfill, where `upsert`'s per-article read
+        and per-article commit would turn 48,000 rows into 96,000 round
+        trips. Semantics are otherwise identical: same statement, same
+        tuple, INSERT OR REPLACE.
+
+        The caller owns the choice between this and `upsert`. Use
+        `upsert` when version tracking matters -- it is what preserves
+        the original ingestion time across a provider revision -- and
+        this when writing rows that have no prior version to preserve.
+        """
+        rows = [self._row_tuple(a) for a in articles]
+        if not rows:
+            return 0
+        self._conn.executemany(self._INSERT, rows)
+        self._conn.commit()
+        return len(rows)
 
     def find_dedup_candidates(self, article: NormalizedArticle, window_days: int = 1) -> List[NormalizedArticle]:
         """

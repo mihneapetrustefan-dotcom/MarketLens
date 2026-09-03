@@ -79,7 +79,7 @@ them the better-designed one is the empty one.
 
 | Domain | Legacy (populated) | Canonical (empty) | Verdict |
 |---|---|---|---|
-| Article | `articles` — 16 cols, 48,392 rows | `news_articles` — 27 cols, **0 rows**; `raw_articles` — **0 rows** | **DUPLICATE.** Canonical schema is correct (provider, provenance, canonical_url, language) and unused. Legacy is ticker-and-string based. |
+| Article | `articles` — 16 cols, 48,392 rows | `news_articles` — 27 cols, **48,392 rows** | **MIGRATED (TD-02).** All rows backfilled and verified; `articles` untouched and still read by seven modules, so it remains the write path pending TD-02b. |
 | Trade idea | `recommendations` — 9 cols, 22,725 rows | `signals` — 40 cols, **5 rows** | **DUPLICATE.** `signals` carries instrument_id, model linkage, horizon, confidence, lifecycle. `recommendations` carries a ticker string. |
 | Event | `events` — 846 rows | `canonical_events` — 581 rows | **NOT a duplicate.** This is the intended two-layer model: an event *report* (what one article claimed) versus a *canonical* event (what actually happened, corroborated). Correct as designed. |
 
@@ -98,7 +98,9 @@ Grouped by cause, because they mean different things:
 - **Blocked upstream (5):** `order_intents`, `portfolios`, `positions`,
   `risk_decisions`, `risk_violations`. Nothing produces them because
   every signal is suppressed and no portfolio exists.
-- **Superseded (2):** `news_articles`, `raw_articles` — see §3.
+- **Superseded (1):** `raw_articles` — the legacy pipeline never kept
+  provider payloads, so there is nothing to backfill. `news_articles`
+  was in this group and now holds 48,392 rows (TD-02).
 - **Genuinely unused features (6):** `event_instruments`,
   `event_sectors`, `fusion_contradictions`, `event_corrections`,
   `ingestion_checkpoints`, `allocation_*`.
