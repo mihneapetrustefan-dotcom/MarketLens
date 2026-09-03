@@ -4,3 +4,9 @@ __pycache__/
 *.egg-info/
 data/marketlens.db
 .venv/
+
+# Secrets (Phase 15). `.env.example` is committed and holds only
+# placeholders; `.env` holds real values and must never be.
+.env
+.env.*
+!.env.example

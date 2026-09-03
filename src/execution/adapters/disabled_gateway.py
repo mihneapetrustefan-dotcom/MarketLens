@@ -179,8 +179,5 @@ def planned_gateways() -> Dict[str, DisabledBrokerGateway]:
     return {
         "mt5": DisabledBrokerGateway(
             "mt5", "MetaTrader 5",
-            "no adapter is implemented; planned for Phase 15"),
-        "ibkr": DisabledBrokerGateway(
-            "ibkr", "Interactive Brokers",
             "no adapter is implemented; planned for Phase 16"),
     }

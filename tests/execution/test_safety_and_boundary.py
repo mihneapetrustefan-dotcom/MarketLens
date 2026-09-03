@@ -140,13 +140,22 @@ class TestTheLiveBoundary(unittest.TestCase):
 
 
 class TestPlannedVenues(unittest.TestCase):
-    """Spec §56, §57: MT5 and IBKR are named and absent."""
+    """
+    Venues named but not built.
+
+    Phase 14 listed both MT5 and IBKR here. Phase 15 built a real IBKR
+    adapter, so IBKR left this list — a venue with a working adapter
+    must not also appear as a placeholder, or the workspace would show
+    it twice and disagree with itself about whether it exists.
+    """
 
     def setUp(self):
         self.gateways = planned_gateways()
 
-    def test_mt5_and_ibkr_are_listed_but_unimplemented(self):
-        self.assertEqual(set(self.gateways), {"mt5", "ibkr"})
+    def test_only_unimplemented_venues_are_listed(self):
+        self.assertEqual(set(self.gateways), {"mt5"})
+        self.assertNotIn("ibkr", self.gateways,
+                         "IBKR has a real adapter and must not be a placeholder")
         for gateway in self.gateways.values():
             self.assertIn("no adapter is implemented", gateway.reason)
             # And each names the phase that will build it, so the
@@ -177,11 +186,11 @@ class TestPlannedVenues(unittest.TestCase):
             self.assertFalse(gateway.health_check(AT).is_usable)
 
     def test_account_reads_return_empty_not_invented_numbers(self):
-        snapshot = self.gateways["ibkr"].get_account("a", AT)
+        snapshot = self.gateways["mt5"].get_account("a", AT)
         self.assertEqual(snapshot.cash, 0.0)
         self.assertEqual(snapshot.equity, 0.0)
         self.assertFalse(snapshot.raw_broker_payload["implemented"])
-        self.assertEqual(self.gateways["ibkr"].get_positions("a", AT), [])
+        self.assertEqual(self.gateways["mt5"].get_positions("a", AT), [])
 
 
 class TestSafetySwitches(unittest.TestCase):

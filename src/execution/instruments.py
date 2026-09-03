@@ -30,6 +30,7 @@ it silently trades the wrong contract. An unmapped instrument produces
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -37,6 +38,17 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from src.domain.broker_models import (
     BrokerInstrumentMapping, ExecutionRejectCode,
 )
+
+
+def _loads(raw) -> dict:
+    """Parse a stored payload, falling back rather than failing a load."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 @dataclass
@@ -97,7 +109,7 @@ class InstrumentRegistry:
             SELECT canonical_instrument_id, broker_id, broker_symbol, venue,
                    asset_class, currency, tick_size, lot_size, minimum_quantity,
                    quantity_increment, price_precision, contract_multiplier,
-                   timezone_name, trading_hours, tradable
+                   timezone_name, trading_hours, tradable, broker_payload_json
             FROM broker_instrument_mapping
         """
         params: Tuple[Any, ...] = ()
@@ -115,7 +127,14 @@ class InstrumentRegistry:
                 quantity_increment=row[9], price_precision=row[10],
                 contract_multiplier=row[11] if row[11] is not None else 1.0,
                 timezone_name=row[12] or "UTC", trading_hours=row[13] or "",
-                tradable=bool(row[14])))
+                tradable=bool(row[14]),
+                # The venue's own identifier scheme lives here — IBKR
+                # keeps its conid in it. Losing it on reload would mean
+                # re-resolving every contract on every run, and a
+                # re-resolution can reach a DIFFERENT answer after a
+                # listing change. That is a moment for a human, not a
+                # silent remap.
+                broker_payload=_loads(row[15])))
             count += 1
         return count
 

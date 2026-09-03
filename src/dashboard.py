@@ -736,6 +736,70 @@ class DashboardGenerator:
             },
         }
 
+    def _collect_broker_detail(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Per-broker execution detail (Phase 15).
+
+        Reads the SAME Phase 14 tables as everything else — there is no
+        IBKR-specific table, because the canonical records already hold
+        what a venue-specific panel needs. What differs per broker is
+        the mapping payload (IBKR keeps its conid there) and the
+        capability row, and both are already canonical.
+
+        Nothing here is invented. A broker with no orders reports no
+        orders rather than a plausible-looking zero state.
+        """
+        if not _table_exists(conn, "execution_orders"):
+            return {"available": False}
+
+        out: Dict[str, Any] = {}
+        for (broker_id, name, environment, adapter, enabled,
+             implemented) in _rows(conn, """
+                SELECT broker_id, name, environment, adapter, enabled, implemented
+                FROM brokers ORDER BY broker_id
+            """):
+            mappings = [{
+                "instrument_id": r[0], "symbol": r[1], "venue": r[2],
+                "asset_class": r[3], "currency": r[4],
+                "increment": r[5], "minimum": r[6],
+                "payload": _safe_json(r[7], {}),
+            } for r in _rows(conn, """
+                SELECT canonical_instrument_id, broker_symbol, venue,
+                       asset_class, currency, quantity_increment,
+                       minimum_quantity, broker_payload_json
+                FROM broker_instrument_mapping WHERE broker_id = ?
+                ORDER BY broker_symbol LIMIT 40
+            """, (broker_id,))]
+
+            health = [{"at": r[0], "state": r[1], "latency_ms": r[2],
+                       "detail": r[3]}
+                      for r in _rows(conn, """
+                SELECT at, state, latency_ms, detail FROM broker_health
+                WHERE broker_id = ? ORDER BY at DESC LIMIT 5
+            """, (broker_id,))]
+
+            out[broker_id] = {
+                "broker_id": broker_id, "name": name,
+                "environment": environment, "adapter": adapter,
+                "enabled": bool(enabled), "implemented": bool(implemented),
+                "mappings": mappings,
+                "health": health,
+                "orders": _scalar(conn,
+                    "SELECT COUNT(*) FROM execution_orders WHERE broker_id = ?",
+                    (broker_id,), default=0),
+                "fills": _scalar(conn,
+                    "SELECT COUNT(*) FROM execution_fills WHERE broker_id = ?",
+                    (broker_id,), default=0),
+                "accounts": [{"account_id": r[0], "name": r[1],
+                              "environment": r[2], "currency": r[3],
+                              "enabled": bool(r[4])}
+                             for r in _rows(conn, """
+                    SELECT account_id, name, environment, base_currency, enabled
+                    FROM broker_accounts WHERE broker_id = ? ORDER BY account_id
+                """, (broker_id,))],
+            }
+        return {"available": True, "brokers": out}
+
     def _collect_paper(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         """
         Phase 13: paper trading sessions.
@@ -1101,6 +1165,7 @@ class DashboardGenerator:
         backtests = self._collect_backtests(conn)
         paper = self._collect_paper(conn)
         execution = self._collect_execution(conn)
+        broker_detail = self._collect_broker_detail(conn)
 
         universe = self._build_universe()
         sector_summary = self._build_sector_summary()
@@ -1139,6 +1204,7 @@ class DashboardGenerator:
             "backtests": backtests,
             "paper": paper,
             "execution": execution,
+            "broker_detail": broker_detail,
             "rec_index": rec_index,
             "current_recs": current_recs_by_entity,
             "universe": universe,
@@ -3100,6 +3166,9 @@ table.data tr.sel { background:var(--accent-bg); }
       html += xOrderDetail(state.param);
     }
 
+    // --- per-broker detail, including IBKR ---
+    html += xBrokerDetail();
+
     // --- instrument mappings ---
     var maps = XE.mappings || [];
     var mapHtml = maps.length ? '<table class="data"><thead><tr><th>Instrument canonic</th>' +
@@ -3170,6 +3239,78 @@ table.data tr.sel { background:var(--accent-bg); }
       'nu se poate construi un cont, un broker sau un gateway pe el.</p></div>');
 
     return html;
+  }
+
+  function xBrokerDetail() {
+    var BD = (D.broker_detail || {}).brokers || {};
+    var ids = Object.keys(BD);
+    if (!ids.length) return "";
+
+    var blocks = ids.map(function (id) {
+      var b = BD[id];
+      var live = false;   // structurally: no adapter can trade real money
+      var envLabel = (b.environment || "").toUpperCase();
+      var badge = b.implemented
+        ? '<span class="xstate" style="color:var(--up);">' + esc(envLabel) + ' · adaptor activ</span>'
+        : '<span class="xstate" style="color:var(--muted);">fara adaptor</span>';
+
+      var mapHtml = (b.mappings || []).length
+        ? '<table class="data"><thead><tr><th>Instrument</th><th>Simbol</th>' +
+          '<th>Identificator broker</th><th>Loc</th><th class="r">Increment</th>' +
+          '</tr></thead><tbody>' + b.mappings.map(function (m) {
+            var native = m.payload && m.payload.conid
+              ? 'conid ' + esc(m.payload.conid) : '—';
+            return '<tr><td class="mono">' + esc(m.instrument_id) + '</td>' +
+              '<td class="mono"><b>' + esc(m.symbol) + '</b></td>' +
+              '<td class="mono">' + native + '</td>' +
+              '<td>' + esc(m.venue || m.payload && m.payload.primary_exchange || '—') + '</td>' +
+              '<td class="r">' + fmtNum(m.increment, 4) + '</td></tr>';
+          }).join("") + '</tbody></table>'
+        : '<div class="empty">Niciun instrument rezolvat pentru acest broker.</div>';
+
+      var acctHtml = (b.accounts || []).length
+        ? b.accounts.map(function (a) {
+            var paper = /^DU/i.test(a.account_id);
+            return '<div style="font-size:11.5px;padding:3px 0;">' +
+              '<span class="mono">' + esc(a.account_id) + '</span> · ' +
+              esc(a.environment) + ' · ' + esc(a.currency) +
+              (a.account_id && !paper && id === "ibkr"
+                ? ' <span class="xstate" style="color:var(--accent-dark);">nu incepe cu DU</span>'
+                : '') + '</div>';
+          }).join("")
+        : '<div class="empty">Niciun cont.</div>';
+
+      var healthHtml = (b.health || []).length
+        ? b.health.slice(0, 3).map(function (h) {
+            return '<div style="font-size:11.5px;padding:3px 0;color:var(--muted);">' +
+              esc(fmtDate(h.at)) + ' · <span class="mono">' + esc(h.state) + '</span>' +
+              (h.detail ? ' · ' + esc(h.detail) : '') + '</div>';
+          }).join("")
+        : '<div class="empty">Nicio verificare inregistrata.</div>';
+
+      return '<div style="border:2px solid ' +
+        (b.implemented ? 'var(--line-strong)' : 'var(--border-mid)') +
+        ';padding:14px 16px;margin-bottom:14px;">' +
+        '<div style="display:flex;justify-content:space-between;gap:10px;' +
+        'flex-wrap:wrap;align-items:baseline;">' +
+        '<span style="font-weight:800;font-size:15px;">' + esc(b.name) + '</span>' +
+        badge + '</div>' +
+        '<div class="mono" style="font-size:11px;color:var(--muted);margin-top:5px;">' +
+        esc(b.adapter || '—') + ' · ' + fmtNum(b.orders) + ' ordine · ' +
+        fmtNum(b.fills) + ' executii</div>' +
+        '<div style="margin-top:10px;font-size:11px;font-weight:700;' +
+        'letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);">Conturi</div>' +
+        acctHtml +
+        '<div style="margin-top:10px;font-size:11px;font-weight:700;' +
+        'letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);">Sanatate</div>' +
+        healthHtml +
+        '<div style="margin-top:10px;font-size:11px;font-weight:700;' +
+        'letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);">Instrumente rezolvate</div>' +
+        mapHtml + '</div>';
+    }).join("");
+
+    return blk("Brokeri in detaliu",
+      "identificatorii nativi (conid la IBKR) raman sub adaptor", blocks);
   }
 
   function xOrderDetail(orderId) {

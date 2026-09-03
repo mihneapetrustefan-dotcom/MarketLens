@@ -329,12 +329,111 @@ ordonarea evenimentelor, modelul de capabilitati si ce trebuie sa faca
 Fazele 15 si 16 — sunt in
 [docs/execution-architecture.md](docs/execution-architecture.md).
 
+## Interactive Brokers (Faza 15)
+
+IBKR ca **adaptor in spatele granitei Fazei 14**. Nimic deasupra
+granitei nu stie ca IBKR exista — nucleul, semnalele, portofoliul si
+motorul de risc n-au fost atinse.
+
+```
+ORDER INTENT
+     |
+=== granita neutra fata de broker (Faza 14) ===
+     |
+EXECUTION ORCHESTRATOR -> BROKER GATEWAY
+                               |
+                    +----------+-----------+
+                    |          |           |
+                 PAPER      IBKR        MT5 (Faza 16)
+                               |
+                        IBKR TRANSPORT     <- a doua granita
+                               |
+                    Client Portal Web API
+```
+
+**Doar paper. Nicio executie cu bani reali.** `IBKR_ENVIRONMENT`
+accepta exclusiv `paper`, configuratia refuza orice altceva la
+construire, gateway-ul refuza sa fie construit pentru un mediu cu bani
+reali, iar stratul de siguranta al Fazei 14 refuza `LIVE` inainte de
+toate.
+
+### Transportul ales: Client Portal Web API
+
+Ambele interfete IBKR cer un program Java local pe care il autentifici
+tu. Am ales Client Portal pentru patru motive specifice acestui
+repozitoriu:
+
+1. **Se potriveste cu forma pe care Faza 14 o are deja** — cerere si
+   raspuns, cu `poll_events`. TWS API e o magistrala asincrona de
+   callback-uri care ar cere un runtime persistent; proiectul nu are.
+2. **Zero dependinte noi** — `requests` exista deja. `ibapi` ar trebui
+   adus manual din arhiva IBKR.
+3. **Ruleaza pe Linux**, unde ruleaza si restul proiectului.
+4. **`conid` e un concept REST de prim rang**, si se aseaza direct
+   peste `BrokerInstrumentMapping`.
+
+Decisiv pentru securitate: **gateway-ul detine credentialul, deci
+aplicatia nu-l vede niciodata.** Nu exista camp de utilizator sau
+parola nicaieri in Faza 15, iar `.env.example` explica de ce adaugarea
+lui ar fi o greseala.
+
+### Doua porti inainte de orice ordin
+
+Conectarea **nu** e permisiune de a tranzactiona:
+
+```
+IBKR_ENABLED=true                    # integrarea e pornita
+IBKR_PAPER_ORDERING_ENABLED=false    # a doua poarta, inchisa implicit
+```
+
+### Ce refuza adaptorul sa ghiceasca
+
+- **`ticker == instrument` e fals la IBKR.** Acelasi simbol e listat pe
+  mai multe locuri, in mai multe monede. Cand raman mai multe
+  contracte, raspunsul e o **ambiguitate structurata**, nu o alegere.
+  Nimic nu se salveaza si nimic nu tranzactioneaza.
+- **Un timeout nu e un esec.** Devine `UNKNOWN`, niciodata `FAILED`, si
+  **nu se retrimite niciodata** — se rezolva intrebandu-l pe IBKR.
+- **`Inactive` nu e terminal.** E categoria-cos a IBKR pentru un ordin
+  pe care il tine dar nu il lucreaza; citit ca anulat ar lasa un ordin
+  viu pe care sistemul il crede inchis.
+- **Executiile se deduplica pe id-ul de executie IBKR**, niciodata pe
+  campurile vizibile: doua executii diferite pot fi identice in tot
+  restul.
+
+```bash
+# Totul, fara gateway, fara cont, fara retea
+python scripts/run_ibkr.py --mock
+
+# Cu un Client Portal Gateway pornit si autentificat de tine
+python scripts/run_ibkr.py --status
+python scripts/run_ibkr.py --account-info
+python scripts/run_ibkr.py --resolve --symbol AAPL --instrument i-aapl
+python scripts/run_ibkr.py --dry-run-order --instrument i-aapl --quantity 1
+
+# Ordin paper (necesita confirmarea explicita a portii)
+python scripts/run_ibkr.py --submit --instrument i-aapl --quantity 1 \
+    --assume-risk-approved --allow-paper-orders
+
+python scripts/run_ibkr.py --reconcile
+python scripts/run_ibkr.py --resolve-unknown
+```
+
+**Nu a fost validat pe un cont IBKR real.** Nu exista cont, gateway sau
+credential in mediul in care a fost construit. Toate testele ruleaza pe
+un dublu determinist, iar formele de endpoint vin din documentatia
+publicata, nu din trafic observat. Diferenta e reala si e enumerata in
+[docs/PHASE_15_IBKR_ARCHITECTURE.md](docs/PHASE_15_IBKR_ARCHITECTURE.md);
+procedura care o inchide e in
+[docs/PHASE_15_IBKR_RUNBOOK.md](docs/PHASE_15_IBKR_RUNBOOK.md).
+
 ## Structura proiectului
 
 ```
 ├── src/                        # modulele pipeline-ului, testate individual
 │   ├── execution/              # Faza 14 — abstracție de broker, orchestrator
 │   │   └── adapters/           #   un adaptor per loc de execuție
+│   │       └── ibkr/           # Faza 15 — Interactive Brokers (paper)
 │   ├── paper/                  # Faza 13 — paper trading, ceas, prospețime, sănătate
 │   ├── backtest/               # Faza 12 — replay istoric, execuție simulată
 │   ├── portfolio/              # Faza 11 — portofoliu, expunere, risc
@@ -345,6 +444,9 @@ Fazele 15 si 16 — sunt in
 ├── data/marketlens.db          # baza de date persistentă (creată la prima rulare)
 ├── docs/index.html             # MarketLens Terminal (regenerat la fiecare rulare)
 ├── docs/execution-architecture.md  # Faza 14 — arhitectura de execuție
+├── docs/PHASE_15_IBKR_ARCHITECTURE.md  # Faza 15 — integrarea IBKR
+├── docs/PHASE_15_IBKR_RUNBOOK.md   # Faza 15 — proceduri operaționale
+├── .env.example                # variabilele de mediu (doar substituenți)
 ├── run_daily.py                # script de orchestrare — rularea zilnică
 ├── run_weekly_backfill.py      # script de orchestrare — backfill istoric săptămânal
 ├── scripts/                    # rulări manuale per fază
