@@ -82,8 +82,11 @@ jobs:
       - name: Run fusion (dry run first, always logged)
         run: |
           ARGS="--max-db-mb ${{ github.event.inputs.max_db_mb }}"
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          # Gol SI 0 inseamna amandoua "tot". Fara verificarea lui 0,
+          # un 0 tastat trimitea `--limit 0`, adica zero randuri.
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
           fi
           echo "=== DRY RUN ==="
           python scripts/fuse_events.py $ARGS

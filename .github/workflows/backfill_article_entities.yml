@@ -5,8 +5,13 @@ name: Backfill Article Entities (Phase 3)
 # sa duplice corpusul in `news_articles` (vezi comentariul din
 # scripts/backfill_article_entities.py pentru motiv).
 #
-# Implicit: cele mai recente 30.000 de articole, prag de siguranta
-# 1400 MB.
+# Implicit: TOT corpusul, prag de siguranta 1400 MB.
+#
+# Implicitul era 30.000 de articole (cele mai recente). Masurat pe
+# corpusul din 2026-09: 22.141 din cele mai recente 30.000 erau deja
+# legate, iar cele 15.276 de articole NELEGATE erau mai vechi, in afara
+# ferestrei. Un backfill al carui rost e sa lichideze restanta sarea
+# exact restanta.
 #
 # Pragul era 96 MB, ales ca sa lase loc sub plafonul GitHub de 100 MiB
 # pentru fisiere din repo. Baza NU mai traieste in repo: a fost mutata
@@ -21,9 +26,9 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: 'Cate articole (cele mai recente) sa proceseze. Gol = tot corpusul.'
+        description: 'Cate articole (cele mai recente) sa proceseze. Gol sau 0 = tot corpusul (implicit).'
         required: false
-        default: '30000'
+        default: '0'
       max_db_mb:
         description: 'Prag de siguranta MB. Baza traieste intr-un Release asset (limita 2 GB), NU in git (limita 100 MB) - pragul prinde cresterea scapata de sub control, nu plafonul vechi al repo-ului.'
         required: false
@@ -90,8 +95,12 @@ jobs:
       - name: Run backfill (dry run first, always logged)
         run: |
           ARGS="--max-db-mb ${{ github.event.inputs.max_db_mb }}"
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          # Gol SI 0 inseamna amandoua "tot corpusul". Celelalte
+          # workflow-uri din lant folosesc 0; acesta folosea doar sirul
+          # gol, deci aceeasi intentie dadea rezultate diferite.
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
           fi
           if [ -n "${{ github.event.inputs.since }}" ]; then
             ARGS="$ARGS --since ${{ github.event.inputs.since }}"

@@ -88,8 +88,12 @@ jobs:
         run: |
           ARGS="--min-confidence ${{ github.event.inputs.min_confidence }}"
           ARGS="$ARGS --min-strength ${{ github.event.inputs.min_strength }}"
-          if [ "${{ github.event.inputs.limit }}" != "0" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          # Gol SI 0 inseamna amandoua "tot". Fara verificarea
+          # de sir gol, stergerea campului trimitea `--limit`
+          # fara valoare si rularea cadea pe argparse.
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
           fi
           if [ "${{ github.event.inputs.allow_small_sample }}" = "true" ]; then
             ARGS="$ARGS --allow-small-sample"

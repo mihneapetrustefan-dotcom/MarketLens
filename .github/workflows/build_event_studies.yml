@@ -74,8 +74,11 @@ jobs:
       - name: Build event studies (dry run first, always logged)
         run: |
           ARGS=""
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          # Gol SI 0 inseamna amandoua "tot". Fara verificarea lui 0,
+          # un 0 tastat trimitea `--limit 0`, adica zero randuri.
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
           fi
           echo "=== DRY RUN ==="
           python scripts/build_event_studies.py $ARGS

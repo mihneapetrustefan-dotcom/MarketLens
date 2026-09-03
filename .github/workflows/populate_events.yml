@@ -92,8 +92,11 @@ jobs:
       - name: Run event population (dry run first, always logged)
         run: |
           ARGS="--max-db-mb ${{ github.event.inputs.max_db_mb }} --min-confidence ${{ github.event.inputs.min_confidence }}"
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          # Gol SI 0 inseamna amandoua "tot". Fara verificarea lui 0,
+          # un 0 tastat trimitea `--limit 0`, adica zero randuri.
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
           fi
           if [ -n "${{ github.event.inputs.since }}" ]; then
             ARGS="$ARGS --since ${{ github.event.inputs.since }}"

@@ -76,8 +76,12 @@ jobs:
       - name: Compute features (dry run first, always logged)
         run: |
           ARGS=""
-          if [ "${{ github.event.inputs.limit }}" != "0" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          # Gol SI 0 inseamna amandoua "tot". Fara verificarea
+          # de sir gol, stergerea campului trimitea `--limit`
+          # fara valoare si rularea cadea pe argparse.
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
           fi
           echo "=== DRY RUN ==="
           python scripts/compute_features.py $ARGS

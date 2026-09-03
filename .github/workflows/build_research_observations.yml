@@ -81,8 +81,12 @@ jobs:
           # 0 inseamna fara limita — vezi cache_price_candles.yml pentru
           # motivul acestei conventii (GitHub reaplica valoarea default
           # a campului cand acesta e lasat gol in formular).
-          if [ "${{ github.event.inputs.limit }}" != "0" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          # Gol SI 0 inseamna amandoua "tot". Fara verificarea
+          # de sir gol, stergerea campului trimitea `--limit`
+          # fara valoare si rularea cadea pe argparse.
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
           fi
           echo "=== DRY RUN ==="
           python scripts/build_research_observations.py $ARGS
