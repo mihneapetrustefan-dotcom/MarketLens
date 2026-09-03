@@ -6,8 +6,14 @@ name: Backfill Article Entities (Phase 3)
 # scripts/backfill_article_entities.py pentru motiv).
 #
 # Implicit: cele mai recente 30.000 de articole, prag de siguranta
-# 96 MB. Masurat pe acest volum: +5.55 MB, baza ajunge la ~90.2 MB
-# din plafonul GitHub de 100 MiB (104.86 MB).
+# 1400 MB.
+#
+# Pragul era 96 MB, ales ca sa lase loc sub plafonul GitHub de 100 MiB
+# pentru fisiere din repo. Baza NU mai traieste in repo: a fost mutata
+# intr-un Release asset (limita 2 GB) de
+# .github/workflows/migrate_db_to_release.yml, exact ca sa scape de
+# acel plafon. Pragul vechi a supravietuit motivului lui si a blocat
+# in tacere fiecare rulare de cand baza a depasit ~96 MB.
 #
 # Sigur de rulat repetat: scrierile sunt INSERT OR IGNORE, deci o
 # rulare ulterioara peste randuri deja existente nu adauga nimic.
@@ -19,9 +25,9 @@ on:
         required: false
         default: '30000'
       max_db_mb:
-        description: 'Prag de siguranta MB. Scriptul refuza sa scrie daca proiectia il depaseste.'
+        description: 'Prag de siguranta MB. Baza traieste intr-un Release asset (limita 2 GB), NU in git (limita 100 MB) - pragul prinde cresterea scapata de sub control, nu plafonul vechi al repo-ului.'
         required: false
-        default: '96'
+        default: '1400'
       since:
         description: 'Optional: doar articole publicate de la aceasta data ISO incolo (ex: 2026-01-01).'
         required: false

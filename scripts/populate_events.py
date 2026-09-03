@@ -151,8 +151,12 @@ def main() -> int:
                         help="Only articles published on/after this ISO date.")
     parser.add_argument("--min-confidence", type=float, default=0.3,
                         help="Passed to EventExtractor. Events scoring below this are dropped.")
-    parser.add_argument("--max-db-mb", type=float, default=96.0,
-                        help="Refuse to write if the projected size exceeds this.")
+    parser.add_argument("--max-db-mb", type=float, default=1400.0,
+                        help="Refuse to write if the projected size exceeds this "
+                             "(MB). The database lives in a GitHub Release asset "
+                             "(2 GB limit), not in git (100 MB limit) -- this "
+                             "guard catches runaway growth, it does not enforce "
+                             "the old repository ceiling.")
     parser.add_argument("--apply", action="store_true",
                         help="Actually write. Without this the script is a dry run.")
     args = parser.parse_args()

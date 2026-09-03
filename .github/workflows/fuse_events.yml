@@ -25,9 +25,9 @@ on:
         required: false
         default: ''
       max_db_mb:
-        description: 'Prag de siguranta MB. Scriptul refuza sa scrie daca proiectia il depaseste.'
+        description: 'Prag de siguranta MB. Baza traieste intr-un Release asset (limita 2 GB), NU in git (limita 100 MB) - pragul prinde cresterea scapata de sub control, nu plafonul vechi al repo-ului.'
         required: false
-        default: '96'
+        default: '1400'
 
 permissions:
   contents: write

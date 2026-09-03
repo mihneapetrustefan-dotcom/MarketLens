@@ -153,9 +153,10 @@ def main() -> int:
                         help="Max articles to process, newest first.")
     parser.add_argument("--since", default=None,
                         help="Only articles published on/after this ISO date.")
-    parser.add_argument("--max-db-mb", type=float, default=96.0,
+    parser.add_argument("--max-db-mb", type=float, default=1400.0,
                         help="Refuse to write if the projected size exceeds this. "
-                             "Default 96 leaves headroom below the 100 MiB limit.")
+                             "The database is a Release asset (2 GB), not a git file "
+                             "(100 MB). This catches runaway growth only.")
     parser.add_argument("--apply", action="store_true",
                         help="Actually write. Without this the script is a dry run.")
     args = parser.parse_args()

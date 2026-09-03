@@ -267,7 +267,11 @@ def main() -> int:
     parser.add_argument("--db", default=DEFAULT_DB)
     parser.add_argument("--limit", type=int, default=None,
                         help="Max reports to fuse, newest first.")
-    parser.add_argument("--max-db-mb", type=float, default=96.0)
+    parser.add_argument("--max-db-mb", type=float, default=1400.0,
+                        help="Refuse to write if the projected size exceeds this "
+                             "(MB). See populate_events.py -- the old 96 MB "
+                             "default protected a 100 MB git limit the database "
+                             "no longer lives under.")
     parser.add_argument("--apply", action="store_true",
                         help="Actually write. Without this the script is a dry run.")
     args = parser.parse_args()
