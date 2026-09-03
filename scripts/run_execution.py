@@ -16,7 +16,7 @@ WHAT IT CANNOT DO
 Place a real-money order. There is no flag for it, no environment
 variable that enables it, and no adapter that could carry it. Passing
 `--environment live` is refused by the safety layer before anything
-else runs, and `--broker mt5` reaches an adapter that declares no
+else runs, and a disabled broker reaches an adapter that declares no
 capabilities and refuses every submission.
 
 WHY THIS RATHER THAN AN HTTP API
@@ -138,9 +138,8 @@ def build(conn: sqlite3.Connection, args) -> ExecutionService:
                        environment=ExecutionEnvironment.PAPER,
                        created_at=datetime.now(timezone.utc))])
 
-    # The venues this project intends to support, listed truthfully
-    # rather than hidden: a reader seeing MetaTrader 5 here learns it
-    # is planned and absent.
+    # Brokers registered but unable to trade, listed truthfully rather
+    # than hidden. Empty since Phase 16 made the project IBKR-only.
     for broker_id, planned in planned_gateways().items():
         registry.register(
             Broker(broker_id=broker_id, name=planned.name,

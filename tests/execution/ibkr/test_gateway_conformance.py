@@ -6,15 +6,15 @@ The generic broker-gateway contract, run against every adapter
 
 WHY ONE SUITE FOR THREE ADAPTERS
 ------------------------------------
-Phase 14's claim is that the core does not care which broker it is
-talking to. A test suite written separately for each adapter cannot
-check that claim — it can only check that each adapter works, which is
-a weaker statement.
+The project is Interactive-Brokers-only, and it still runs three
+gateways: the paper adapter, the IBKR adapter, and a disabled one
+standing in for a broker that is registered but cannot trade.
 
-So the contract is written once, as `GatewayContract`, and three
-subclasses supply a different gateway. Paper, IBKR and the deliberately
-refusing MT5 placeholder all run the same assertions. If a future MT5
-adapter needs the assertions changed, the abstraction leaked.
+Writing the contract once and running it against all three is what
+keeps IBKR's behaviour out of the core. A suite written separately per
+adapter could only show that each works, which is a weaker statement
+than the one being made — and it would not catch an assertion that had
+quietly become IBKR-specific.
 
 WHAT THE CONTRACT DELIBERATELY DOES NOT ASSERT
 --------------------------------------------------
@@ -37,7 +37,9 @@ from src.domain.broker_models import (
     CanonicalOrderType, ExecutionEnvironment, ExecutionOrderState,
     MarketStatus, PositionSnapshot,
 )
-from src.execution.adapters.disabled_gateway import planned_gateways
+from src.execution.adapters.disabled_gateway import (
+    DisabledBrokerGateway, planned_gateways,
+)
 from src.execution.gateway import BrokerGateway, BrokerOrderView, SubmissionAck
 from tests.execution.helpers import build_paper_stack
 from tests.execution.ibkr.helpers import AT, build_ibkr
@@ -197,18 +199,21 @@ class TestIBKRGatewayConformance(GatewayContract, unittest.TestCase):
 
 class TestDisabledGatewayConformance(GatewayContract, unittest.TestCase):
     """
-    The MT5 placeholder — an adapter that conforms and refuses.
+    A registered broker that cannot trade.
 
-    Included in the conformance run on purpose: it is the shape Phase
-    16 will fill in, and running the contract against it now proves the
-    registry, the validator and reconciliation all handle a venue that
-    exists and cannot trade.
+    An ordinary operational state — an account an operator switched
+    off, or one awaiting credentials. Running the contract against it
+    proves the registry, the validator and reconciliation all handle a
+    broker that exists and refuses, which is the path a disabled IBKR
+    account takes.
     """
 
     tradeable = False
 
     def setUp(self):
-        self.gateway = planned_gateways()["mt5"]
+        self.gateway = DisabledBrokerGateway(
+            "ibkr-disabled", "Interactive Brokers (disabled)",
+            "this account is switched off by the operator")
         self.account_id = "any-account"
 
 

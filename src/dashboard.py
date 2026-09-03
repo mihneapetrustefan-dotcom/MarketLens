@@ -800,6 +800,163 @@ class DashboardGenerator:
             }
         return {"available": True, "brokers": out}
 
+    def _collect_operations(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        The operations centre (Phase 16, spec §88-§93).
+
+        Governance, sessions, limits, alerts and trade outcomes. Every
+        panel reports what the database actually holds; a table that
+        does not exist yet reports `available: False` rather than an
+        empty state that would read as "nothing wrong".
+
+        The distinction matters more here than anywhere else in this
+        file. An operations screen that renders a confident green on
+        absent data is worse than no screen, because it converts a
+        monitoring failure into a false assurance.
+        """
+        if not _table_exists(conn, "trading_sessions"):
+            return {"available": False}
+
+        sessions = [{
+            "session_id": r[0], "state": r[1], "operator": r[2],
+            "broker_id": r[3], "account_id": r[4], "environment": r[5],
+            "level": r[6], "fingerprint": r[7], "model_version": r[8],
+            "capital_limit": r[9], "created_at": r[10], "started_at": r[11],
+            "ended_at": r[12], "termination_reason": r[13],
+            "preflight": _safe_json(r[14], []),
+            "summary": _safe_json(r[15], {}),
+        } for r in _rows(conn, """
+            SELECT session_id, state, operator, broker_id, account_id,
+                   environment, level, config_fingerprint, model_version,
+                   capital_limit, created_at, started_at, ended_at,
+                   termination_reason, preflight_json, summary_json
+            FROM trading_sessions
+            ORDER BY COALESCE(started_at, created_at) DESC LIMIT 12
+        """)]
+        active = next((s for s in sessions
+                       if s["state"] in ("active", "paused")), None)
+
+        events = []
+        if active is not None:
+            events = [{"at": r[0], "action": r[1], "actor": r[2],
+                       "from_state": r[3], "to_state": r[4], "reason": r[5]}
+                      for r in _rows(conn, """
+                SELECT at, action, actor, from_state, to_state, reason
+                FROM session_events WHERE session_id = ?
+                ORDER BY sequence DESC LIMIT 20
+            """, (active["session_id"],))]
+
+        promotions = [{
+            "request_id": r[0], "level": r[1], "level_label": r[2],
+            "state": r[3], "requested_by": r[4], "requested_at": r[5],
+            "reason": r[6], "approved_by": r[7], "approved_at": r[8],
+            "expires_at": r[9], "note": r[10],
+        } for r in _rows(conn, """
+            SELECT request_id, level, level_label, state, requested_by,
+                   requested_at, reason, approved_by, approved_at,
+                   expires_at, decision_note
+            FROM promotion_requests ORDER BY requested_at DESC LIMIT 10
+        """)] if _table_exists(conn, "promotion_requests") else []
+
+        readiness = None
+        if _table_exists(conn, "readiness_assessments"):
+            row = _rows(conn, """
+                SELECT at, is_ready, verdicts_json, notes_json
+                FROM readiness_assessments ORDER BY at DESC LIMIT 1
+            """)
+            if row:
+                readiness = {
+                    "at": row[0][0], "is_ready": bool(row[0][1]),
+                    "verdicts": _safe_json(row[0][2], {}),
+                    "notes": _safe_json(row[0][3], {}),
+                }
+
+        health = []
+        if _table_exists(conn, "system_health_readings"):
+            latest = _scalar(conn,
+                "SELECT MAX(at) FROM system_health_readings")
+            if latest:
+                health = [{"capability": r[0], "state": r[1], "detail": r[2],
+                           "latency_ms": r[3], "age_seconds": r[4], "at": latest}
+                          for r in _rows(conn, """
+                    SELECT capability, state, detail, latency_ms, age_seconds
+                    FROM system_health_readings WHERE at = ?
+                    ORDER BY capability
+                """, (latest,))]
+
+        alerts = [{"alert_id": r[0], "at": r[1], "code": r[2], "severity": r[3],
+                   "message": r[4], "detail": r[5], "order_id": r[6]}
+                  for r in _rows(conn, """
+            SELECT alert_id, at, code, severity, message, detail, order_id
+            FROM execution_alerts WHERE acknowledged = 0
+            ORDER BY at DESC LIMIT 25
+        """)] if _table_exists(conn, "execution_alerts") else []
+
+        breaches = [{"breach_id": r[0], "at": r[1], "limit_name": r[2],
+                     "detail": r[3], "latched": bool(r[4]), "order_id": r[5]}
+                    for r in _rows(conn, """
+            SELECT breach_id, at, limit_name, detail, latched, order_id
+            FROM limit_breaches WHERE cleared_at IS NULL
+            ORDER BY at DESC LIMIT 25
+        """)] if _table_exists(conn, "limit_breaches") else []
+
+        outcomes: List[Dict[str, Any]] = []
+        quality: Dict[str, Any] = {}
+        if _table_exists(conn, "trade_outcomes"):
+            outcomes = [{
+                "outcome_id": r[0], "instrument_id": r[1], "side": r[2],
+                "quantity": r[3], "entry_at": r[4], "exit_at": r[5],
+                "entry_price": r[6], "exit_price": r[7], "net_pnl": r[8],
+                "return_pct": r[9], "holding_days": r[10],
+                "exit_reason": r[11], "slippage_bps": r[12],
+                "environment": r[13], "is_open": bool(r[14]),
+                "lineage_complete": bool(r[15]),
+                "strategy_id": r[16], "model_version": r[17],
+                "market_regime": r[18], "order_id": r[19],
+            } for r in _rows(conn, """
+                SELECT outcome_id, instrument_id, side, quantity, entry_at,
+                       exit_at, entry_price, exit_price, net_pnl, return_pct,
+                       holding_days, exit_reason, slippage_bps, environment,
+                       is_open, lineage_complete, strategy_id, model_version,
+                       market_regime, order_id
+                FROM trade_outcomes
+                ORDER BY COALESCE(exit_at, entry_at) DESC LIMIT 60
+            """)]
+
+            closed = [o for o in outcomes if not o["is_open"]]
+            realized = [o["net_pnl"] for o in closed if o["net_pnl"] is not None]
+            slips = sorted(o["slippage_bps"] for o in closed
+                           if o["slippage_bps"] is not None)
+            quality = {
+                "closed": len(closed),
+                "open": sum(1 for o in outcomes if o["is_open"]),
+                # None, not zero. No trades is not a flat P&L.
+                "net_pnl": sum(realized) if realized else None,
+                "wins": sum(1 for p in realized if p > 0),
+                "losses": sum(1 for p in realized if p <= 0),
+                "median_slippage_bps": (slips[len(slips) // 2]
+                                        if slips else None),
+                "worst_slippage_bps": (max(slips) if slips else None),
+                "lineage_complete": sum(1 for o in outcomes
+                                        if o["lineage_complete"]),
+            }
+
+        missed = [{"missed_id": r[0], "at": r[1], "instrument_id": r[2],
+                   "reason": r[3], "detail": r[4], "prevented": bool(r[5])}
+                  for r in _rows(conn, """
+            SELECT missed_id, at, instrument_id, reason, detail,
+                   prevented_by_system
+            FROM missed_trades ORDER BY at DESC LIMIT 30
+        """)] if _table_exists(conn, "missed_trades") else []
+
+        return {
+            "available": True,
+            "sessions": sessions, "active": active, "events": events,
+            "promotions": promotions, "readiness": readiness,
+            "health": health, "alerts": alerts, "breaches": breaches,
+            "outcomes": outcomes, "quality": quality, "missed": missed,
+        }
+
     def _collect_paper(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         """
         Phase 13: paper trading sessions.
@@ -1166,6 +1323,7 @@ class DashboardGenerator:
         paper = self._collect_paper(conn)
         execution = self._collect_execution(conn)
         broker_detail = self._collect_broker_detail(conn)
+        operations = self._collect_operations(conn)
 
         universe = self._build_universe()
         sector_summary = self._build_sector_summary()
@@ -1205,6 +1363,7 @@ class DashboardGenerator:
             "paper": paper,
             "execution": execution,
             "broker_detail": broker_detail,
+            "operations": operations,
             "rec_index": rec_index,
             "current_recs": current_recs_by_entity,
             "universe": universe,
@@ -1806,7 +1965,7 @@ table.data tr.sel { background:var(--accent-bg); }
       '<div class="copy"><p>O intentie de ordin este o <b>inregistrare inerta</b>: descrie ce ' +
       '<i>ar fi</i> instruit daca ar exista un nivel de executie. Nu are cont, broker, bursa sau ' +
       'identificator de ordin, si nimic din aceasta faza nu o poate transmite nicaieri. ' +
-      'Integrarea MT5 / Interactive Brokers apartine unei faze ulterioare.</p></div>');
+      'Integrarea Interactive Brokers apartine Fazei 15.</p></div>');
 
     html += riskConstraintsBlock();
     return html;
@@ -3026,7 +3185,7 @@ table.data tr.sel { background:var(--accent-bg); }
       '</div></div></div>' +
       '<div><div class="blk-head"><h2>Limita fazei</h2></div><div class="blk-body">' +
       '<div class="callout"><b>Aceasta faza nu are executie reala de niciun fel.</b>' +
-      '<p>Nu exista integrare cu MetaTrader 5 sau Interactive Brokers, nu exista ' +
+      '<p>Interactive Brokers e conectat doar in mediul PAPER. Nu exista ' +
       'credentiale de broker, nu exista API de ordine si niciun cont real nu e citit ' +
       'sau modificat. Codul nu contine o cale catre asa ceva — nu e dezactivata, ' +
       'ci absenta.</p>' +
@@ -3042,10 +3201,10 @@ table.data tr.sel { background:var(--accent-bg); }
   // -----------------------------------------------------------------
   function xBanner() {
     return '<div class="xbanner"><span class="tagname">Live execution disabled</span>' +
-      '<span class="msg"><b>Nu exista executie cu bani reali in aceasta faza.</b> ' +
-      'Nu exista integrare MetaTrader 5 sau Interactive Brokers, nu exista credentiale ' +
-      'de broker si niciun cont real nu e citit sau modificat. Calea nu e dezactivata — ' +
-      'lipseste din cod.</span></div>';
+      '<span class="msg"><b>Nu exista executie cu bani reali.</b> ' +
+      'Interactive Brokers e conectat doar in mediul PAPER; nu exista adaptor ' +
+      'care sa accepte un mediu cu bani reali, nu exista credentiale in aplicatie ' +
+      'si niciun cont real nu e citit sau modificat.</span></div>';
   }
 
   function xEnvironments() {
@@ -3169,6 +3328,9 @@ table.data tr.sel { background:var(--accent-bg); }
     // --- per-broker detail, including IBKR ---
     html += xBrokerDetail();
 
+    // --- the operations centre (Phase 16) ---
+    html += xOperations();
+
     // --- instrument mappings ---
     var maps = XE.mappings || [];
     var mapHtml = maps.length ? '<table class="data"><thead><tr><th>Instrument canonic</th>' +
@@ -3233,10 +3395,271 @@ table.data tr.sel { background:var(--accent-bg); }
       '<p>Nucleul se opreste la <span class="mono">OrderIntent</span>. Sub el, un ' +
       'singur adaptor per loc de executie traduce catre si dinspre tipurile canonice. ' +
       'Nimic din strategie, semnale, portofoliu sau risc nu stie cu ce broker vorbeste.</p>' +
-      '<p>MetaTrader 5 (Faza 15) si Interactive Brokers (Faza 16) vor fi adaptoare ' +
-      'scrise pe aceasta interfata. Niciunul nu exista acum, iar ' +
-      '<span class="mono">ExecutionEnvironment.LIVE</span> e refuzat structural: ' +
-      'nu se poate construi un cont, un broker sau un gateway pe el.</p></div>');
+      '<p>Interactive Brokers este implementat pe aceasta interfata (Faza 15). ' +
+      'Proiectul e IBKR-only: nu exista alt broker planificat. ' +
+      '<span class="mono">ExecutionEnvironment.LIVE</span> ramane refuzat ' +
+      'structural — nu se poate construi un cont, un broker sau un gateway pe el.' +
+      '</p></div>');
+
+    return html;
+  }
+
+  // ============================================================
+  // Operations centre (Faza 16, spec 88-93)
+  // ============================================================
+  //
+  // Regula acestui panou: nimic nu se afiseaza verde pe date
+  // absente. O masuratoare care lipseste se scrie "nemasurat" si
+  // blocheaza, pentru ca un ecran de operatiuni care arata increzator
+  // cand instrumentatia a cazut e mai rau decat niciun ecran.
+
+  function opsStateColor(state) {
+    if (state === "healthy" || state === "active") return "var(--up)";
+    if (state === "degraded" || state === "paused") return "var(--accent-dark)";
+    if (state === "unknown") return "var(--muted)";
+    return "var(--down)";
+  }
+
+  function xOperations() {
+    var OP = D.operations || {};
+    if (!OP.available) {
+      return blk("Centru de operatiuni", "faza 16",
+        '<div class="empty">Nicio sesiune de tranzactionare inregistrata. ' +
+        'Tabelele de guvernanta se creeaza la prima rulare a ' +
+        '<span class="mono">scripts/run_operations.py</span>.</div>');
+    }
+
+    var html = "";
+
+    // --- sesiunea activa -------------------------------------
+    var a = OP.active;
+    if (a) {
+      var pf = (a.preflight || []);
+      var pfHtml = pf.length
+        ? '<table class="data"><thead><tr><th>Verificare</th><th>Rezultat</th>' +
+          '<th>Detaliu</th></tr></thead><tbody>' + pf.map(function (c) {
+            var measured = c.measured !== false;
+            var label = !measured ? "NEMASURAT" : (c.passed ? "OK" : "BLOCAT");
+            var color = !measured ? "var(--muted)"
+                      : (c.passed ? "var(--up)" : "var(--down)");
+            return '<tr><td class="mono">' + esc(c.name || "—") + '</td>' +
+              '<td style="color:' + color + ';font-weight:700;">' + label + '</td>' +
+              '<td style="font-size:11.5px;">' + esc(c.detail || "—") + '</td></tr>';
+          }).join("") + '</tbody></table>'
+        : '<div class="empty">Niciun preflight inregistrat.</div>';
+
+      var evHtml = (OP.events || []).length
+        ? (OP.events || []).map(function (e) {
+            return '<div style="font-size:11.5px;padding:3px 0;">' +
+              '<span style="color:var(--muted);">' + esc(fmtDate(e.at)) + '</span> · ' +
+              '<b>' + esc(e.action) + '</b> · ' + esc(e.actor) +
+              (e.from_state ? ' · <span class="mono">' + esc(e.from_state) +
+                ' → ' + esc(e.to_state) + '</span>' : '') +
+              (e.reason ? ' · ' + esc(e.reason) : '') + '</div>';
+          }).join("")
+        : '<div class="empty">Niciun eveniment.</div>';
+
+      html += blk("Sesiune activa",
+        "configuratia e inghetata cat timp sesiunea ruleaza",
+        '<div style="border:2px solid var(--line-strong);padding:14px 16px;">' +
+        '<div style="display:flex;justify-content:space-between;gap:10px;' +
+        'flex-wrap:wrap;align-items:baseline;">' +
+        '<span class="mono" style="font-weight:800;font-size:14px;">' +
+        esc(a.session_id) + '</span>' +
+        '<span class="xstate" style="color:' + opsStateColor(a.state) + ';">' +
+        esc((a.state || "").toUpperCase()) + '</span></div>' +
+        '<div class="mono" style="font-size:11px;color:var(--muted);margin-top:5px;">' +
+        esc(a.operator) + ' · ' + esc(a.broker_id) + ' · ' + esc(a.account_id) +
+        ' · ' + esc((a.environment || "").toUpperCase()) +
+        ' · nivel ' + fmtNum(a.level) + '</div>' +
+        '<div class="mono" style="font-size:10.5px;color:var(--muted);margin-top:3px;">' +
+        'amprenta configuratie: ' + esc(a.fingerprint || "—") + '</div>' +
+        '<div style="margin-top:12px;font-size:11px;font-weight:700;' +
+        'letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);">Preflight</div>' +
+        pfHtml +
+        '<div style="margin-top:12px;font-size:11px;font-weight:700;' +
+        'letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);">Istoric</div>' +
+        evHtml + '</div>');
+    } else {
+      html += blk("Sesiune activa", "",
+        '<div class="empty">Nicio sesiune activa. Ordinele nu pot fi ' +
+        'trimise in afara unei sesiuni deschise explicit.</div>');
+    }
+
+    // --- sanatatea sistemului --------------------------------
+    var hh = OP.health || [];
+    html += blk("Sanatatea sistemului",
+      "agregatul e cea mai proasta citire, niciodata o medie",
+      hh.length
+        ? '<table class="data"><thead><tr><th>Capabilitate</th><th>Stare</th>' +
+          '<th class="r">Latenta</th><th class="r">Vechime</th><th>Detaliu</th>' +
+          '</tr></thead><tbody>' + hh.map(function (h) {
+            return '<tr><td class="mono">' + esc(h.capability) + '</td>' +
+              '<td style="color:' + opsStateColor(h.state) +
+              ';font-weight:700;">' + esc((h.state || "").toUpperCase()) + '</td>' +
+              '<td class="r">' + (h.latency_ms == null ? '—' : fmtNum(h.latency_ms, 0) + ' ms') + '</td>' +
+              '<td class="r">' + (h.age_seconds == null ? '—' : fmtNum(h.age_seconds, 0) + ' s') + '</td>' +
+              '<td style="font-size:11.5px;">' + esc(h.detail || "—") + '</td></tr>';
+          }).join("") + '</tbody></table>'
+        : '<div class="empty">Nicio citire de sanatate inregistrata. ' +
+          'Absenta unei masuratori nu e o stare buna — blocheaza.</div>');
+
+    // --- limite si alerte ------------------------------------
+    var br = OP.breaches || [];
+    html += blk("Limite depasite",
+      "cele cu zavor nu se sterg singure; cer o reactivare umana",
+      br.length
+        ? '<table class="data"><thead><tr><th>Limita</th><th>Zavor</th>' +
+          '<th>Cand</th><th>Detaliu</th></tr></thead><tbody>' +
+          br.map(function (b) {
+            return '<tr><td class="mono">' + esc(b.limit_name) + '</td>' +
+              '<td style="color:' + (b.latched ? 'var(--down)' : 'var(--muted)') +
+              ';font-weight:700;">' + (b.latched ? 'ZAVORAT' : 'nu') + '</td>' +
+              '<td class="mono" style="font-size:11px;">' + esc(fmtDate(b.at)) + '</td>' +
+              '<td style="font-size:11.5px;">' + esc(b.detail || "—") + '</td></tr>';
+          }).join("") + '</tbody></table>'
+        : '<div class="empty">Nicio limita depasita neridicata.</div>');
+
+    var al = OP.alerts || [];
+    if (al.length) {
+      html += blk("Alerte deschise", "necontirmate",
+        '<table class="data"><thead><tr><th>Severitate</th><th>Cod</th>' +
+        '<th>Mesaj</th><th>Cand</th></tr></thead><tbody>' +
+        al.map(function (x) {
+          var crit = x.severity === "critical" || x.severity === "error";
+          return '<tr><td style="color:' + (crit ? 'var(--down)' : 'var(--accent-dark)') +
+            ';font-weight:700;">' + esc((x.severity || "").toUpperCase()) + '</td>' +
+            '<td class="mono">' + esc(x.code) + '</td>' +
+            '<td style="font-size:11.5px;">' + esc(x.message || "—") + '</td>' +
+            '<td class="mono" style="font-size:11px;">' + esc(fmtDate(x.at)) + '</td></tr>';
+        }).join("") + '</tbody></table>');
+    }
+
+    // --- guvernanta: nivel, aprobari, pregatire --------------
+    var pr = OP.promotions || [];
+    var rd = OP.readiness;
+    var govHtml = '<div class="callout"><b>Executia cu bani reali nu are cale in cod.</b>' +
+      '<p>Nivelurile 4 si peste sunt specificate si controlate prin porti, dar ' +
+      'niciunul nu e implementat: niciun adaptor nu accepta un mediu cu bani reali. ' +
+      'Aprobarea unui nivel neimplementat se inregistreaza, iar nivelul efectiv ' +
+      'coboara la cel mai inalt nivel <i>implementat</i>.</p></div>';
+
+    if (pr.length) {
+      govHtml += '<table class="data"><thead><tr><th>Nivel</th><th>Stare</th>' +
+        '<th>Cerut de</th><th>Aprobat de</th><th>Expira</th></tr></thead><tbody>' +
+        pr.map(function (p) {
+          var approved = p.state === "approved";
+          return '<tr><td>' + fmtNum(p.level) + ' · ' + esc(p.level_label || "—") + '</td>' +
+            '<td style="color:' + (approved ? 'var(--up)' : 'var(--muted)') +
+            ';font-weight:700;">' + esc((p.state || "").toUpperCase()) + '</td>' +
+            '<td class="mono">' + esc(p.requested_by) + '</td>' +
+            '<td class="mono">' + esc(p.approved_by || "—") + '</td>' +
+            '<td class="mono" style="font-size:11px;">' +
+            esc(p.expires_at ? fmtDate(p.expires_at) : "—") + '</td></tr>';
+        }).join("") + '</tbody></table>';
+    } else {
+      govHtml += '<div class="empty">Nicio cerere de promovare. ' +
+        'Nivelul implicit este PAPER.</div>';
+    }
+
+    if (rd) {
+      govHtml += '<div style="margin-top:12px;font-size:11px;font-weight:700;' +
+        'letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);">' +
+        'Pregatire (' + esc(fmtDate(rd.at)) + ')</div>' +
+        '<div style="font-size:11.5px;line-height:1.9;">' +
+        Object.keys(rd.verdicts || {}).map(function (k) {
+          var v = rd.verdicts[k];
+          var color = v === "pass" ? "var(--up)"
+                    : v === "unknown" ? "var(--muted)" : "var(--down)";
+          return '<span class="mono">' + esc(k) + '</span>: ' +
+            '<b style="color:' + color + ';">' + esc((v || "").toUpperCase()) + '</b>';
+        }).join("<br>") + '</div>';
+    }
+
+    html += blk("Guvernanta executiei",
+      "nivel, promovare cu patru ochi, pregatire", govHtml);
+
+    // --- rezultate si calitatea executiei --------------------
+    var q = OP.quality || {};
+    var outs = OP.outcomes || [];
+    function opsCell(label, value) {
+      return '<div class="cell"><div class="n">' + value + '</div>' +
+        '<div class="l">' + esc(label) + '</div></div>';
+    }
+    var qHtml = '<div class="statgrid" style="grid-template-columns:repeat(5,1fr);">' +
+      opsCell("tranzactii inchise", fmtNum(q.closed || 0)) +
+      opsCell("deschise", fmtNum(q.open || 0)) +
+      opsCell("P&L net",
+              q.net_pnl == null ? "nemasurat" : fmtNum(q.net_pnl, 2)) +
+      opsCell("slippage median",
+              q.median_slippage_bps == null ? "nemasurat"
+              : fmtNum(q.median_slippage_bps, 1) + " bps") +
+      opsCell("lineage complet", fmtNum(q.lineage_complete || 0)) +
+      '</div>';
+
+    qHtml += outs.length
+      ? '<table class="data"><thead><tr><th>Instrument</th><th>Parte</th>' +
+        '<th class="r">Cant.</th><th class="r">Intrare</th><th class="r">Iesire</th>' +
+        '<th class="r">P&L net</th><th class="r">Slippage</th><th>Motiv iesire</th>' +
+        '<th>Lineage</th></tr></thead><tbody>' +
+        outs.slice(0, 30).map(function (o) {
+          var pnl = o.net_pnl;
+          return '<tr><td class="mono">' + esc(o.instrument_id) + '</td>' +
+            '<td>' + esc(o.side) + '</td>' +
+            '<td class="r">' + fmtNum(o.quantity, 2) + '</td>' +
+            '<td class="r">' + fmtNum(o.entry_price, 2) + '</td>' +
+            '<td class="r">' + (o.is_open ? '—' : fmtNum(o.exit_price, 2)) + '</td>' +
+            '<td class="r" style="color:' +
+            (pnl == null ? 'var(--muted)' : pnl > 0 ? 'var(--up)' : 'var(--down)') +
+            ';font-weight:700;">' + (pnl == null ? '—' : fmtNum(pnl, 2)) + '</td>' +
+            '<td class="r">' + (o.slippage_bps == null ? '—' : fmtNum(o.slippage_bps, 1)) + '</td>' +
+            '<td style="font-size:11.5px;">' + esc(o.exit_reason || "—") + '</td>' +
+            '<td style="color:' + (o.lineage_complete ? 'var(--up)' : 'var(--down)') +
+            ';font-weight:700;">' + (o.lineage_complete ? 'complet' : 'incomplet') +
+            '</td></tr>';
+        }).join("") + '</tbody></table>'
+      : '<div class="empty">Nicio tranzactie inregistrata.</div>';
+
+    html += blk("Rezultate si calitatea executiei",
+      "pretul deciziei, pretul trimis si pretul umplerii raman separate", qHtml);
+
+    // --- semnale care nu au devenit tranzactii ---------------
+    var ms = OP.missed || [];
+    html += blk("Semnale ratate",
+      "jumatatea de dovezi pe care un sistem care inregistreaza doar ce a facut o pierde",
+      ms.length
+        ? '<table class="data"><thead><tr><th>Instrument</th><th>Motiv</th>' +
+          '<th>Oprit de sistem</th><th>Detaliu</th></tr></thead><tbody>' +
+          ms.map(function (m) {
+            return '<tr><td class="mono">' + esc(m.instrument_id) + '</td>' +
+              '<td class="mono">' + esc(m.reason) + '</td>' +
+              '<td style="font-weight:700;color:' +
+              (m.prevented ? 'var(--accent-dark)' : 'var(--muted)') + ';">' +
+              (m.prevented ? 'da' : 'nu — piata') + '</td>' +
+              '<td style="font-size:11.5px;">' + esc(m.detail || "—") + '</td></tr>';
+          }).join("") + '</tbody></table>'
+        : '<div class="empty">Niciun semnal ratat inregistrat.</div>');
+
+    // --- istoricul sesiunilor --------------------------------
+    var ss = OP.sessions || [];
+    if (ss.length) {
+      html += blk("Istoric sesiuni", "nimic nu se sterge la inchidere",
+        '<table class="data"><thead><tr><th>Sesiune</th><th>Stare</th>' +
+        '<th>Operator</th><th>Deschisa</th><th>Inchisa</th><th>Motiv</th>' +
+        '</tr></thead><tbody>' + ss.map(function (s) {
+          return '<tr><td class="mono" style="font-size:11px;">' +
+            esc(s.session_id) + '</td>' +
+            '<td style="color:' + opsStateColor(s.state) + ';font-weight:700;">' +
+            esc((s.state || "").toUpperCase()) + '</td>' +
+            '<td class="mono">' + esc(s.operator) + '</td>' +
+            '<td class="mono" style="font-size:11px;">' +
+            esc(s.started_at ? fmtDate(s.started_at) : "—") + '</td>' +
+            '<td class="mono" style="font-size:11px;">' +
+            esc(s.ended_at ? fmtDate(s.ended_at) : "—") + '</td>' +
+            '<td style="font-size:11.5px;">' + esc(s.termination_reason || "—") +
+            '</td></tr>';
+        }).join("") + '</tbody></table>');
+    }
 
     return html;
   }

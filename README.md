@@ -115,8 +115,8 @@ decizia de risc.
 **Nu tranzacționează nimic.** Nu există conexiune la broker, nu există
 ordine, nu există credențiale. Cea mai „activă" ieșire este un rând
 inert în `order_intents`, care descrie ce *ar fi* instruit dacă ar
-exista un nivel de execuție. MT5 / Interactive Brokers aparțin unei
-faze ulterioare.
+exista un nivel de execuție. Execuția apare abia în Faza 13 (paper) și
+Faza 15 (Interactive Brokers, tot paper).
 
 Motorul operează **doar pe poziții declarate explicit** — nu inventează
 un portofoliu. Toate prețurile vin din `price_candle_cache` (lumânări
@@ -142,9 +142,9 @@ disponibilă la momentul T → semnal → context de portofoliu → motorul
 real de risc (Faza 11) → alocare → execuție simulată pe lumânări deja
 stocate → stare de portofoliu → performanță.
 
-**Nu tranzacționează nimic.** Singurul executor implementat este
-`SimulationExecutor`. `PaperExecutor` și `BrokerExecutor` (MT5 / IBKR)
-aparțin unor faze ulterioare și nu există aici.
+**Nu tranzacționează nimic.** Singurul executor din această fază este
+`SimulationExecutor`. `PaperExecutor` (Faza 13) și adaptorul IBKR
+(Faza 15) au venit ulterior, pe aceeași interfață.
 
 Garanțiile pe care le impune:
 
@@ -180,9 +180,9 @@ real de risc (Faza 11) → alocare → intenție de ordin — și diferă
 într-un singur punct: executorul, care simulează umplerea în loc să
 trimită ordinul undeva.
 
-**Nu plasează niciun ordin real.** Nu există integrare MetaTrader 5 sau
-Interactive Brokers, nu există credențiale de broker, nu există API de
-ordine, și niciun cont real nu e citit sau modificat. `ExecutionVenue`
+**Nu plasează niciun ordin real.** Executorul din această fază nu are
+conexiune la niciun broker, nu există credențiale și niciun cont real
+nu e citit sau modificat. `ExecutionVenue`
 are un singur membru, `PAPER`, iar `PaperAccount.is_paper` nu poate fi
 setat pe `False` — construcția eșuează. Nu e o cale dezactivată, e o
 cale absentă.
@@ -270,9 +270,10 @@ SEMNAL -> PORTOFOLIU -> RISC -> ORDER INTENT
                              BROKER EXTERN
 ```
 
-**Nu exista executie cu bani reali.** Nu exista integrare MetaTrader 5
-sau Interactive Brokers, nu exista credentiale de broker, nu exista API
-de ordine si niciun cont real nu e citit sau modificat. Calea nu e
+**Nu exista executie cu bani reali.** Interactive Brokers e singurul
+broker al proiectului si e conectat exclusiv in mediul PAPER. Niciun
+adaptor nu accepta un mediu cu bani reali, aplicatia nu detine
+credentiale si niciun cont real nu e citit sau modificat. Calea nu e
 dezactivata — lipseste din cod, iar asta e impus in cinci locuri
 independente:
 
@@ -344,7 +345,7 @@ EXECUTION ORCHESTRATOR -> BROKER GATEWAY
                                |
                     +----------+-----------+
                     |          |           |
-                 PAPER      IBKR        MT5 (Faza 16)
+                 PAPER      IBKR      DISABLED
                                |
                         IBKR TRANSPORT     <- a doua granita
                                |
@@ -427,11 +428,100 @@ publicata, nu din trafic observat. Diferenta e reala si e enumerata in
 procedura care o inchide e in
 [docs/PHASE_15_IBKR_RUNBOOK.md](docs/PHASE_15_IBKR_RUNBOOK.md).
 
+## Pregatire de productie si guvernanta executiei (Faza 16)
+
+Fazele 11-15 au construit lantul: decizie de risc -> intentie de ordin
+-> ordin validat -> ordin IBKR paper -> umplere -> pozitie. Functioneaza
+— si exact in acel moment intrebarea interesanta nu mai e *poate
+executa*, ci *in ce conditii are voie*.
+
+Faza 16 raspunde la asta. Adauga stratul dintre **capabil** si
+**permis**.
+
+**Interactive Brokers este singurul broker al proiectului.** Nu exista
+adaptor MetaTrader 5, nu exista strat de compatibilitate MT5, nu exista
+rutare intre brokeri si nu exista rezervat loc pentru un al doilea loc
+de executie.
+
+- **Niveluri de executie** (0-7), de la cercetare la productie. Toate
+  nivelurile cu bani reali (5-7) sunt specificate, controlate prin
+  porti — si **niciunul nu e implementat**. Aprobarea nivelului 7 se
+  inregistreaza, iar nivelul efectiv ramane 3, pentru ca implementarea
+  e un fapt despre cod pe care nicio aprobare nu-l schimba.
+- **Porti de promovare** — 14 criterii masurabile. O poarta nemasurata
+  **blocheaza**: faptul ca nu ai masurat ceva nu e dovada ca e in
+  regula. Profitabilitatea nu e o poarta, deliberat — o strategie poate
+  fi profitabila pe termen scurt din noroc.
+- **Aprobare umana** — nimeni nu-si aproba propria cerere. Aprobarile
+  expira, pentru ca o permisie pe care nimeni n-o reinnoieste e felul in
+  care o decizie temporara devine permanenta din neatentie.
+- **Sesiuni de tranzactionare** — executia se intampla doar intr-o
+  sesiune deschisa explicit, cu configuratie inghetata si amprentata.
+  O verificare de preflight nemasurata blocheaza la fel de ferm ca una
+  esuata. Pauza e reversibila; oprirea de urgenta e terminala.
+- **Limite operationale** — 23 de verificari intr-o singura trecere,
+  toate esuand inchis. Niciun plafon pentru bani reali nu vine cu o
+  valoare implicita: un numar livrat ca default devine default de
+  productie din neatentie. Limitele de pierdere se **zavorasc** — nu se
+  sterg cand piata revine.
+- **Sanatate pe capabilitati** — noua, masurate separat. Agregatul e
+  **cea mai proasta** citire, niciodata o medie. Doar `HEALTHY` permite
+  ordine noi; `DEGRADED` nu.
+- **Lantul cauzal complet per tranzactie** — 21 de identificatori,
+  stocati plat, plus semnalele care **nu** au devenit tranzactii si cine
+  le-a oprit: sistemul sau piata. Un sistem care inregistreaza doar ce a
+  facut nu poate distinge un semnal prost de unul bun pe care riscul l-a
+  oprit.
+
+**Executia cu bani reali e blocata, iar blocajul e o absenta.** Nu e un
+comutator inchis: niciun adaptor nu accepta un mediu cu bani reali, deci
+nu exista cale de oprit. Sase locuri independente impun asta, iar
+`ExecutionSafety.allow_real_orders` e o proprietate fara setter — nicio
+cale de cod nu o poate porni si nicio variabila de mediu nu e citita.
+
+Ce **nu** exista, deliberat: auto-invatare, invatare prin recompensa,
+modificare autonoma de strategie, promovare autonoma de model,
+gestionare autonoma de capital. Ce exista e **lineage-ul** de care un
+sistem de invatare de mai tarziu ar avea nevoie — inregistrat acum, cat
+timp tranzactiile se intampla, pentru ca nu poate fi reconstruit dupa.
+
+```bash
+# Stare completa: nivel, sanatate, limite, sesiune
+python scripts/run_operations.py --status --mock
+
+# Pregatire si porti
+python scripts/run_operations.py --readiness --mock
+python scripts/run_operations.py --gates --level 5 --mock
+
+# Promovare cu patru ochi (actori diferiti)
+python scripts/run_operations.py --request-level 3 --actor alice --reason "..."
+python scripts/run_operations.py --approve <request_id> --actor bob
+
+# Sesiune
+python scripts/run_operations.py --start-session --actor alice --capital-limit 25000
+python scripts/run_operations.py --pause --actor alice --reason "..."
+python scripts/run_operations.py --emergency-stop --actor alice --reason "..."
+
+# Raportare
+python scripts/run_operations.py --daily-report
+python scripts/run_operations.py --compare
+```
+
+Arhitectura si deciziile sunt in
+[docs/PHASE_16_IBKR_PRODUCTION_READINESS.md](docs/PHASE_16_IBKR_PRODUCTION_READINESS.md);
+cele 18 proceduri de operare, in
+[docs/PHASE_16_OPERATIONS_RUNBOOK.md](docs/PHASE_16_OPERATIONS_RUNBOOK.md).
+
 ## Structura proiectului
 
 ```
 ├── src/                        # modulele pipeline-ului, testate individual
 │   ├── execution/              # Faza 14 — abstracție de broker, orchestrator
+│   │   ├── governance.py       # Faza 16 — niveluri, porți, aprobare, pregătire
+│   │   ├── limits.py           # Faza 16 — capital, pierdere, prospețime, calitate
+│   │   ├── session.py          # Faza 16 — sesiuni, preflight, configurație înghețată
+│   │   ├── monitoring.py       # Faza 16 — capabilități, sănătate, metrici, alerte
+│   │   ├── outcomes.py         # Faza 16 — lineage, calitate, rezultate, ratări
 │   │   └── adapters/           #   un adaptor per loc de execuție
 │   │       └── ibkr/           # Faza 15 — Interactive Brokers (paper)
 │   ├── paper/                  # Faza 13 — paper trading, ceas, prospețime, sănătate
@@ -446,6 +536,8 @@ procedura care o inchide e in
 ├── docs/execution-architecture.md  # Faza 14 — arhitectura de execuție
 ├── docs/PHASE_15_IBKR_ARCHITECTURE.md  # Faza 15 — integrarea IBKR
 ├── docs/PHASE_15_IBKR_RUNBOOK.md   # Faza 15 — proceduri operaționale
+├── docs/PHASE_16_IBKR_PRODUCTION_READINESS.md  # Faza 16 — guvernanță și pregătire
+├── docs/PHASE_16_OPERATIONS_RUNBOOK.md  # Faza 16 — cele 18 proceduri de operare
 ├── .env.example                # variabilele de mediu (doar substituenți)
 ├── run_daily.py                # script de orchestrare — rularea zilnică
 ├── run_weekly_backfill.py      # script de orchestrare — backfill istoric săptămânal

@@ -3,11 +3,12 @@
 The broker abstraction. This document covers what the layer is, where
 its boundary sits, and what it deliberately refuses to do.
 
-**No real-money execution exists in this phase.** There is no
-MetaTrader 5 integration, no Interactive Brokers integration, no broker
-credential, no network call and no live order path. This is not a
-disabled path — it is an absent one, and §11 below explains how that is
-enforced rather than merely stated.
+**No real-money execution exists.** Interactive Brokers is the only
+broker of this project and is connected in its PAPER environment only
+(Phase 15). No adapter accepts a real-money environment, no broker
+credential lives in the application, and no live order path exists.
+This is not a disabled path — it is an absent one, and §11 below
+explains how that is enforced rather than merely stated.
 
 ---
 
@@ -34,7 +35,7 @@ enforced rather than merely stated.
              |
         BROKER GATEWAY  (abstract) (Phase 14)
              |
-        BROKER ADAPTER  (concrete) (Phase 14: paper. 15: MT5. 16: IBKR)
+        BROKER ADAPTER  (concrete) (paper, and IBKR from Phase 15)
              |
         EXTERNAL BROKER
              |
@@ -50,9 +51,9 @@ SDK type, no broker symbol, no broker status string and no broker order
 id crosses it. What crosses is the canonical types in
 `src/domain/broker_models.py`.
 
-The rule is what makes Phase 15 an *addition* rather than a rewrite: an
-MT5 adapter implements `BrokerGateway`, and strategy, signal, portfolio
-and risk code stays untouched.
+The rule is what made Phase 15 an *addition* rather than a rewrite:
+the IBKR adapter implements `BrokerGateway`, and strategy, signal,
+portfolio and risk code stayed untouched.
 
 ## 2. Execution environments
 
@@ -364,15 +365,12 @@ inside `connect()`.
 
 Nothing in strategy, signals, portfolio or risk changes.
 
-MT5 characteristics the canonical model already accommodates: symbol
-suffixes, lots and contract size, netting **and** hedging accounting
-(`PositionAccounting`), account currency, margin fields that are
-`Optional` because a cash account has none.
-
-IBKR characteristics likewise: contracts and exchanges via
-`broker_payload`, its own order ids kept separate from ours, multiple
-asset classes via `BrokerCapability.asset_classes`, account updates
-through the same event vocabulary.
+IBKR characteristics the canonical model accommodates: contracts and
+exchanges via `broker_payload`, its own order ids kept separate from
+ours, multiple asset classes via `BrokerCapability.asset_classes`,
+account updates through the same event vocabulary, netting **and**
+hedging accounting (`PositionAccounting`), account currency, and margin
+fields that are `Optional` because a cash account has none.
 
 ## 18. What is deliberately absent
 

@@ -11,7 +11,7 @@ broker they are talking to. Below it: one adapter per venue, each free
 to be as broker-shaped as that venue requires.
 
 Every method here takes and returns canonical types from
-`src.domain.broker_models`. No MT5 symbol, no IBKR Contract, no raw
+`src.domain.broker_models`. No IBKR contract object, no conid, no raw
 status string, no SDK object crosses this interface in either
 direction. An adapter that leaks one has broken the boundary even if
 the code runs.
@@ -200,10 +200,10 @@ class BrokerGateway(ABC):
         """
         Amend a working order.
 
-        Not abstract, because most venues in this project's future do
-        not support it and forcing every adapter to write a stub that
-        raises would be noise. The default refuses honestly, and an
-        adapter that can amend overrides it AND declares
+        Not abstract, because the adapters in this project do not
+        support it and forcing each to write a stub that raises would
+        be noise. The default refuses honestly, and an adapter that can
+        amend overrides it AND declares
         `supports_order_modification`.
         """
         return SubmissionAck(

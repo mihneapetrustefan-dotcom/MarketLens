@@ -139,58 +139,56 @@ class TestTheLiveBoundary(unittest.TestCase):
         self.assertFalse(ExecutionEnvironment.DEMO.is_real_money)
 
 
-class TestPlannedVenues(unittest.TestCase):
+class TestDisabledBroker(unittest.TestCase):
     """
-    Venues named but not built.
+    A registered broker that cannot trade.
 
-    Phase 14 listed both MT5 and IBKR here. Phase 15 built a real IBKR
-    adapter, so IBKR left this list — a venue with a working adapter
-    must not also appear as a placeholder, or the workspace would show
-    it twice and disagree with itself about whether it exists.
+    Phase 16 made the project IBKR-only, so `planned_gateways()` is now
+    empty — there is no second venue coming and nothing to list. The
+    disabled gateway itself remains, because "registered but switched
+    off" is an ordinary operational state that the registry, the
+    validator and the dashboard all have to handle.
     """
 
     def setUp(self):
-        self.gateways = planned_gateways()
+        self.gateway = DisabledBrokerGateway(
+            "ibkr-disabled", "Interactive Brokers (disabled)",
+            "this account is switched off by the operator")
 
-    def test_only_unimplemented_venues_are_listed(self):
-        self.assertEqual(set(self.gateways), {"mt5"})
-        self.assertNotIn("ibkr", self.gateways,
-                         "IBKR has a real adapter and must not be a placeholder")
-        for gateway in self.gateways.values():
-            self.assertIn("no adapter is implemented", gateway.reason)
-            # And each names the phase that will build it, so the
-            # absence reads as scheduled rather than as an oversight.
-            self.assertIn("Phase", gateway.reason)
+    def test_no_other_venue_is_planned(self):
+        self.assertEqual(planned_gateways(), {},
+                         "the project is Interactive-Brokers-only")
 
-    def test_they_claim_no_capability_at_all(self):
-        for broker_id, gateway in self.gateways.items():
-            capability = gateway.get_capabilities()
-            self.assertEqual(capability.asset_classes, (), broker_id)
-            self.assertEqual(capability.times_in_force, (), broker_id)
-            self.assertEqual(capability.as_dict()["order_types"], [], broker_id)
+    def test_it_claims_no_capability_at_all(self):
+        capability = self.gateway.get_capabilities()
+        self.assertEqual(capability.asset_classes, ())
+        self.assertEqual(capability.times_in_force, ())
+        self.assertEqual(capability.as_dict()["order_types"], [])
 
     def test_every_submission_is_refused(self):
-        from src.domain.broker_models import (
-            CanonicalOrderSide, ExecutionOrder,
-        )
+        from src.domain.broker_models import CanonicalOrderSide, ExecutionOrder
         order = ExecutionOrder(
-            order_id="o", intent_id="i", broker_id="mt5", account_id="a",
-            instrument_id="ins", side=CanonicalOrderSide.BUY, quantity=1.0)
-        ack = self.gateways["mt5"].submit_order(order, AT)
+            order_id="o", intent_id="i", broker_id="ibkr-disabled",
+            account_id="a", instrument_id="ins",
+            side=CanonicalOrderSide.BUY, quantity=1.0)
+        ack = self.gateway.submit_order(order, AT)
         self.assertFalse(ack.accepted)
         self.assertIs(ack.reject_code, ExecutionRejectCode.NOT_IMPLEMENTED)
 
-    def test_they_never_report_a_connection(self):
-        for gateway in self.gateways.values():
-            self.assertFalse(gateway.connect().can_submit)
-            self.assertFalse(gateway.health_check(AT).is_usable)
+    def test_it_never_reports_a_connection(self):
+        self.assertFalse(self.gateway.connect().can_submit)
+        self.assertFalse(self.gateway.health_check(AT).is_usable)
 
     def test_account_reads_return_empty_not_invented_numbers(self):
-        snapshot = self.gateways["mt5"].get_account("a", AT)
+        snapshot = self.gateway.get_account("a", AT)
         self.assertEqual(snapshot.cash, 0.0)
         self.assertEqual(snapshot.equity, 0.0)
         self.assertFalse(snapshot.raw_broker_payload["implemented"])
-        self.assertEqual(self.gateways["mt5"].get_positions("a", AT), [])
+        self.assertEqual(self.gateway.get_positions("a", AT), [])
+
+    def test_it_cannot_be_built_for_real_money(self):
+        with self.assertRaises(ValueError):
+            DisabledBrokerGateway("x", environment=ExecutionEnvironment.LIVE)
 
 
 class TestSafetySwitches(unittest.TestCase):

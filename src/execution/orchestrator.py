@@ -11,8 +11,8 @@ construction — strategy, signals, portfolio, risk all end at the intent
 — and everything below it is a specific venue behind `BrokerGateway`.
 
 The orchestrator itself must stay neutral too, and it does: there is no
-`if broker_id == "mt5"` anywhere in this file, and there cannot be, or
-Phase 15 would begin by editing it.
+`if broker_id == "ibkr"` anywhere in this file, and there cannot be, or
+every venue change would begin by editing it.
 
 THE ORDER OF OPERATIONS IS THE SAFETY MODEL
 -----------------------------------------------
@@ -130,9 +130,12 @@ class BrokerRegistry:
     """
     Every broker this system knows about (spec §38).
 
-    A registry rather than a singleton, deliberately. A single global
-    gateway is the architecture that makes the second broker a rewrite,
-    and this project intends to have at least three.
+    A registry rather than a singleton. The project is
+    Interactive-Brokers-only, but it still runs more than one gateway:
+    the paper adapter, the IBKR adapter and — in tests — a
+    deterministic double, all under one contract. A global singleton
+    would make that impossible to test and would tie the orchestrator
+    to whichever one happened to be configured.
     """
 
     def __init__(self):

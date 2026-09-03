@@ -5,10 +5,15 @@ Broker-neutral execution domain (Phase 14).
 
 WHAT THIS PHASE IS
 ----------------------
-An architectural boundary, not a broker. Phase 14 builds the layer that
-future MT5 (Phase 15) and IBKR (Phase 16) adapters plug into, so that
-adding a venue never requires touching strategy, signal, portfolio or
-risk code.
+An architectural boundary, not a broker. Phase 14 built the layer the
+Interactive Brokers adapter plugs into, so that venue behaviour never
+reaches strategy, signal, portfolio or risk code.
+
+Phase 16 made the project IBKR-only. This layer survives that decision
+unchanged and earns its place without a second venue: it is what keeps
+IBKR's vocabulary out of the core, what lets the paper adapter and the
+IBKR adapter be tested against one contract, and what makes a
+deterministic test double possible at all.
 
 The rule the whole phase exists to enforce: nothing above the adapter
 may know which broker it is talking to. No SDK type, no broker symbol,
@@ -17,8 +22,8 @@ crosses is the types in this module.
 
 NO REAL-MONEY EXECUTION EXISTS HERE
 ---------------------------------------
-There is no MetaTrader 5 integration, no Interactive Brokers
-integration, no credential, no network call and no live order path.
+There is no real-money order path: no live credential, no live
+endpoint and no adapter that accepts a real-money environment.
 `ExecutionEnvironment.LIVE` is a value this module can NAME, and
 naming it is the point — the safety layer has to be able to refer to
 the thing it refuses. `ExecutionSafety` denies it unconditionally in
@@ -367,9 +372,10 @@ class PositionAccounting(str, Enum):
 
     NETTING collapses everything in an instrument into one signed
     position; HEDGING keeps separately-opened lots distinct, so a
-    long and a short in the same instrument can coexist. MT5 supports
-    both and IBKR nets, so the canonical model has to admit the
-    difference rather than assume one.
+    long and a short in the same instrument can coexist. IBKR nets
+    on ordinary equity accounts; the model admits both because
+    assuming netting everywhere is wrong in exactly the account
+    structures that are hardest to debug.
     """
     NETTING = "netting"
     HEDGING = "hedging"
@@ -515,6 +521,44 @@ class ExecutionEventType(str, Enum):
     KILL_SWITCH_RELEASED = "kill_switch_released"
 
 
+class MismatchSeverity(str, Enum):
+    """
+    How badly a reconciliation finding matters (Phase 16, spec §32).
+
+    The distinction that earns its keep: a CRITICAL mismatch means the
+    system and the broker disagree about MONEY OR EXPOSURE, and no new
+    order may be sent until a human has looked. Everything else is
+    worth knowing and does not, on its own, stop trading.
+
+    Without severity every mismatch is either ignored or halts
+    execution, and both are wrong — one hides real corruption, the
+    other makes reconciliation something operators switch off.
+    """
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+    @property
+    def rank(self) -> int:
+        return {"info": 0, "warning": 1, "error": 2, "critical": 3}[self.value]
+
+    @property
+    def blocks_execution(self) -> bool:
+        """Only CRITICAL stops new orders."""
+        return self is MismatchSeverity.CRITICAL
+
+    @property
+    def safe_to_auto_resolve(self) -> bool:
+        """
+        Spec §33: only the benign kinds may clear themselves.
+
+        Never capital or position discrepancies — "fixing" an unknown
+        difference in money destroys the evidence of what caused it.
+        """
+        return self is MismatchSeverity.INFO
+
+
 class MismatchKind(str, Enum):
     """What reconciliation found (spec §23)."""
     MISSING_INTERNAL_ORDER = "missing_internal_order"
@@ -527,6 +571,30 @@ class MismatchKind(str, Enum):
     PRICE_MISMATCH = "price_mismatch"
     STATUS_MISMATCH = "status_mismatch"
     UNKNOWN_STATE = "unknown_state"
+
+    @property
+    def severity(self) -> "MismatchSeverity":
+        """
+        How much this kind matters.
+
+        CRITICAL is reserved for disagreements about money or exposure:
+        a position we do not hold, cash that does not add up, a fill
+        counted twice, an order at the venue we have no record of.
+        Those can only be resolved by a human, and trading on top of
+        them compounds whatever caused them.
+        """
+        return {
+            MismatchKind.POSITION_MISMATCH: MismatchSeverity.CRITICAL,
+            MismatchKind.CASH_MISMATCH: MismatchSeverity.CRITICAL,
+            MismatchKind.DUPLICATE_FILL: MismatchSeverity.CRITICAL,
+            MismatchKind.UNKNOWN_BROKER_ORDER: MismatchSeverity.CRITICAL,
+            MismatchKind.MISSING_FILL: MismatchSeverity.ERROR,
+            MismatchKind.QUANTITY_MISMATCH: MismatchSeverity.ERROR,
+            MismatchKind.MISSING_INTERNAL_ORDER: MismatchSeverity.ERROR,
+            MismatchKind.UNKNOWN_STATE: MismatchSeverity.WARNING,
+            MismatchKind.STATUS_MISMATCH: MismatchSeverity.WARNING,
+            MismatchKind.PRICE_MISMATCH: MismatchSeverity.INFO,
+        }[self]
 
 
 class MarketStatus(str, Enum):
@@ -1245,8 +1313,41 @@ class ReconciliationMismatch:
     broker_order_id: Optional[str] = None
     internal_value: Optional[Any] = None
     broker_value: Optional[Any] = None
-    #: Always False in this phase. Nothing auto-repairs (spec §23).
+    #: Set from the kind unless a caller overrides it.
+    severity: Optional[MismatchSeverity] = None
+    #: Only ever True for an INFO finding that resolved itself, or one
+    #: an operator resolved by name. Capital and position differences
+    #: are never auto-resolved (spec §33).
     resolved: bool = False
+    resolved_by: Optional[str] = None
+    resolution_note: str = ""
+
+    def __post_init__(self):
+        if self.severity is None:
+            self.severity = self.kind.severity
+
+    @property
+    def blocks_execution(self) -> bool:
+        return bool(self.severity and self.severity.blocks_execution
+                    and not self.resolved)
+
+    def resolve(self, actor: str, note: str) -> None:
+        """
+        Mark a finding resolved. Requires an actor and a reason.
+
+        An anonymous resolution is indistinguishable from the silent
+        auto-repair this whole design refuses.
+        """
+        if not actor or not note:
+            raise ValueError("resolving a mismatch requires an actor and a note")
+        if self.severity is not None and not self.severity.safe_to_auto_resolve \
+                and actor == "system":
+            raise ValueError(
+                f"a {self.severity.value} mismatch cannot be resolved by the "
+                f"system; it needs a human")
+        self.resolved = True
+        self.resolved_by = actor
+        self.resolution_note = note
 
 
 @dataclass
@@ -1280,6 +1381,50 @@ class ReconciliationRecord:
 
     def of_kind(self, kind: MismatchKind) -> List[ReconciliationMismatch]:
         return [m for m in self.mismatches if m.kind is kind]
+
+    def of_severity(self, severity: "MismatchSeverity"
+                    ) -> List[ReconciliationMismatch]:
+        return [m for m in self.mismatches if m.severity is severity]
+
+    @property
+    def worst_severity(self) -> Optional["MismatchSeverity"]:
+        unresolved = [m for m in self.mismatches if not m.resolved]
+        if not unresolved:
+            return None
+        return max((m.severity for m in unresolved if m.severity),
+                   key=lambda s: s.rank, default=None)
+
+    @property
+    def blocks_execution(self) -> bool:
+        """
+        Whether an unresolved CRITICAL finding is outstanding.
+
+        This is the gate of spec §32: the system and the broker
+        disagree about money or exposure, and trading on top of that
+        compounds whatever caused it.
+        """
+        return any(m.blocks_execution for m in self.mismatches)
+
+    @property
+    def blocking(self) -> List[ReconciliationMismatch]:
+        return [m for m in self.mismatches if m.blocks_execution]
+
+    def auto_resolve_safe(self, note: str = "benign difference") -> int:
+        """
+        Clear only the findings that are safe to clear (spec §33).
+
+        INFO only — rounding differences and the like. Anything about
+        capital or exposure is left for a human, because "fixing" an
+        unknown difference in money destroys the evidence of its cause.
+        """
+        cleared = 0
+        for mismatch in self.mismatches:
+            if (mismatch.severity is not None
+                    and mismatch.severity.safe_to_auto_resolve
+                    and not mismatch.resolved):
+                mismatch.resolve("system", note)
+                cleared += 1
+        return cleared
 
 
 # ============================================================

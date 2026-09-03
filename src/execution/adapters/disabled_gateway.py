@@ -5,11 +5,11 @@ The placeholder for venues that do not exist here (Phase 14, §31, §32).
 
 WHY A REFUSING ADAPTER RATHER THAN NO ADAPTER
 -------------------------------------------------
-A future MT5 or IBKR adapter has to slot into a registry, a routing
-table, a dashboard and a set of tests. If none of that can be exercised
-until the adapter exists, then the first time the whole path runs is
-the first time it runs against a real venue — which is the worst
-possible moment to discover the registry does not handle it.
+A broker that is registered but cannot trade is an ordinary
+operational state: disabled by an operator, not yet configured, or
+awaiting credentials. The registry, the dashboard, validation and
+reconciliation all have to handle it, and the cheapest way to keep
+that path exercised is a conforming gateway that refuses everything.
 
 So the shape is here, and it refuses. `DisabledBrokerGateway` is a
 complete, conforming `BrokerGateway` whose every trading method returns
@@ -24,18 +24,14 @@ Three things, and the third is the one that matters:
   1. `submit_order` refuses, always, with a reason.
   2. `get_capabilities` claims nothing, so validation refuses every
      order type before submission is even reached.
-  3. Constructing one for a real-money environment raises. A future
-     adapter cannot be built by subclassing this and flipping a flag —
-     it has to declare its own environment, and no environment above
-     DEMO can be constructed anywhere in this phase.
+  3. Constructing one for a real-money environment raises. It cannot
+     be turned into a live adapter by subclassing and flipping a flag.
 
 NO CREDENTIALS, ANYWHERE
 ----------------------------
-`connect()` takes no arguments and reads no environment variable. There
-is deliberately nothing here for a future integration to "fill in":
-credential handling belongs to the phase that has a venue to
-authenticate against, and a stub with an empty `api_key` field is an
-invitation.
+`connect()` takes no arguments and reads no environment variable, in
+line with the rest of the execution layer. A stub with an empty
+`api_key` field is an invitation.
 """
 
 from __future__ import annotations
@@ -56,10 +52,10 @@ class DisabledBrokerGateway(BrokerGateway):
     """
     A conforming gateway that trades nothing.
 
-    Used for any venue named but not implemented. The name and the
-    reason are carried so the dashboard can say "MetaTrader 5 — adapter
-    not implemented (Phase 15)" rather than showing an absence the
-    reader has to interpret.
+    Used for a broker that is registered but cannot trade — switched
+    off, not yet configured, or awaiting credentials. The name and the
+    reason are carried so the dashboard can say why rather than showing
+    an absence the reader has to interpret.
     """
 
     environment = ExecutionEnvironment.DEMO
@@ -170,14 +166,16 @@ class DisabledBrokerGateway(BrokerGateway):
 
 def planned_gateways() -> Dict[str, DisabledBrokerGateway]:
     """
-    The venues this project intends to support, and the phase that will.
+    Venues named but not built. Currently: none.
 
-    Registered so the execution workspace can list them truthfully. A
-    reader seeing "MetaTrader 5" here learns it is planned and absent;
-    a reader seeing nothing would have to guess.
+    Phase 16 made the project Interactive-Brokers-only, so there is no
+    second venue planned and nothing to list. The function remains
+    because the registry, the dashboard and the CLI all consume it, and
+    because `DisabledBrokerGateway` is still the right answer for a
+    broker that is registered but cannot trade — an IBKR account an
+    operator has switched off, for instance.
+
+    Returning an empty mapping is the honest answer to "what else is
+    coming": nothing is.
     """
-    return {
-        "mt5": DisabledBrokerGateway(
-            "mt5", "MetaTrader 5",
-            "no adapter is implemented; planned for Phase 16"),
-    }
+    return {}

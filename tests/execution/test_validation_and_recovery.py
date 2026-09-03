@@ -38,22 +38,23 @@ class TestInstrumentMapping(unittest.TestCase):
     def setUp(self):
         self.registry = InstrumentRegistry()
         self.registry.register(BrokerInstrumentMapping(
-            canonical_instrument_id="i-eurusd", broker_id="mt5-like",
+            canonical_instrument_id="i-eurusd", broker_id="ibkr-fx",
             broker_symbol="EURUSD.a", asset_class="forex", currency="USD",
             tick_size=0.00001, minimum_quantity=0.01,
             quantity_increment=0.01, price_precision=5,
             contract_multiplier=100_000.0))
         self.registry.register(default_equity_mapping(
-            "i-aapl", "ibkr-like", "AAPL", venue="NASDAQ"))
+            "i-aapl", "ibkr-eq", "AAPL", venue="NASDAQ"))
 
     def test_the_core_never_learns_the_venue_spelling(self):
         """
-        Two venues, two spellings, one canonical id. Nothing above the
-        adapter has to know either spelling.
+        One venue, two instrument classes, two spellings — a forex pair
+        and an equity at Interactive Brokers. Nothing above the adapter
+        has to know either.
         """
-        forex = self.registry.resolve("mt5-like", "i-eurusd")
+        forex = self.registry.resolve("ibkr-fx", "i-eurusd")
         self.assertEqual(forex.mapping.broker_symbol, "EURUSD.a")
-        equity = self.registry.resolve("ibkr-like", "i-aapl")
+        equity = self.registry.resolve("ibkr-eq", "i-aapl")
         self.assertEqual(equity.mapping.broker_symbol, "AAPL")
 
     def test_an_unmapped_pair_is_never_guessed(self):
@@ -62,24 +63,24 @@ class TestInstrumentMapping(unittest.TestCase):
         right symbol here. A guess that is usually right is the worst
         kind — it works until it trades the wrong contract.
         """
-        resolution = self.registry.resolve("mt5-like", "i-aapl")
+        resolution = self.registry.resolve("ibkr-fx", "i-aapl")
         self.assertFalse(resolution.ok)
         self.assertIs(resolution.code,
                       ExecutionRejectCode.NO_INSTRUMENT_MAPPING)
 
     def test_the_reverse_lookup_attributes_inbound_events(self):
         self.assertEqual(
-            self.registry.canonical_for("mt5-like", "EURUSD.a"), "i-eurusd")
-        self.assertIsNone(self.registry.canonical_for("ibkr-like", "EURUSD.a"))
+            self.registry.canonical_for("ibkr-fx", "EURUSD.a"), "i-eurusd")
+        self.assertIsNone(self.registry.canonical_for("ibkr-eq", "EURUSD.a"))
 
     def test_quantity_is_rounded_down_to_the_venue_increment(self):
-        mapping = self.registry.get("mt5-like", "i-eurusd")
+        mapping = self.registry.get("ibkr-fx", "i-eurusd")
         quantity, code = mapping.normalize_quantity(1.237)
         self.assertIsNone(code)
         self.assertAlmostEqual(quantity, 1.23)
 
     def test_a_quantity_below_one_increment_is_refused(self):
-        mapping = self.registry.get("mt5-like", "i-eurusd")
+        mapping = self.registry.get("ibkr-fx", "i-eurusd")
         quantity, code = mapping.normalize_quantity(0.004)
         self.assertIs(code, ExecutionRejectCode.QUANTITY_INCREMENT)
 
@@ -91,28 +92,28 @@ class TestInstrumentMapping(unittest.TestCase):
         self.assertIs(code, ExecutionRejectCode.BELOW_MINIMUM_QUANTITY)
 
     def test_price_is_rounded_to_the_venue_tick(self):
-        mapping = self.registry.get("mt5-like", "i-eurusd")
+        mapping = self.registry.get("ibkr-fx", "i-eurusd")
         self.assertAlmostEqual(mapping.normalize_price(1.234567), 1.23457,
                                places=5)
 
     def test_an_invalid_quantity_is_refused_before_arithmetic(self):
-        mapping = self.registry.get("ibkr-like", "i-aapl")
+        mapping = self.registry.get("ibkr-eq", "i-aapl")
         for value in (0.0, -1.0, float("nan"), float("inf")):
             _, code = mapping.normalize_quantity(value)
             self.assertIs(code, ExecutionRejectCode.INVALID_QUANTITY, repr(value))
 
     def test_the_contract_multiplier_is_a_venue_fact(self):
         self.assertEqual(
-            self.registry.get("mt5-like", "i-eurusd").contract_multiplier,
+            self.registry.get("ibkr-fx", "i-eurusd").contract_multiplier,
             100_000.0)
         self.assertEqual(
-            self.registry.get("ibkr-like", "i-aapl").contract_multiplier, 1.0)
+            self.registry.get("ibkr-eq", "i-aapl").contract_multiplier, 1.0)
 
     def test_candidate_venues_come_from_the_mappings(self):
         self.registry.register(default_equity_mapping(
-            "i-aapl", "mt5-like", "AAPL.US"))
+            "i-aapl", "ibkr-fx", "AAPL.US"))
         self.assertEqual(self.registry.brokers_for("i-aapl"),
-                         ["ibkr-like", "mt5-like"])
+                         ["ibkr-eq", "ibkr-fx"])
 
 
 class TestPreTradeValidation(unittest.TestCase):
@@ -333,8 +334,9 @@ class TestPositionAbstraction(unittest.TestCase):
 
     def test_hedging_lots_stay_distinct(self):
         """
-        MT5 supports hedging, IBKR nets. The canonical model has to
-        admit the difference rather than assume one.
+        IBKR nets on ordinary equity accounts. The model admits
+        hedging too, because assuming netting everywhere is wrong in
+        exactly the account structures hardest to debug.
         """
         long_lot = PositionSnapshot(
             account_id="a", broker_id="b", instrument_id="i", quantity=10.0,

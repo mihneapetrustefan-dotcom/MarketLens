@@ -23,7 +23,7 @@ layer refuses `LIVE` before any of it runs. §11 below is the audit.
                                           |
               +---------------------------+-------------------+
               |                           |                   |
-         PAPER ADAPTER              IBKR ADAPTER        MT5 ADAPTER
+         PAPER ADAPTER              IBKR ADAPTER
           (phase 13/14)               (phase 15)         (phase 16)
                                           |
                                    IBKR TRANSPORT       ← second seam
@@ -251,17 +251,25 @@ Connecting is **not** permission to trade. An IBKR session existing is
 never a reason for an order to exist, so ordering is a separate flag,
 off by default, and the CLI reports which one is missing.
 
-## 13. Future MT5 compatibility
+## 13. One broker
 
-Nothing in this phase constrains Phase 16. IBKR logic lives entirely in
-`src/execution/adapters/ibkr/`; the core contains no `if broker ==`
-anywhere, and the conformance suite (§59) runs the **same assertions**
-against the paper adapter, the IBKR adapter and the MT5 placeholder.
+**Interactive Brokers is the only broker of this project.** Phase 16
+settled that: there is no MetaTrader 5 adapter, no MT5 compatibility
+layer, no multi-broker routing, and no placeholder for a second venue.
+`planned_gateways()` returns nothing, and no module in `src`, `tests`
+or `scripts` mentions MT5.
 
-An MT5 adapter implements `BrokerGateway`, maps its statuses into
-`ExecutionOrderState`, its symbols through `BrokerInstrumentMapping`,
-and declares its own capabilities. Phase 14's `PositionAccounting`
-already admits hedging, which MT5 needs and IBKR does not.
+The abstraction that remains is not there to support a second broker.
+It is there because a boundary is what keeps IBKR-shaped detail —
+conids, its own order ids, its status vocabulary — out of strategy,
+signal, portfolio and risk code. That is worth having with exactly one
+broker, and it is why IBKR logic still lives entirely in
+`src/execution/adapters/ibkr/` and the core contains no
+`if broker_id == "ibkr"` anywhere.
+
+The conformance suite (§59) runs the same assertions against the paper
+adapter, the IBKR adapter and the disabled adapter — three
+implementations of one interface, all of them ours.
 
 ## 14. Future autonomous-trading compatibility
 

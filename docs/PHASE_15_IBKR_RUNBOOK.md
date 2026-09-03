@@ -274,7 +274,17 @@ transition with its reason, and every fill.
 | `REFUSED before anything was sent` | the ordering gate is closed (§8) |
 | `local request budget ... exhausted` | `IBKR_MAX_REQUESTS_PER_MINUTE` reached; it refuses rather than sleeping |
 
+## Running a session
+
+This document covers the IBKR connection: bringing it up, resolving
+contracts, checking data, reconciling, recovering. The procedures for
+actually *running* a trading session — readiness, promotion gates and
+approval, opening and closing a session, pausing, the emergency stop,
+clearing a latched limit, the daily report — are in
+[PHASE_16_OPERATIONS_RUNBOOK.md](PHASE_16_OPERATIONS_RUNBOOK.md).
+
 ## What is not covered
 
-Real-money trading. It does not exist in this phase and no procedure
-here can enable it.
+Real-money trading. It does not exist and no procedure here or in the
+Phase 16 runbook can enable it: no adapter accepts a real-money
+environment, so there is no path to turn on.

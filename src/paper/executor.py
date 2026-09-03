@@ -16,8 +16,8 @@ TWO INTERFACES, ON PURPOSE
      broker adapter will need (spec §86).
 
 The second is why paper trading is worth building before live trading:
-Phase 14 implements the same methods against MT5 or IBKR, and nothing
-upstream changes. What must NOT happen — and what this file is arranged
+Phase 15 implemented the successor interface against Interactive
+Brokers, and nothing upstream changed. What must NOT happen — and what this file is arranged
 to prevent — is a broker being reached from anywhere except through
 this interface.
 
@@ -123,9 +123,10 @@ class BrokerLikeInterface(ABC):
 
     Declared here, in the phase that has no broker, precisely so the
     shape is fixed by a working implementation before any real venue is
-    involved. A future MT5 or IBKR adapter satisfies these methods and
-    everything upstream — strategy, signal, risk, order intent — stays
-    untouched.
+    involved. The Phase 15 IBKR adapter satisfies the successor
+    interface (`BrokerGateway`) and everything upstream — strategy,
+    signal, risk, order intent — stayed untouched, which is what this
+    shape existed to make possible.
 
     Deliberately NOT included: any authentication method, credential
     field, or account-funding call. Those belong to the phase that
