@@ -800,6 +800,92 @@ class DashboardGenerator:
             }
         return {"available": True, "brokers": out}
 
+    def _collect_price_history(self, conn: sqlite3.Connection
+                               ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Price history and a last-close summary, read from the database.
+
+        WHY THIS EXISTS
+        -------------------
+        `price_history_map` and `market_data` are supplied in memory by
+        run_daily.py from a live fetch. A dashboard rebuilt from the
+        database alone had neither, so every instrument page reported
+        "price_candle_cache - indisponibil" while that very table held
+        116,719 candles. The data was present and discarded.
+
+        Returns (history_by_name, summary_by_ticker) so the page can
+        fall back to stored candles when a live quote is absent. Keys
+        match what the page already looks up: company canonical name
+        for history, ticker for the summary.
+
+        This is NOT a live price and does not pretend to be. The
+        summary carries `as_of` and the page labels it, because a close
+        from three days ago shown as today's price would be worse than
+        showing nothing.
+        """
+        if not _table_exists(conn, "price_candle_cache"):
+            return {}, {}
+
+        names = {}
+        for instrument_id, ticker, name in _rows(conn, """
+            SELECT i.instrument_id, i.ticker, co.canonical_name
+            FROM instruments i
+            JOIN securities s ON i.security_id = s.security_id
+            JOIN companies co ON s.company_id = co.company_id
+        """):
+            names[instrument_id] = (ticker, name)
+
+        if not names:
+            return {}, {}
+
+        # Daily bars only. Intraday rows would swamp a sparkline and
+        # are not what it shows.
+        #
+        # Stored as a FLAT LIST OF CLOSES, not objects. The sparkline
+        # reads `p.close !== undefined ? p.close : p`, so it accepts
+        # both -- and the object form cost 1,835 KB of embedded JSON on
+        # a page that is otherwise 278 KB. Per-point timestamps were
+        # never read; the date shown in the label comes from `as_of` in
+        # the summary below.
+        raw: Dict[str, list] = {}
+        for instrument_id, timestamp, close in _rows(conn, """
+            SELECT instrument_id, timestamp, COALESCE(adjusted_close, close)
+            FROM price_candle_cache
+            WHERE interval = '1d' AND close IS NOT NULL
+            ORDER BY instrument_id, timestamp ASC
+        """):
+            if instrument_id not in names:
+                continue
+            raw.setdefault(instrument_id, []).append((timestamp, close))
+
+        history: Dict[str, Any] = {}
+        summary: Dict[str, Any] = {}
+        for instrument_id, (ticker, name) in names.items():
+            series = raw.get(instrument_id)
+            if not series:
+                continue
+            # 90 points is more than a 400px sparkline can resolve; the
+            # rest is payload for nothing.
+            series = series[-90:]
+            closes = [round(float(close), 4) for _, close in series]
+            history[name] = closes
+
+            last_close = closes[-1]
+            previous = closes[-2] if len(closes) > 1 else None
+            change = None
+            if previous:
+                change = (last_close - previous) / previous * 100.0
+            summary[ticker] = {
+                "current_price": last_close,
+                "daily_change_pct": change,
+                "as_of": series[-1][0],
+                "points": len(closes),
+                # Says plainly where this came from. A stored close is
+                # not a live quote and the page must not imply it is.
+                "from_cache": True,
+            }
+        return history, summary
+
     def _collect_operations(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         """
         The operations centre (Phase 16, spec §88-§93).
@@ -1204,12 +1290,22 @@ class DashboardGenerator:
         column and the Company page's last-call panel."""
         if not _table_exists(conn, "recommendations"):
             return {}
+        # One aggregate pass, joined back -- NOT a correlated subquery.
+        #
+        # The previous form asked, for each of 22,725 rows, "what is the
+        # maximum generated_at for THIS row's entity", re-scanning the
+        # whole table each time because no index covers `entity`. It
+        # took 505 seconds to produce 389 rows. This computes each
+        # entity maximum once.
         latest = _rows(conn, """
-            SELECT entity, ticker, recommendation, confidence_score, time_horizon, generated_at
+            SELECT r.entity, r.ticker, r.recommendation, r.confidence_score,
+                   r.time_horizon, r.generated_at
             FROM recommendations r
-            WHERE generated_at = (
-                SELECT MAX(generated_at) FROM recommendations r2 WHERE r2.entity = r.entity
-            )
+            JOIN (
+                SELECT entity, MAX(generated_at) AS newest
+                FROM recommendations
+                GROUP BY entity
+            ) m ON m.entity = r.entity AND m.newest = r.generated_at
         """)
         return {
             entity: {
@@ -1321,6 +1417,7 @@ class DashboardGenerator:
         constraints = self._collect_constraints(conn)
         backtests = self._collect_backtests(conn)
         paper = self._collect_paper(conn)
+        cached_history, cached_prices = self._collect_price_history(conn)
         execution = self._collect_execution(conn)
         broker_detail = self._collect_broker_detail(conn)
         operations = self._collect_operations(conn)
@@ -1370,9 +1467,15 @@ class DashboardGenerator:
             "sector_summary": sector_summary,
             "unmapped": unmapped,
             "lexicon": lexicon,
-            "market_data": market_data or None,
+            # Live quotes when a run supplied them; last stored close
+            # otherwise, flagged `from_cache` so the page can label it
+            # rather than pass a three-day-old close off as today's.
+            "market_data": market_data or cached_prices or None,
             "risk_data": risk_data or None,
-            "price_history": price_history_map or None,
+            # Live history when a run supplied it; stored candles
+            # otherwise. Previously this was None on any DB-only
+            # rebuild and every chart vanished.
+            "price_history": price_history_map or cached_history or None,
             "macro": {
                 "snapshots": macro_snapshots or None,
                 "indicators": macro_indicators or None,
@@ -2618,12 +2721,26 @@ table.data tr.sel { background:var(--accent-bg); }
     var priceHtml;
     if (mkt && !mkt.error) {
       var chg = mkt.daily_change_pct; var up = (chg || 0) >= 0;
+      // `from_cache` marks a last stored close rather than a live
+      // quote. Rendering it as "azi" would be a lie the reader cannot
+      // detect, so the label states what it is and when.
+      var when = mkt.from_cache
+        ? 'ultima inchidere stocata' + (mkt.as_of ? ' · ' + esc(String(mkt.as_of).slice(0, 10)) : '')
+        : 'azi';
       priceHtml = '<div style="font-size:28px;font-weight:800;">' + fmtNum(mkt.current_price, 2) + '</div>' +
-        '<div style="font-size:13px;font-weight:700;color:' + (up ? "#00795a" : "#ae1800") + ';">' + fmtSignedPct(chg / 100, 2) + ' azi</div>' +
-        (hist ? sparkline(hist, 400, 60) : "");
+        '<div style="font-size:13px;font-weight:700;color:' + (up ? "#00795a" : "#ae1800") + ';">' +
+        (chg === null || chg === undefined ? '—' : fmtSignedPct(chg / 100, 2)) + ' ' + when + '</div>' +
+        (hist ? sparkline(hist, 400, 60) : "") +
+        (mkt.from_cache
+          ? '<p class="copy" style="margin-top:8px;font-size:11px;color:var(--muted);">' +
+            'Din <span class="mono">price_candle_cache</span>' +
+            (mkt.points ? ' · ' + fmtNum(mkt.points) + ' lumanari zilnice' : '') +
+            '. Nu e un pret live.</p>'
+          : "");
     } else {
       priceHtml = '<div class="hatched" style="text-align:center;"><span class="mono" style="font-size:11px;color:var(--muted);">price_candle_cache — indisponibil</span></div>' +
-        '<p class="copy" style="margin-top:12px;">Pretul live nu este persistat in baza de date pentru acest instrument in aceasta rulare.</p>';
+        '<p class="copy" style="margin-top:12px;">Nu exista lumanari zilnice stocate pentru acest instrument. ' +
+        'Ruleaza <span class="mono">Cache Price Candles</span> ca sa le colectezi.</p>';
     }
     var callHtml = rec
       ? '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;"><span class="pill solid" style="font-size:11px;padding:3px 7px;">' + esc(rec.recommendation) + '</span><span style="font-size:22px;font-weight:800;">' + fmtPct(rec.confidence_score, 0) + '</span><span style="font-size:11px;color:var(--muted);">incredere</span></div>' +
