@@ -217,10 +217,32 @@ class DashboardGenerator:
             SELECT reason, COUNT(*) FROM signal_suppressions GROUP BY reason ORDER BY 2 DESC
         """) if _table_exists(conn, "signal_suppressions") else []
         recent = _rows(conn, """
-            SELECT signal_id, instrument_id, direction, status, strength, confidence,
-                   expected_return, source_information_cutoff
+            SELECT signal_id, instrument_id, direction, status, strength,
+                   confidence, expected_return, source_information_cutoff
             FROM signals ORDER BY source_information_cutoff DESC LIMIT 40
         """)
+
+        # Company name and ticker, APPENDED at 8 and 9 -- never
+        # inserted, because the page indexes this tuple positionally and
+        # shifting a column would mislabel five fields silently instead
+        # of failing.
+        #
+        # Looked up SEPARATELY rather than joined into the query above.
+        # Joining made instruments/securities/companies a hard
+        # dependency, and `_rows` swallows a missing table into [] — so
+        # a database with signals but no registry lost every signal
+        # rather than merely losing the labels. A label must never be
+        # able to delete the thing it labels.
+        names = {}
+        for instrument_id, ticker, name in _rows(conn, """
+            SELECT i.instrument_id, i.ticker, co.canonical_name
+            FROM instruments i
+            JOIN securities se ON se.security_id = i.security_id
+            JOIN companies co ON co.company_id = se.company_id
+        """):
+            names[instrument_id] = (name, ticker)
+        recent = [tuple(row) + names.get(row[1], (None, None))
+                  for row in recent]
         evaluations = _rows(conn, """
             SELECT cohort_kind, cohort_value, horizon, sample_size, hit_rate,
                    baseline_hit_rate, beats_baseline, small_sample
@@ -1764,6 +1786,17 @@ table.data tr.sel { background:var(--accent-bg); }
       '</div><div class="blk-body">' + bodyHtml + '</div></section>';
   }
 
+  function signalLabel(s) {
+    // s[8] company name, s[9] ticker, s[1] instrument_id.
+    // The id is the fallback, not the default: it is a storage key, and
+    // "us_and_intl-brk.b" tells a reader which bucket the row lives in
+    // rather than that this is Berkshire Hathaway.
+    var name = s[8], ticker = s[9];
+    if (name && ticker) return esc(name) + ' <span class="mono" style="color:var(--muted);font-weight:400;">' + esc(ticker) + '</span>';
+    if (name) return esc(name);
+    return '<span class="mono">' + esc(s[1]) + '</span>';
+  }
+
   function sparkline(series, width, height) {
     width = width || 160; height = height || 28;
     var vals = series.map(function (p) { return p.close !== undefined ? p.close : p; }).filter(function (v) { return v !== null && v !== undefined; });
@@ -2622,7 +2655,7 @@ table.data tr.sel { background:var(--accent-bg); }
 
     if (D.signals.available) {
       var sigRows = D.signals.recent.slice(0, 8).map(function (s) {
-        return '<tr><td style="font-weight:700;">' + esc(s[1]) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
+        return '<tr><td style="font-weight:700;">' + signalLabel(s) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
       }).join("");
       var activeCount = 0; D.signals.by_status.forEach(function (p) { if (p[0] === "active") activeCount = p[1]; });
       html += '<section class="blk"><div class="grid32">' +
@@ -2753,7 +2786,15 @@ table.data tr.sel { background:var(--accent-bg); }
       '</div></section>';
 
     var sigs = D.signals.available ? D.signals.recent.filter(function (s) {
-      return String(s[1]).replace("crypto-", "").toUpperCase() === sel.t.toUpperCase();
+      // Match on the TICKER (s[9]), not on the instrument_id with
+      // "crypto-" stripped. That older rule matched crypto by accident
+      // and missed every US stock: "us_and_intl-aapl" minus "crypto-"
+      // is still "us_and_intl-aapl", never "AAPL". Company pages for
+      // US equities therefore showed no signals even when they had
+      // some. The id remains a fallback for rows that resolve to no
+      // instrument row.
+      var tick = s[9] ? String(s[9]) : String(s[1]).replace("crypto-", "");
+      return tick.toUpperCase() === sel.t.toUpperCase();
     }) : [];
     var sigHtml = sigs.length ? sigs.map(function (s) {
       return '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:10px 24px;border-bottom:1px solid var(--line);">' +
@@ -2907,13 +2948,13 @@ table.data tr.sel { background:var(--accent-bg); }
     var sig = D.signals.recent[state.sigIdx] || D.signals.recent[0];
     var rows = D.signals.recent.map(function (s, idx) {
       var active = idx === state.sigIdx;
-      return '<tr class="rowlink' + (active ? " sel" : "") + '" onclick="MLSetSigIdx(' + idx + ')"><td style="font-weight:700;">' + esc(s[1]) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
+      return '<tr class="rowlink' + (active ? " sel" : "") + '" onclick="MLSetSigIdx(' + idx + ')"><td style="font-weight:700;">' + signalLabel(s) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
     }).join("");
 
     var detail = "";
     if (sig) {
-      detail = '<div style="font-size:20px;font-weight:800;letter-spacing:-0.02em;margin-bottom:2px;">' + esc(sig[1]) + '</div>' +
-        '<div style="font-size:11px;color:var(--muted);" class="mono">cutoff ' + esc(sig[7] || "—") + '</div>' +
+      detail = '<div style="font-size:20px;font-weight:800;letter-spacing:-0.02em;margin-bottom:2px;">' + signalLabel(sig) + '</div>' +
+        '<div style="font-size:11px;color:var(--muted);" class="mono">' + esc(sig[1]) + ' · cutoff ' + esc(sig[7] || "—") + '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding:14px 0;margin-top:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);">' +
         '<div><div style="font-size:17px;font-weight:800;">' + fmtNum(sig[4], 2) + '</div><div style="font-size:10px;color:var(--muted);">forta</div></div>' +
         '<div><div style="font-size:17px;font-weight:800;color:var(--accent-dark);">' + fmtNum(sig[5], 2) + '</div><div style="font-size:10px;color:var(--muted);">incredere</div></div>' +
