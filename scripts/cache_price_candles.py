@@ -162,6 +162,32 @@ def resolve_event_instruments(conn: sqlite3.Connection) -> List[Tuple[str, str, 
     return conn.execute(sql).fetchall()
 
 
+def resolve_unstudied_instruments(conn: sqlite3.Connection
+                                  ) -> List[Tuple[str, str, str]]:
+    """
+    Registry instruments with NO candles yet: (instrument_id, ticker,
+    asset_class).
+
+    These are not part of any event study -- nothing has asked a
+    research question about them. They are fetched only for display, so
+    the dashboard has a chart on every company page it lists rather
+    than on the 75% that happen to have been studied.
+
+    Deliberately keyed on "has no candles" rather than "has no event":
+    an instrument studied once already has its history, and re-fetching
+    it would spend calls to learn nothing.
+    """
+    return conn.execute("""
+        SELECT i.instrument_id, i.ticker, i.asset_class
+        FROM instruments i
+        WHERE NOT EXISTS (
+            SELECT 1 FROM price_candle_cache p
+            WHERE p.instrument_id = i.instrument_id
+        )
+        ORDER BY i.instrument_id
+    """).fetchall()
+
+
 def anchor_for_event(conn: sqlite3.Connection, canonical_event_id: str) -> Optional[datetime]:
     """
     The market-visibility anchor for one canonical event: the LATEST
@@ -230,6 +256,11 @@ def main() -> int:
                         help="Cap the number of distinct instruments processed (testing).")
     parser.add_argument("--skip-minute", action="store_true",
                         help="Fetch only daily candles, skip the minute-level cache.")
+    parser.add_argument("--include-unstudied", action="store_true",
+                        help="Also cache instruments that have no events yet, "
+                             "so the dashboard has a chart on every company "
+                             "page. Costs one daily request each. BVB stays "
+                             "excluded: Polygon does not cover Bucharest.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Report what would be fetched without calling Polygon or writing.")
     args = parser.parse_args()
@@ -266,6 +297,30 @@ def main() -> int:
     print(f"Instrumente distincte de interogat: {len(by_instrument):,}")
     print(f"Evenimente sarite (BVB, neacoperit) : {skipped_bvb:,}")
 
+    if args.include_unstudied:
+        # Instruments no event has touched. Fetched for DISPLAY, so the
+        # dashboard has a chart on every company page rather than on
+        # the subset that happens to have been studied.
+        #
+        # The anchor is "now": there is no event to centre a window on,
+        # and the daily fetch below spans a fixed lookback from it.
+        now = datetime.now(timezone.utc)
+        added = 0
+        skipped_uncovered = 0
+        for instrument_id, ticker, asset_class in resolve_unstudied_instruments(conn):
+            if instrument_id in by_instrument:
+                continue
+            symbol = normalize_ticker_for_polygon(ticker, asset_class)
+            if symbol is None:
+                skipped_uncovered += 1     # BVB and anything else Polygon lacks
+                continue
+            by_instrument[instrument_id] = {"symbol": symbol, "anchors": [now],
+                                            "display_only": True}
+            added += 1
+        print(f"Instrumente FARA evenimente adaugate (--include-unstudied): {added:,}")
+        print(f"  dintre care sarite (neacoperite de Polygon)             : {skipped_uncovered:,}")
+        print(f"Instrumente distincte de interogat, total: {len(by_instrument):,}")
+
     if args.limit_instruments:
         keys = list(by_instrument.keys())[:args.limit_instruments]
         by_instrument = {k: by_instrument[k] for k in keys}
@@ -297,6 +352,13 @@ def main() -> int:
             daily_skipped_cached += 1
 
         if args.skip_minute:
+            continue
+
+        if entry.get("display_only"):
+            # Added by --include-unstudied purely so the dashboard has a
+            # chart. The chart is daily; minute candles for an
+            # instrument no event has touched are an API call and a
+            # pile of rows that nothing reads.
             continue
 
         # --- Minute: grouped per (instrument, calendar day) ---

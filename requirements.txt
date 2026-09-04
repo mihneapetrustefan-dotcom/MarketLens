@@ -1,3 +1,21 @@
-feedparser
-pandas
-yfinance
+# Pinned deliberately.
+#
+# These were unpinned, which is a reproducibility hazard for a project
+# whose entire value is that a research result can be recomputed. A
+# pandas major release can change NaN handling and .iloc semantics
+# underneath a feature pipeline, and the result is not an error — it is
+# a different number, arriving silently, in a table nobody re-derives.
+#
+# The versions below are exactly what an unpinned install resolved to on
+# 2026-09-04, so pinning them changes nothing that runs today. It only
+# stops tomorrow from changing on its own.
+#
+# All three support the Python 3.11 that CI runs.
+#
+# To move one: bump it here in its own commit, run the full suite, and
+# say in the message what changed and why. Never as a side effect of
+# other work.
+
+feedparser==6.0.14
+pandas==3.0.5
+yfinance==1.7.0

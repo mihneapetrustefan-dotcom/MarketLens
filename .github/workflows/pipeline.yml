@@ -168,7 +168,12 @@ jobs:
         # Python, ceea ce e prea subtil pentru a ne baza pe el.
         # Fara --dry-run: si acela e store_true, deci absenta lui inseamna
         # rulare reala.
-        run: python scripts/cache_price_candles.py
+        # --include-unstudied: si instrumentele fara evenimente inca,
+        # ca tabloul de bord sa aiba grafic pe fiecare pagina de
+        # companie, nu doar pe cele studiate. Costa ~13 minute in plus
+        # si sare peste lumanarile pe minut pentru ele, care nu se
+        # afiseaza nicaieri.
+        run: python scripts/cache_price_candles.py --include-unstudied
 
       - name: '5/11 Build event studies'
         id: s05
