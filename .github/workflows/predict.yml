@@ -1,0 +1,120 @@
+name: Predict (Phase 9b - inference)
+
+# Rulare MANUALA. Aplica un model deja antrenat pe observatiile care nu
+# au inca o predictie, si scrie predictii purtand information_cutoff-ul
+# observatiei.
+#
+# DE CE EXISTA ACEST PAS
+# ----------------------
+# Train Models (Phase 9) produce predictii DOAR pe portiunea de testare
+# a impartirii cronologice. Asta masoara un model; nu il foloseste.
+# Portiunea de testare se termina in trecut prin constructie, deci orice
+# predictie din baza era, prin design, despre ceva deja intamplat.
+#
+# Masurat pe 2026-09-04: cea mai noua observatie avea cutoff
+# 2026-09-03, cea mai noua observatie PREDICTATA era 2026-08-26, si
+# toate cele 190 de semnale erau suprimate ca `stale_prediction`.
+# Treisprezece observatii din saptamana precedenta nu aveau nicio
+# predictie, pentru ca nu exista nimic care sa o produca.
+#
+# LOCUL IN LANT
+#   Compute Features (8) -> Train Models (9) -> [ ACEST PAS ] -> Generate Signals (10)
+#
+# Ruleaza DUPA Train Models. Fara un model antrenat, esueaza explicit.
+#
+# CE REFUZA
+#   - un model fara contract de caracteristici salvat
+#   - observatii care poarta prea putin din acel contract
+#   - caracteristici calculate DUPA cutoff-ul pe care pretind ca-l descriu
+#
+# Toate trei sunt refuzuri, nu avertismente: fiecare ar produce numere
+# increzatoare pe care nimic din aval nu le poate deosebi de cele reale.
+#
+# Sigur de rulat repetat: observatiile deja predictate de acelasi model
+# sunt sarite. Foloseste rescore=true ca sa le refaca.
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: 'Eticheta modelului de folosit (ex. d5.abnormal_return). Impiedica folosirea unui model antrenat pe alta tinta.'
+        required: false
+        default: 'd5.abnormal_return'
+      model:
+        description: 'trained_model_id anume. Gol = cel mai recent model pentru eticheta de mai sus.'
+        required: false
+        default: ''
+      max_age_days:
+        description: 'Cat de departe in trecut sa mearga. Mai vechi de atat produce predictii pe care stratul de semnale le suprima oricum ca invechite. 0 = fara limita.'
+        required: false
+        default: '30'
+      min_feature_coverage:
+        description: 'Fractiunea din caracteristicile modelului pe care o observatie trebuie sa le aiba ca sa fie punctata.'
+        required: false
+        default: '0.5'
+      rescore:
+        description: 'Repuncteaza si observatiile deja predictate de acest model.'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent in desfasurare) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Score observations (dry run first, always logged)
+        run: |
+          ARGS="--label ${{ github.event.inputs.label }}"
+          ARGS="$ARGS --max-age-days ${{ github.event.inputs.max_age_days }}"
+          ARGS="$ARGS --min-feature-coverage ${{ github.event.inputs.min_feature_coverage }}"
+          MODEL="${{ github.event.inputs.model }}"
+          if [ -n "$MODEL" ] && [ "$MODEL" != "0" ]; then
+            ARGS="$ARGS --model $MODEL"
+          fi
+          if [ "${{ github.event.inputs.rescore }}" = "true" ]; then
+            ARGS="$ARGS --rescore"
+          fi
+          echo "=== DRY RUN ==="
+          python scripts/predict.py $ARGS
+          echo "=== APPLY ==="
+          python scripts/predict.py $ARGS --apply
+
+      - name: Upload updated database to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber

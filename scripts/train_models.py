@@ -82,6 +82,7 @@ from src.domain.model_models import (
     ModelSpecification, ModelFamily, PredictionTask, TrainingWindow,
 )
 from src.modeling.engine import ModelingEngine, primary_metric_name
+from src.modeling.inference import save_predictions
 
 DEFAULT_DB = os.path.join(REPO_ROOT, "data", "marketlens.db")
 
@@ -254,28 +255,14 @@ def persist(conn: sqlite3.Connection, model, evaluation) -> None:
 
 
 def persist_predictions(conn: sqlite3.Connection, predictions) -> int:
-    """Store each prediction so a Phase 10 Signal can reference it by id."""
-    for prediction in predictions:
-        conn.execute("""
-            INSERT OR REPLACE INTO predictions (
-                prediction_id, trained_model_id, model_qualified_id, observation_id,
-                predicted_value, predicted_class, class_probabilities_json, confidence,
-                prediction_interval_low, prediction_interval_high, uncertainty_basis,
-                information_cutoff, feature_set_version, predicted_at,
-                is_abstention, abstention_reason
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            prediction.prediction_id, prediction.trained_model_id,
-            prediction.model_qualified_id, prediction.observation_id,
-            prediction.predicted_value, prediction.predicted_class,
-            json.dumps(prediction.class_probabilities) if prediction.class_probabilities else None,
-            prediction.confidence, prediction.prediction_interval_low,
-            prediction.prediction_interval_high, prediction.uncertainty_basis,
-            _iso(prediction.information_cutoff), prediction.feature_set_version,
-            _iso(prediction.predicted_at), int(prediction.is_abstention),
-            prediction.abstention_reason,
-        ))
-    return len(predictions)
+    """
+    Store each prediction so a Phase 10 Signal can reference it by id.
+
+    Delegates: `scripts/predict.py` writes the same rows for live
+    scoring, and one INSERT shared between them is one definition of a
+    prediction row.
+    """
+    return save_predictions(conn, predictions)
 
 
 def _iso(value) -> Optional[str]:
