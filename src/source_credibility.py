@@ -66,17 +66,54 @@ TIER_LABELS: Dict[str, str] = {
 TIER_ORDER: List[str] = ["official", "wire_and_major_press", "specialized_or_aggregator", "unclassified"]
 
 
+#: Prefixes whose tier follows from the RETRIEVAL CHANNEL rather than
+#: from a named publisher.
+#:
+#: 83% of this corpus arrives as "Google News: <Company>" — not 385
+#: separate publishers but one aggregator queried 385 ways. Calling
+#: those "unclassified" was accurate about the name and wrong about the
+#: source, and it pinned `source_quality` to the unclassified floor for
+#: every event in the database.
+#:
+#: An aggregator tier is the honest ceiling here: Google News does not
+#: tell us which publisher actually wrote the piece, so we cannot claim
+#: wire-service quality even when the underlying article is from one.
+CHANNEL_TIERS: List[tuple] = [
+    ("Google News:", "specialized_or_aggregator"),
+]
+
+#: The `news_sources` table spells this tier with "or", this module
+#: with "and". Same tier, and a source resolved through one path used
+#: to fall through to "unclassified" on the other.
+TIER_ALIASES: Dict[str, str] = {
+    "wire_or_major_press": "wire_and_major_press",
+}
+
+
+def normalize_tier(tier: Optional[str]) -> str:
+    """Map any known spelling of a tier onto the canonical one."""
+    if not tier:
+        return "unclassified"
+    return TIER_ALIASES.get(tier, tier)
+
+
 def get_source_tier(source_name: Optional[str]) -> str:
     """
-    Return the credibility tier for a source name. Returns
-    "unclassified" for anything not in SOURCE_TIERS (e.g. a new RSS
-    feed not yet categorized, or a dynamic source name coming from
-    Finnhub/Alpha Vantage's own per-article "source" field) — never
-    guesses, never raises.
+    Return the credibility tier for a source name.
+
+    Exact matches in SOURCE_TIERS win. Failing that, a channel prefix
+    (see CHANNEL_TIERS) classifies by how the article was retrieved.
+    Anything else is "unclassified" — never guessed, never raised.
     """
     if not source_name:
         return "unclassified"
-    return SOURCE_TIERS.get(source_name, "unclassified")
+    exact = SOURCE_TIERS.get(source_name)
+    if exact:
+        return normalize_tier(exact)
+    for prefix, tier in CHANNEL_TIERS:
+        if source_name.startswith(prefix):
+            return tier
+    return "unclassified"
 
 
 def summarize_sources(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

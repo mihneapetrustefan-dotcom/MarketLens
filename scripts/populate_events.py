@@ -65,6 +65,7 @@ if SRC not in sys.path:
 from src.data_access.news_schema import initialize_news_schema
 from src.data_access.event_repository import initialize_event_schema, EventRepository
 from src.events.extractor import EventExtractor
+from src.source_credibility import get_source_tier
 from src.events.fingerprint import compute_event_fingerprint
 from src.domain.event_models import ArticleEventLink, ArticleEventRelation, EventEvidence
 
@@ -193,6 +194,11 @@ def main() -> int:
         candidates = extractor.extract_from_article(
             article,
             entity_ids=article["_entity_ids"],
+            # Passed at last. The extractor has always accepted this and
+            # weighted it at 0.20; without it every event scored the
+            # `unclassified` 0.4 default, leaving source_quality one of
+            # four constant components in a five-component confidence.
+            source_tier=get_source_tier(article.get("source_name")),
         )
         if not candidates:
             no_classification += 1

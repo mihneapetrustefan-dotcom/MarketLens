@@ -7,7 +7,10 @@ Unit tests for Source Credibility v1.
 import unittest
 from collections import Counter
 
-from source_credibility import get_source_tier, summarize_sources, SOURCE_TIERS, TIER_ORDER
+from source_credibility import (
+    CHANNEL_TIERS, SOURCE_TIERS, TIER_ORDER, get_source_tier,
+    normalize_tier, summarize_sources,
+)
 
 
 def make_article(source):
@@ -32,6 +35,85 @@ class TestGetSourceTier(unittest.TestCase):
 
     def test_empty_string_source_is_unclassified(self):
         self.assertEqual(get_source_tier(""), "unclassified")
+
+
+class TestChannelTiering(unittest.TestCase):
+    """
+    83% of this corpus arrives as "Google News: <Company>".
+
+    Those are not 385 unknown publishers -- they are one aggregator
+    queried 385 ways. Reporting them as unclassified was accurate about
+    the NAME and wrong about the SOURCE, and it pinned the extractor's
+    source_quality component to its 0.4 floor for every event ever
+    stored.
+    """
+
+    def test_a_google_news_feed_is_an_aggregator(self):
+        self.assertEqual(get_source_tier("Google News: Apple"),
+                         "specialized_or_aggregator")
+
+    def test_every_google_news_feed_resolves_regardless_of_company(self):
+        for company in ("Apple", "Rivian Automotive", "Procter & Gamble",
+                        "Bristol Myers Squibb", "ASML Holding"):
+            self.assertEqual(get_source_tier(f"Google News: {company}"),
+                             "specialized_or_aggregator", company)
+
+    def test_an_exact_match_beats_the_channel_rule(self):
+        """
+        A named publisher keeps its own tier. The channel rule is a
+        fallback for retrieval paths that hide the publisher, not an
+        override of what we actually know.
+        """
+        self.assertEqual(get_source_tier("Reuters"), "wire_and_major_press")
+
+    def test_an_aggregator_tier_is_the_CEILING_not_the_publisher_tier(self):
+        """
+        Google News does not say who wrote the piece, so wire-service
+        quality cannot be claimed even when the underlying article came
+        from one. Asserted so nobody later "improves" this to 0.8.
+        """
+        self.assertNotEqual(get_source_tier("Google News: Reuters"),
+                            "wire_and_major_press")
+        self.assertEqual(get_source_tier("Google News: Reuters"),
+                         "specialized_or_aggregator")
+
+    def test_a_source_merely_containing_the_prefix_is_not_matched(self):
+        self.assertEqual(get_source_tier("Not Google News: Something"),
+                         "unclassified")
+
+    def test_the_channel_table_is_not_empty(self):
+        self.assertTrue(CHANNEL_TIERS)
+
+
+class TestTierAliases(unittest.TestCase):
+    """
+    The `news_sources` table spells one tier with "or", this module
+    with "and". The same tier resolved through one path and fell
+    through to "unclassified" on the other.
+    """
+
+    def test_the_or_spelling_normalises_to_the_and_spelling(self):
+        self.assertEqual(normalize_tier("wire_or_major_press"),
+                         "wire_and_major_press")
+
+    def test_a_canonical_tier_is_unchanged(self):
+        for tier in TIER_ORDER:
+            self.assertEqual(normalize_tier(tier), tier)
+
+    def test_none_normalises_to_unclassified(self):
+        self.assertEqual(normalize_tier(None), "unclassified")
+
+    def test_the_extractor_accepts_both_spellings(self):
+        """
+        Falling through to the 0.4 unclassified default is silent and
+        looks exactly like a genuinely unknown source, so the extractor
+        accepts both rather than trusting every caller to normalise.
+        """
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+        from src.events.extractor import _SOURCE_QUALITY_BY_TIER
+        self.assertEqual(_SOURCE_QUALITY_BY_TIER["wire_or_major_press"],
+                         _SOURCE_QUALITY_BY_TIER["wire_and_major_press"])
 
 
 class TestSummarizeSources(unittest.TestCase):

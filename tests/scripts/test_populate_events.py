@@ -6,6 +6,7 @@ articles+article_entities join, and end-to-end idempotency against
 a disposable temp database.
 """
 
+import json
 import os
 import sqlite3
 import sys
@@ -129,6 +130,55 @@ class TestEndToEndIdempotency(unittest.TestCase):
             return main()
         finally:
             sys.argv = argv
+
+    def test_the_source_tier_reaches_the_confidence_components(self):
+        """
+        The bug this guards: populate_events called the extractor
+        WITHOUT source_tier, so source_quality was the 0.4
+        `unclassified` default on every event ever stored -- one of
+        four constant components in a five-component confidence.
+
+        A test of get_source_tier alone would not have caught it. This
+        one reads the stored breakdown and asserts the tier arrived.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("UPDATE articles SET source = 'Reuters' WHERE article_id = 'a1'")
+        conn.commit()
+        conn.close()
+
+        self.assertEqual(self._run(["--apply"]), 0)
+
+        conn = sqlite3.connect(self.db_path)
+        raw = conn.execute(
+            "SELECT confidence_json FROM events LIMIT 1").fetchone()[0]
+        conn.close()
+
+        components = json.loads(raw).get("components", {})
+        quality = components.get("source_quality", {})
+        value = quality.get("value") if isinstance(quality, dict) else quality
+        self.assertEqual(value, 0.8,
+                         "Reuters is wire_and_major_press (0.8); 0.4 means "
+                         "the tier never reached the extractor")
+
+    def test_a_google_news_article_is_tiered_as_an_aggregator(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("UPDATE articles SET source = 'Google News: NVIDIA' "
+                     "WHERE article_id = 'a1'")
+        conn.commit()
+        conn.close()
+
+        self.assertEqual(self._run(["--apply"]), 0)
+
+        conn = sqlite3.connect(self.db_path)
+        raw = conn.execute(
+            "SELECT confidence_json FROM events LIMIT 1").fetchone()[0]
+        conn.close()
+
+        components = json.loads(raw).get("components", {})
+        quality = components.get("source_quality", {})
+        value = quality.get("value") if isinstance(quality, dict) else quality
+        self.assertEqual(value, 0.6,
+                         "a Google News feed is specialized_or_aggregator (0.6)")
 
     def test_second_run_creates_no_duplicate_events(self):
         self.assertEqual(self._run(["--apply"]), 0)

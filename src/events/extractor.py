@@ -55,6 +55,12 @@ _FINANCIAL_RELEVANCE_MARKERS = [
 _SOURCE_QUALITY_BY_TIER = {
     "official": 1.0,
     "wire_and_major_press": 0.8,
+    # The `news_sources` table spells the same tier with "or". Both
+    # are accepted here rather than relying on every caller to
+    # normalise, because falling through to the 0.4 unclassified
+    # default is silent and looks exactly like a genuinely unknown
+    # source.
+    "wire_or_major_press": 0.8,
     "specialized_or_aggregator": 0.6,
     "unclassified": 0.4,
 }
