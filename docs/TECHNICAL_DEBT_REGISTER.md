@@ -130,7 +130,7 @@ well-tested subsystems, and the spec (§1, §59) prefers incremental
 refactoring over rewriting working systems. Revisit when paper trading
 actually produces orders.
 
-### TD-05 — The Phase 4–12 pipeline is manual · **OPEN**
+### TD-05 — The Phase 4–12 pipeline is manual · **FIXED**
 
 **Component:** 19 of 23 GitHub Actions workflows
 
@@ -142,11 +142,31 @@ scheduled**. They run when a human clicks.
 **Risk:** this is the direct cause of 5 signals, 5 predictions, 2
 models and 38 empty tables. The architecture is sound and unexercised.
 
-**Recommended:** schedule the chain in dependency order, weekly at
-first. Not daily — several stages take hours and the concurrency group
-comment in `daily.yml` records a measured incident where a 2h38m
-research job caused the daily pipeline to be *skipped entirely for
-nearly 20 hours*.
+**Done:** `.github/workflows/pipeline.yml` runs all eleven stages in
+dependency order, on two cadences:
+
+- **Sunday 02:00 UTC** — the full chain including the price cache
+  (~2h30m)
+- **Wednesday 02:00 UTC** — refresh without the price cache (~3 min),
+  because predictions expire after 7 days and a weekly-only cadence
+  would leave signals at the limit right before every run
+
+02:00 UTC is deliberate: the daily pipeline runs at 13:00, 16:30 and
+21:15, and even the long variant finishes around 04:40. `daily.yml`
+records a measured incident where a 2h38m research job caused the daily
+pipeline to be *skipped entirely for nearly 20 hours*.
+
+One download and one upload for the whole chain, rather than eleven of
+each — every download/upload pair is a chance for a concurrent run to
+overwrite another's result.
+
+Every stage is `continue-on-error` with an `if: always()` upload: the
+scripts are idempotent and additive, so partial progress is safe and
+the next run resumes. A run summary reports each stage's outcome so a
+partial run does not read as a clean one.
+
+Rehearsed locally against a copy of production before shipping: all
+nine writing stages plus the dashboard, 176 seconds end to end.
 
 ---
 

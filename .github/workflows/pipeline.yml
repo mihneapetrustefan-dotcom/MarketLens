@@ -1,0 +1,266 @@
+name: Research Pipeline (all stages, automatic)
+
+# Ruleaza SINGUR intreg lantul de cercetare, in ordinea dependentelor.
+#
+# DE CE EXISTA
+# ------------
+# Toate cele 11 etape erau `workflow_dispatch` — rulau doar cand apasa
+# cineva un buton. Pe 2026-09-04 asta insemna: articole colectate zilnic
+# pana la 49.093, evenimente inghetate la 846 din 27 august, si toate
+# semnalele suprimate ca `stale_prediction`. Nu era nimic stricat.
+# Nimeni nu apasase.
+#
+# Un sistem care are nevoie de unsprezece clicuri saptamanale ca sa
+# ramana curent nu ramane curent.
+#
+# O SINGURA DESCARCARE, O SINGURA INCARCARE
+# -----------------------------------------
+# Toate etapele ruleaza pe ACELASI fisier local, descarcat o data la
+# inceput si incarcat o data la final. Alternativa — 11 workflow-uri
+# inlantuite — ar face 11 descarcari si 11 incarcari ale aceleiasi baze
+# de 139 MB, si fiecare pereche e o ocazie ca o rulare concurenta sa
+# suprascrie rezultatul alteia.
+#
+# DOUA CADENTE
+# ------------
+#   duminica 02:00 UTC  lantul COMPLET, inclusiv cache-ul de preturi
+#                       (~2h30m, apeleaza Polygon)
+#   miercuri 02:00 UTC  reimprospatare, FARA cache-ul de preturi
+#                       (~7 minute)
+#
+# Miercurea exista pentru ca predictiile expira dupa 7 zile
+# (`max_prediction_age_days`). Doar duminica ar lasa semnalele la limita
+# exact inainte de fiecare rulare.
+#
+# ORA e aleasa deliberat. Pipeline-ul zilnic ruleaza la 13:00, 16:30 si
+# 21:15 UTC. 02:00 e departe de toate trei, iar chiar si varianta lunga
+# se termina pe la 04:40 — cu mult inainte de prima rulare zilnica.
+# daily.yml documenteaza un incident masurat in care un job de cercetare
+# de 2h38m a facut ca pipeline-ul zilnic sa fie SARIT ~20 de ore.
+#
+# O ETAPA CAZUTA NU PIERDE CELELALTE
+# ----------------------------------
+# Fiecare etapa e `continue-on-error` si incarcarea finala e
+# `if: always()`. Scripturile sunt idempotente si aditive, deci progresul
+# partial e sigur si rularea urmatoare continua de unde s-a oprit.
+# Alternativa — oprire la prima eroare, fara incarcare — ar arunca munca
+# etapelor care AU reusit.
+#
+# Rezumatul de la final spune exact ce a reusit si ce nu, ca o rulare
+# partiala sa nu arate verde.
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'   # duminica — complet, cu preturi
+    - cron: '0 2 * * 3'   # miercuri — reimprospatare, fara preturi
+  workflow_dispatch:
+    inputs:
+      include_price_cache:
+        description: 'Include Cache Price Candles (~2h30m, apeleaza Polygon). Gol = NU (implicit sigur); duminica programata il ruleaza oricum.'
+        required: false
+        default: ''
+        type: choice
+        options: ['', 'true', 'false']
+      train:
+        description: 'Reantreneaza modelul. false = doar punctare cu modelul existent.'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: write
+
+concurrency:
+  # Acelasi grup ca celelalte workflow-uri de cercetare, ca o rulare
+  # manuala si una programata sa nu scrie in aceeasi baza simultan.
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Decide what this run does
+        id: plan
+        run: |
+          # Cache-ul de preturi ruleaza DOAR duminica sau cand cineva
+          # cere explicit. Orice altceva sare peste el.
+          #
+          # Implicit "false", nu "true": e un job de 2h30m care apeleaza
+          # un API extern, si o rulare manuala pornita din reflex nu
+          # trebuie sa-l declanseze din greseala.
+          MANUAL="${{ github.event.inputs.include_price_cache }}"
+          if [ "$MANUAL" = "true" ]; then
+            PRICES="true"
+          elif [ "$MANUAL" = "false" ]; then
+            PRICES="false"
+          elif [ "${{ github.event.schedule }}" = "0 2 * * 0" ]; then
+            PRICES="true"
+          else
+            PRICES="false"
+          fi
+          TRAIN="${{ github.event.inputs.train }}"
+          [ -z "$TRAIN" ] && TRAIN="true"
+          echo "prices=$PRICES" >> "$GITHUB_OUTPUT"
+          echo "train=$TRAIN" >> "$GITHUB_OUTPUT"
+          echo "Cache preturi : $PRICES"
+          echo "Reantrenare   : $TRAIN"
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+          ls -la data/marketlens.db
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ---------------- the chain, in dependency order ----------------
+
+      - name: '1/11 Backfill article entities'
+        id: s01
+        continue-on-error: true
+        run: python scripts/backfill_article_entities.py --apply
+
+      - name: '2/11 Populate events'
+        id: s02
+        continue-on-error: true
+        run: python scripts/populate_events.py --apply
+
+      - name: '3/11 Fuse events'
+        id: s03
+        continue-on-error: true
+        run: python scripts/fuse_events.py --apply
+
+      - name: '4/11 Cache price candles'
+        id: s04
+        if: steps.plan.outputs.prices == 'true'
+        continue-on-error: true
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        # Fara --limit-instruments: implicitul scriptului e deja "toate".
+        # `--limit-instruments 0` ar functiona doar pentru ca 0 e falsy in
+        # Python, ceea ce e prea subtil pentru a ne baza pe el.
+        # Fara --dry-run: si acela e store_true, deci absenta lui inseamna
+        # rulare reala.
+        run: python scripts/cache_price_candles.py
+
+      - name: '5/11 Build event studies'
+        id: s05
+        continue-on-error: true
+        run: python scripts/build_event_studies.py --apply
+
+      - name: '6/11 Build research observations'
+        id: s06
+        continue-on-error: true
+        run: python scripts/build_research_observations.py --apply
+
+      - name: '7/11 Compute features'
+        id: s07
+        continue-on-error: true
+        run: python scripts/compute_features.py --apply
+
+      - name: '8/11 Train models'
+        id: s08
+        if: steps.plan.outputs.train == 'true'
+        continue-on-error: true
+        run: python scripts/train_models.py --apply
+
+      - name: '9/11 Predict (score current observations)'
+        id: s09
+        continue-on-error: true
+        run: python scripts/predict.py --apply
+
+      - name: '10/11 Generate signals'
+        id: s10
+        continue-on-error: true
+        run: python scripts/generate_signals.py --apply
+
+      - name: '11/11 Rebuild dashboard'
+        id: s11
+        continue-on-error: true
+        run: python scripts/build_dashboard.py
+
+      # ---------------- persist, whatever happened --------------------
+
+      - name: Upload updated database to release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+
+      - name: Commit the rebuilt dashboard
+        if: always()
+        run: |
+          git config user.name "marketlens-bot"
+          git config user.email "actions@github.com"
+          git add docs/index.html || true
+          git diff --staged --quiet || git commit -m "Pipeline run $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main || true
+          git push || true
+
+      - name: Report what actually ran
+        if: always()
+        run: |
+          # A partial run must not read as a clean one.
+          {
+            echo "## Pipeline run"
+            echo ""
+            echo "| # | Stage | Outcome |"
+            echo "|---|---|---|"
+            echo "| 1 | Backfill article entities | ${{ steps.s01.outcome }} |"
+            echo "| 2 | Populate events | ${{ steps.s02.outcome }} |"
+            echo "| 3 | Fuse events | ${{ steps.s03.outcome }} |"
+            echo "| 4 | Cache price candles | ${{ steps.s04.outcome }} |"
+            echo "| 5 | Build event studies | ${{ steps.s05.outcome }} |"
+            echo "| 6 | Build research observations | ${{ steps.s06.outcome }} |"
+            echo "| 7 | Compute features | ${{ steps.s07.outcome }} |"
+            echo "| 8 | Train models | ${{ steps.s08.outcome }} |"
+            echo "| 9 | Predict | ${{ steps.s09.outcome }} |"
+            echo "| 10 | Generate signals | ${{ steps.s10.outcome }} |"
+            echo "| 11 | Rebuild dashboard | ${{ steps.s11.outcome }} |"
+            echo ""
+            echo "\`skipped\` on stage 4 or 8 is expected on a refresh run."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          FAILED=0
+          for o in "${{ steps.s01.outcome }}" "${{ steps.s02.outcome }}" \
+                   "${{ steps.s03.outcome }}" "${{ steps.s04.outcome }}" \
+                   "${{ steps.s05.outcome }}" "${{ steps.s06.outcome }}" \
+                   "${{ steps.s07.outcome }}" "${{ steps.s08.outcome }}" \
+                   "${{ steps.s09.outcome }}" "${{ steps.s10.outcome }}" \
+                   "${{ steps.s11.outcome }}"; do
+            [ "$o" = "failure" ] && FAILED=$((FAILED+1))
+          done
+          echo "Etape esuate: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "Baza a fost incarcata oricum: etapele reusite si-au pastrat"
+            echo "munca, iar scripturile fiind idempotente rularea urmatoare"
+            echo "continua de unde s-a oprit."
+            exit 1
+          fi
