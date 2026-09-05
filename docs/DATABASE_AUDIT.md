@@ -6,7 +6,11 @@ Spec §30, §31, §50, §61. SQLite, single file, `data/marketlens.db`.
 
 ## 1. Inventory
 
-**82 tables. 44 populated, 38 empty.** Plus 27 more (14 Phase 14
+**PRODUCTION: 47 tables, 42 populated, 5 empty.** (The 82/38 figure
+carried here through Phase 17 came from a local development copy, not
+from the release asset. Corrected in Phase 17.5.)
+
+Historically stated as: 82 tables, 44 populated, 38 empty.** Plus 27 more (14 Phase 14
 execution, 13 Phase 16 governance) that do not exist in the production
 database at all — they are created on first CLI run, and no execution
 CLI has ever been run against it.
@@ -23,7 +27,12 @@ Largest by row count:
    5,781  event_study_returns
 ```
 
-## 2. The 38 empty tables, by cause
+## 2. The empty tables, by cause
+
+*(38 was the local-copy figure through Phase 17. In production the
+number is 5: `event_corrections`, `event_instruments`, `event_sectors`,
+`ingestion_checkpoints`, `raw_articles`. The grouping below still
+explains what each kind means.)*
 
 The grouping matters — these mean different things:
 

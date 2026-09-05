@@ -3,6 +3,32 @@ src/fusion/clustering.py
 -----------------------------
 Event clustering and the event relation graph (Phase 5, §18-§22, §37).
 
+STATUS: BUILT, NOT WIRED (TD-07, reviewed Phase 18)
+-------------------------------------------------------
+`fusion/engine.py` imports `blocking`, `scoring` and `corroboration`.
+It does not import this module, and nothing else does either.
+
+This is NOT dead code and it is not a duplicate. Two pieces of
+evidence, gathered on 2026-09-05 against the production database:
+
+  1. There is no `event_clusters` table -- only an INDEX,
+     `idx_research_obs_cluster`. Nothing was ever created to persist
+     what `ClusterEngine` produces, so wiring it needs a schema first.
+     That is a missing decision, not a bug.
+
+  2. A DIFFERENT and much simpler clustering IS live and load-bearing:
+     `research_observations.event_cluster_id` holds 299 distinct
+     clusters across 1,049 observations, and the modeling engine uses
+     that count as its effective sample size. So the system already
+     depends on a notion of "cluster" -- a coarser one than this
+     module implements.
+
+The open question is therefore not "delete or keep" but "should the
+richer relation graph replace the coarse cluster id". That is a
+research decision with consequences for effective sample size and
+therefore for every model evaluation, and it is deliberately not being
+taken as a side effect of an audit.
+
 CLUSTER != EVENT (spec §20, §21): a cluster GROUPS related events into
 a developing story. It never merges them. "Partnership announced",
 "production expanded", "regulator responds" are three distinct

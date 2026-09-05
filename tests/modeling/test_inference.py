@@ -58,7 +58,14 @@ class InferenceCase(unittest.TestCase):
 
     def add_model(self, feature_names=("f.a", "f.b"), coefficients=(2.0, 10.0),
                   intercept=0.0, trained_model_id="tm-1",
-                  label_name="d5.abnormal_return", trained_at=None):
+                  label_name="d5.abnormal_return", trained_at=None,
+                  status="active"):
+        # ACTIVE by default so the tests in THIS file keep testing what
+        # they were written to test — the feature contract, the design
+        # matrix, provenance. The quality gate that decides whether a
+        # model may score at all is tested in
+        # tests/modeling/test_model_quality_gate.py, where a
+        # non-active status is the point rather than an obstacle.
         self.conn.execute("""
             INSERT INTO trained_models (
                 trained_model_id, model_id, model_qualified_id, name, task,
@@ -76,7 +83,7 @@ class InferenceCase(unittest.TestCase):
                           "intercept": intercept}),
               json.dumps(list(feature_names)),
               iso(NOW - timedelta(days=30)), iso(NOW - timedelta(days=8)),
-              100, 50, "trained", "[]",
+              100, 50, status, "[]",
               iso(trained_at or (NOW - timedelta(days=1)))))
         self.conn.commit()
 
@@ -138,7 +145,7 @@ class TestTheFeatureContract(InferenceCase):
         self.conn.execute("UPDATE trained_models SET feature_names_json = '[]'")
         self.conn.commit()
         with self.assertRaises(FeatureContractBroken) as caught:
-            load_model(self.conn)
+            load_model(self.conn)[0]
         self.assertIn("positional", str(caught.exception))
 
     def test_a_feature_the_model_never_saw_is_ignored(self):
@@ -254,12 +261,28 @@ class TestModelSelection(InferenceCase):
         with self.assertRaises(NoUsableModel):
             score(self.conn, now=NOW)
 
-    def test_the_newest_model_is_used_by_default(self):
+    def test_the_newest_ACTIVE_model_is_used_by_default(self):
+        """
+        Newest *among the promoted ones*. Phase 18 changed the tie-break
+        pool, not the tie-break: "newest" was never the problem, "any
+        model at all" was.
+        """
         self.add_model(trained_model_id="tm-old",
                        trained_at=NOW - timedelta(days=10))
         self.add_model(trained_model_id="tm-new",
                        trained_at=NOW - timedelta(days=1))
-        self.assertEqual(load_model(self.conn).trained_model_id, "tm-new")
+        self.assertEqual(load_model(self.conn)[0].trained_model_id, "tm-new")
+
+    def test_a_newer_UNPROMOTED_model_does_not_displace_the_active_one(self):
+        """
+        The exact regression NEW-01 describes: training something newer
+        must not change what production scores with.
+        """
+        self.add_model(trained_model_id="tm-active",
+                       trained_at=NOW - timedelta(days=10), status="active")
+        self.add_model(trained_model_id="tm-newer-but-unpromoted",
+                       trained_at=NOW - timedelta(days=1), status="evaluated")
+        self.assertEqual(load_model(self.conn)[0].trained_model_id, "tm-active")
 
     def test_a_model_can_be_pinned(self):
         self.add_model(trained_model_id="tm-old",
@@ -267,7 +290,7 @@ class TestModelSelection(InferenceCase):
         self.add_model(trained_model_id="tm-new",
                        trained_at=NOW - timedelta(days=1))
         self.assertEqual(
-            load_model(self.conn, trained_model_id="tm-old").trained_model_id,
+            load_model(self.conn, trained_model_id="tm-old")[0].trained_model_id,
             "tm-old")
 
     def test_scoring_will_not_pick_a_model_for_a_different_label(self):
@@ -279,7 +302,7 @@ class TestModelSelection(InferenceCase):
                        trained_at=NOW - timedelta(days=5))
         self.add_model(trained_model_id="tm-d20", label_name="d20.abnormal_return",
                        trained_at=NOW - timedelta(days=1))
-        picked = load_model(self.conn, label_name="d5.abnormal_return")
+        picked, _ = load_model(self.conn, label_name="d5.abnormal_return")
         self.assertEqual(picked.trained_model_id, "tm-d5")
 
 

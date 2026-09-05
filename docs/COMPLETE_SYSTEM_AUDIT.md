@@ -40,12 +40,15 @@ digit signal count.
 ## 1. Repository state
 
 ```
-src/      171 python files    (55 flat legacy + 116 in 17 packages)
-tests/    131 python files    2,815 tests
-scripts/   22 python files
+src/      176 python files    (55 flat legacy + 121 in 17 packages)
+tests/    141 python files    2,982 tests   (Phase 18)
+scripts/   25 python files
 docs/       7 files
-.github/   23 workflows
-data/     marketlens.db — 82 tables, 38 of them empty
+.github/   25 workflows
+data/     marketlens.db — PRODUCTION: 47 tables, 5 empty
+          (the 82/38 figure printed here through Phase 17 was measured
+           against a LOCAL development copy, not the release asset —
+           corrected in Phase 17.5, see PHASE_17_5_REAUDIT.md §1)
 ```
 
 Real (non-bot) commits: 24. The other 470 are automated data-refresh
@@ -110,7 +113,7 @@ Grouped by cause, because they mean different things:
 
 ## 5. Time model (spec §7)
 
-24 distinct timestamp column names across 82 tables. The important ones
+24 distinct timestamp column names across the schema. The important ones
 are correctly **separated rather than collapsed**:
 
 `event_time` · `publication_time` · `ingestion_time` · `detection_time`

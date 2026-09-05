@@ -75,7 +75,7 @@ nothing prunes `news_articles`. Canonical accumulates the full history,
 which is what spec §50 asks for and what makes Phase 5 entity links
 survive archiving — previously they dangled.
 
-### TD-02b — Seven readers still on the legacy table · **OPEN**
+### TD-02b — Readers on the legacy table · **PARTIALLY FIXED (Phase 18)**
 
 `dashboard.py`, `impact_engine.py`, `news_database.py`,
 `archive_old_articles.py`, `backfill_article_entities.py`,
@@ -96,7 +96,7 @@ module can import `src.domain.*`. Making the only scheduled production
 job depend on the package layer is a larger change than a backfill
 warrants, and it belongs with the reader migration above.
 
-### TD-03 — Two competing trade-idea schemas · **OPEN**
+### TD-03 — Two trade-idea tables presented as one thing · **RESOLVED (Phase 18)**
 
 **Component:** `recommendations` (22,725 rows) vs `signals` (5 rows)
 
@@ -140,7 +140,10 @@ research observations, event studies, backtests — **none is
 scheduled**. They run when a human clicks.
 
 **Risk:** this is the direct cause of 5 signals, 5 predictions, 2
-models and 38 empty tables. The architecture is sound and unexercised.
+models and a mostly-empty schema. The architecture is sound and
+unexercised. (Superseded: as of 2026-09-05 production holds 408 signals,
+549 predictions and 4 models, with 5 empty tables. See
+PHASE_17_5_REAUDIT.md §2.)
 
 **Done:** `.github/workflows/pipeline.yml` runs all eleven stages in
 dependency order, on two cadences:
@@ -172,7 +175,7 @@ nine writing stages plus the dashboard, 176 seconds end to end.
 
 ## MEDIUM
 
-### TD-06 — Scripts reimplement library modules · **OPEN**
+### TD-06 — Scripts reimplement library modules · **HALF WITHDRAWN (Phase 18)**
 
 | Script | Reimplements | Lines duplicated |
 |---|---|---|
@@ -186,7 +189,7 @@ business logic lives in scripts rather than services.
 **Recommended:** make the scripts thin CLIs over the library modules.
 Delete neither until the script is proven to produce identical output.
 
-### TD-07 — `src/fusion/clustering.py` is not used by the fusion engine · **OPEN**
+### TD-07 — `src/fusion/clustering.py` is not used by the fusion engine · **REVIEWED, DOCUMENTED (Phase 18)**
 
 261 lines, imported only by its test. `fusion/engine.py` imports
 `blocking`, `scoring` and `corroboration` but not `clustering`.
@@ -195,7 +198,7 @@ Delete neither until the script is proven to produce identical output.
 wire it. If no, remove with a note. Do not delete on the strength of
 static analysis alone (spec §58).
 
-### TD-08 — Legacy Phase 2 collectors superseded · **OPEN**
+### TD-08 — Legacy Phase 2 collectors superseded · **DEPRECATED IN PLACE (Phase 18)**
 
 `src/api_collector.py` and `src/web_scraper.py` are reached only by
 their tests. `run_daily.py` uses RSS, Finnhub and AlphaVantage
@@ -233,7 +236,7 @@ documentation, now present in `README` and CI.
 
 ## LOW
 
-### TD-15 — `archive_old_articles.py` ignores its db argument when writing · **OPEN**
+### TD-15 — `archive_old_articles.py` ignores its db argument when writing · **FIXED (Phase 18)**
 
 The script accepts a database path but writes archives to a hardcoded
 `REPO_ROOT/data/archives/` (line 49). Running it against a copy of the
@@ -245,17 +248,22 @@ throwaway copy appended to the live `articles_2026-07.jsonl.gz`. No
 data was lost (the change was reverted from git), but "run it on a
 copy first" is the standard safety habit and this script defeats it.
 
-**Recommended:** derive the archive directory from the database path,
-or add `--archive-dir`. Low effort, and it restores the ability to
-rehearse a destructive script safely.
+**Done.** Both: `archive_dir_for(db_path)` puts archives beside the
+database, and `--archive-dir` overrides it. Production is unaffected —
+`data/marketlens.db` still resolves to `data/archives`.
 
-### TD-11 — Stale git worktree · **OPEN**
+Proven rather than asserted: the script was run against a copy in a
+scratch directory, deleting 24,531 rows and writing 1.95 MB of
+archives there, after which all 31 real archive files were confirmed
+byte-identical by checksum and `git status data/` was clean.
+
+### TD-11 — Stale git worktree · **FIXED (Phase 18)**
 
 `.claude/worktrees/blissful-shaw-4e73ab` pinned at `c3256a3` (Phase
 13), abandoned branch. Excluded from `git status` but **not** from
 `grep` — it produced a false positive in this audit's own MT5 search.
 
-**Recommended:** `git worktree remove`.
+**Done.** Verified safe first: `c3256a3` is an ancestor of `main`, the branch held no unique commits, and its three uncommitted modifications were the same `.close()` fixes already on main as `ad88df3`. Backed up, then `git worktree remove --force` and the branch deleted.
 
 ### TD-12 — `requirements.txt` is unpinned · **FIXED**
 
@@ -272,10 +280,15 @@ resolved to on 2026-09-04 — `feedparser==6.0.14`, `pandas==3.0.5`,
 file carries the rule for moving one: its own commit, full suite, and a
 message saying what changed and why.
 
-### TD-13 — CI runs Python 3.11, development is 3.12 · **OPEN**
+### TD-13 — CI runs Python 3.11, development is 3.12 · **FIXED (Phase 18)**
 
-Low risk, easily fixed, worth aligning before it hides a real
-incompatibility.
+All 24 workflows moved to 3.12. Evidence: the full suite — 2,982
+tests — passes on 3.12 locally against the pinned dependency
+versions. One surface is unverified here: `yfinance` is imported
+lazily inside `backtest_engine.fetch_prices` and is not installed
+in the development environment, so its 3.12 support rests on package
+metadata. It is reached only by `run_backtest.yml`, which is manual
+and has never produced a row.
 
 ### TD-14 — 13 tests need `pandas`/`feedparser` and say so unclearly · **FIXED (prior)**
 
@@ -299,3 +312,77 @@ closing a leaked SQLite handle in three test seed helpers.
   status strings out of strategy and risk code, and makes a
   deterministic test double possible. It earns its place without a
   second venue.
+
+
+---
+
+## Phase 18 additions and corrections (2026-09-05)
+
+### TD-16 — Inference had no model quality gate · **FIXED**
+
+**Component:** `src/modeling/inference.py`
+
+`load_model()` selected `ORDER BY trained_at DESC LIMIT 1`. Newest won;
+`beats_all_baselines`, `r_squared` and effective sample were not
+consulted. All four production models failed their own baselines with
+negative r-squared, and the newest — directional accuracy 0.413 — made
+422 of 549 predictions, which became signals, ten of them active on a
+public page.
+
+**The gate already existed.** `ModelEvaluation.is_deployable` was
+written in Phase 9, unit-tested, and called by nothing. `ModelStatus`
+already had ACTIVE, and ACTIVE appeared nowhere outside a test listing
+the enum.
+
+**Action taken:** `src/modeling/selection.py` wires the existing
+criterion up; `src/modeling/promotion.py` and
+`scripts/promote_model.py` are the only path to ACTIVE and require a
+named approver, a stated reason, and a passing model. No threshold is
+defined anywhere in the new code and no argument can lower one. 50
+tests, including a check that no workflow and no other script can
+promote.
+
+**Verified end to end:** a full local pipeline rehearsal trained a new
+model, it stayed `evaluated`, and inference refused it by name.
+
+### TD-17 — Phase 17 miscounts, corrected
+
+Three findings did not survive re-reading the code:
+
+- **`impact_engine.py` is not a reader of `articles`.** It scores dicts
+  handed to it and queries nothing. TD-02b was seven readers; it is six.
+- **`src/research/builder.py` does not duplicate
+  `build_research_observations.py`.** The library assembles cohorts and
+  datasets at READ time (`CohortEngine`, `DatasetBuilder`,
+  `ResearchRegistry`); the script creates observations at WRITE time,
+  and its own docstring points at `DatasetBuilder` for the other half.
+  Half of TD-06 is withdrawn. The
+  `backfill_article_entities` / `entity_repository` half stands.
+- **`fusion_contradictions` has a producer.** It holds a row in
+  production, matching one canonical event marked `contradicted`.
+  Already corrected in Phase 17.5; repeated here because the register
+  still listed it under TD-09.
+
+### TD-18 — Event confidence spends 10% of its weight on a dimension it cannot know · **OPEN**
+
+`events.confidence_json` decomposes into five weighted components.
+Measured across all 1,517 production events:
+
+| Component | Weight | Distinct values | Span |
+|---|---:|---:|---:|
+| extraction_certainty | 0.35 | 16 | 0.317 |
+| entity_resolution_confidence | 0.25 | **1** | 0 |
+| source_quality | 0.20 | **1** | 0 |
+| temporal_certainty | 0.10 | **1** | 0 |
+| corroboration | 0.10 | **1** | 0 |
+
+Four of five are constant, which is why the total spans only
+0.45–0.56. `corroboration` is the structural one: the extractor works
+per article, and corroboration is established later by the fusion
+engine, so at extraction time it can only ever be 0.0. Ten per cent of
+the weight is allocated to something the calculation cannot observe.
+
+**Recommended:** either drop corroboration from the extraction-time
+score and let `canonical_events.quality_confidence` carry it, or
+recompute the event score after fusion. Not decided here — it changes
+every event confidence in the database.

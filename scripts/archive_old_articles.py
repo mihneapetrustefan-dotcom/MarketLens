@@ -46,7 +46,31 @@ from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+#: Default only. The real directory is DERIVED FROM THE DATABASE PATH
+#: (see `archive_dir_for`), because this script deletes rows and the
+#: standard way to test something that deletes is to run it against a
+#: copy first.
+#:
+#: TD-15: it used to be this constant unconditionally. A rehearsal
+#: against a throwaway copy during the TD-02 migration appended to the
+#: live articles_2026-07.jsonl.gz -- the script accepted a --db
+#: argument and then ignored it when writing. Nothing was lost, but a
+#: destructive script that cannot be rehearsed safely is one that will
+#: eventually be run unrehearsed.
 ARCHIVE_DIR = os.path.join(REPO_ROOT, "data", "archives")
+
+
+def archive_dir_for(db_path: str) -> str:
+    """
+    Where the archives for THIS database belong.
+
+    Sibling of the database file: data/marketlens.db -> data/archives,
+    which is exactly where production already writes, so this changes
+    nothing for the scheduled run. A copy at /tmp/x/marketlens.db
+    archives to /tmp/x/archives instead of into the repository.
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(db_path)), "archives")
 
 #: Column names checked, in order of preference, to find the article's
 #: publication timestamp. The first one actually present in the real
@@ -83,7 +107,8 @@ def month_key(moment: datetime) -> str:
     return moment.strftime("%Y-%m")
 
 
-def archive_old_articles(conn: sqlite3.Connection, keep_days: int) -> int:
+def archive_old_articles(conn: sqlite3.Connection, keep_days: int,
+                         archive_dir: str = ARCHIVE_DIR) -> int:
     """
     Move `articles` rows older than `keep_days` into monthly
     gzip-compressed JSONL files under data/archives/, then delete them
@@ -147,17 +172,17 @@ def archive_old_articles(conn: sqlite3.Connection, keep_days: int) -> int:
         print(f"Niciun articol mai vechi de {keep_days} zile — nimic de arhivat.")
         return 0
 
-    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    os.makedirs(archive_dir, exist_ok=True)
     total_archived = 0
     for month, records in sorted(by_month.items()):
-        archive_path = os.path.join(ARCHIVE_DIR, f"articles_{month}.jsonl.gz")
+        archive_path = os.path.join(archive_dir, f"articles_{month}.jsonl.gz")
         # Append mode: if this month's archive already exists from a
         # previous run, add to it rather than overwriting — repeated
         # runs must never lose a prior archive.
         with gzip.open(archive_path, "at", encoding="utf-8") as f:
             for record in records:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        print(f"  arhivate {len(records)} articole din {month} -> {os.path.relpath(archive_path, REPO_ROOT)} "
+        print(f"  arhivate {len(records)} articole din {month} -> {archive_path} "
               f"({human_mb(os.path.getsize(archive_path))})")
         total_archived += len(records)
 
@@ -188,6 +213,11 @@ def vacuum(conn: sqlite3.Connection) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Archive old MarketLens articles to compressed files, shrinking the live database.")
     parser.add_argument("db_path", nargs="?", default=os.path.join(REPO_ROOT, "data", "marketlens.db"))
+    parser.add_argument("--archive-dir", default=None,
+                        help="Where to write the .jsonl.gz archives. "
+                             "Default: an 'archives' directory beside the "
+                             "database, so running against a copy cannot "
+                             "touch the real archive (TD-15).")
     parser.add_argument("--keep-days", type=int, default=180,
                          help="Days of articles to keep live/queryable (default: 180). Older articles are archived, not deleted.")
     args = parser.parse_args()
@@ -200,7 +230,9 @@ def main() -> int:
     print(f"Dimensiune fisier INAINTE: {human_mb(size_before)}")
 
     conn = sqlite3.connect(args.db_path)
-    archived = archive_old_articles(conn, args.keep_days)
+    archive_dir = args.archive_dir or archive_dir_for(args.db_path)
+    print(f"Arhive        : {archive_dir}")
+    archived = archive_old_articles(conn, args.keep_days, archive_dir)
     if archived:
         vacuum(conn)
     conn.close()
@@ -220,7 +252,7 @@ def main() -> int:
         print("\nATENTIE: fisierul se apropie de limita de 2 GB a GitHub Release asset-ului.")
         print("Ramane totusi doar un avertisment — pipeline-ul continua normal.")
 
-    print("\nOK — istoricul e pastrat integral, in arhive comprimate sub data/archives/.")
+    print(f"\nOK — istoricul e pastrat integral, in arhive comprimate sub {archive_dir}.")
     return 0
 
 

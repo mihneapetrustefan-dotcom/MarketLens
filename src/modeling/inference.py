@@ -63,16 +63,22 @@ from src.domain.model_models import (
     TrainedModel,
 )
 from src.modeling.engine import ModelingEngine
+# Imported as a module: `selection` also exports `candidates()`, and
+# this file already has one that means something entirely different.
+from src.modeling import selection as model_selection
+from src.modeling.selection import (
+    NO_VALIDATED_MODEL_AVAILABLE, ModelEligibility, NoUsableModel,
+    NoValidatedModel, SelectionPolicy,
+)
 
-
-class NoUsableModel(Exception):
-    """
-    Raised when no trained model can be applied.
-
-    An exception rather than an empty result: a caller that silently
-    scored nothing would look identical to one that scored everything
-    and found no signal.
-    """
+# Re-exported, not redefined. `NoUsableModel` lives in `selection` so
+# that `NoValidatedModel` can inherit from it; callers importing it
+# from here are unaffected, and catching the base still catches both.
+__all__ = [
+    "FeatureContractBroken", "NoUsableModel", "NoValidatedModel",
+    "ScoringReport", "SelectionPolicy", "build_matrix", "candidates",
+    "load_model", "save_predictions", "score",
+]
 
 
 class FeatureContractBroken(Exception):
@@ -90,6 +96,13 @@ class ScoringReport:
     """What one inference pass did, and what it declined to do."""
     model_qualified_id: str = ""
     trained_model_id: str = ""
+    #: The verdict that let this model score. Carried on the report so
+    #: that "which model produced these numbers, and was it allowed to"
+    #: is answerable from the output rather than from the call site.
+    model_status: str = ""
+    model_verdict: str = ""
+    deployable: Optional[bool] = None
+    eligibility_reasons: List[str] = field(default_factory=list)
     candidates: int = 0
     scored: int = 0
     abstained: int = 0
@@ -100,10 +113,24 @@ class ScoringReport:
     feature_coverage: Dict[str, int] = field(default_factory=dict)
     newest_cutoff: Optional[datetime] = None
 
+    @property
+    def is_experimental(self) -> bool:
+        """
+        True when these predictions did NOT come from a promoted model.
+
+        Derived from status rather than stored, so it cannot claim
+        validated provenance for a model that was since retired.
+        """
+        return self.model_status != ModelStatus.ACTIVE.value
+
     def as_dict(self) -> Dict[str, Any]:
         return {
             "model": self.model_qualified_id,
             "trained_model_id": self.trained_model_id,
+            "model_status": self.model_status,
+            "model_verdict": self.model_verdict,
+            "deployable": self.deployable,
+            "is_experimental": self.is_experimental,
             "candidates": self.candidates,
             "scored": self.scored,
             "abstained": self.abstained,
@@ -130,37 +157,40 @@ def _parse(value: Optional[str]) -> Optional[datetime]:
 
 def load_model(conn: sqlite3.Connection,
                trained_model_id: Optional[str] = None,
-               label_name: Optional[str] = None) -> TrainedModel:
+               label_name: Optional[str] = None,
+               policy: SelectionPolicy = SelectionPolicy.ACTIVE_ONLY
+               ) -> Tuple[TrainedModel, ModelEligibility]:
     """
-    Rebuild a `TrainedModel` from the database.
+    Rebuild a `TrainedModel` from the database — if it is allowed to
+    score.
 
-    Without `trained_model_id`, the most recently trained model is
-    used — and for a given label if one is named, so scoring for
-    `d5.abnormal_return` cannot accidentally pick up a model fitted
-    against a different target.
+    Returns the model AND the eligibility verdict that admitted it, so
+    a caller cannot use the model without also holding the reason it
+    was permitted. That pairing is the point: the previous version
+    returned a model and no context, and every caller therefore
+    treated "a model came back" as "a model may be used".
+
+    Selection is delegated to `src/modeling/selection.py`, which
+    consults `ModelEvaluation.is_deployable` — the gate Phase 9 wrote
+    and nothing called. No threshold is defined here, and none can be
+    passed in.
+
+    Default policy is ACTIVE_ONLY. Under it, a model nobody promoted
+    raises `NoValidatedModel` instead of quietly scoring.
     """
-    sql = """
+    verdict = model_selection.select(
+        conn, label_name=label_name, policy=policy,
+        trained_model_id=trained_model_id)
+
+    row = conn.execute("""
         SELECT trained_model_id, model_id, model_qualified_id, name, task,
                family, model_version, label_name, label_version,
                feature_set_id, feature_set_version, dataset_version,
                hyperparameters_json, parameters_json, feature_names_json,
                train_start, train_end, train_sample_size, train_cluster_count,
                status, trained_at
-        FROM trained_models
-    """
-    params: List[Any] = []
-    where = []
-    if trained_model_id:
-        where.append("trained_model_id = ?")
-        params.append(trained_model_id)
-    if label_name:
-        where.append("label_name = ?")
-        params.append(label_name)
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY trained_at DESC LIMIT 1"
-
-    row = conn.execute(sql, params).fetchone()
+        FROM trained_models WHERE trained_model_id = ?
+    """, (verdict.trained_model_id,)).fetchone()
     if row is None:
         raise NoUsableModel(
             "No trained model matches. Run scripts/train_models.py first; "
@@ -181,7 +211,7 @@ def load_model(conn: sqlite3.Connection,
         dataset_version=row[11],
         hyperparameters=json.loads(row[12] or "{}"))
 
-    return TrainedModel(
+    model = TrainedModel(
         trained_model_id=row[0],
         specification=specification,
         parameters=json.loads(row[13] or "{}"),
@@ -190,6 +220,9 @@ def load_model(conn: sqlite3.Connection,
         train_sample_size=row[17] or 0, train_cluster_count=row[18],
         status=ModelStatus(row[19]) if row[19] else ModelStatus.TRAINED,
         trained_at=_parse(row[20]))
+    # Paired deliberately: holding the model without the verdict is
+    # exactly the state that let an unvalidated model score.
+    return model, verdict
 
 
 def candidates(conn: sqlite3.Connection, model: TrainedModel,
@@ -314,7 +347,8 @@ def score(conn: sqlite3.Connection,
           min_feature_coverage: float = 0.5,
           now: Optional[datetime] = None,
           rescore: bool = False,
-          engine: Optional[ModelingEngine] = None
+          engine: Optional[ModelingEngine] = None,
+          policy: SelectionPolicy = SelectionPolicy.ACTIVE_ONLY
           ) -> Tuple[List[Any], ScoringReport]:
     """
     Apply a trained model to everything it has not scored yet.
@@ -322,11 +356,20 @@ def score(conn: sqlite3.Connection,
     Returns the predictions and a report of what was declined. Nothing
     is written — persistence is the caller's, so a dry run is the
     default shape rather than a flag threaded through.
+
+    `policy` defaults to ACTIVE_ONLY. A caller that wants to score with
+    an unpromoted model must say so, and the report then carries
+    `is_experimental=True` so the fact travels with the output instead
+    of being lost at the call site.
     """
-    model = load_model(conn, trained_model_id, label_name)
+    model, verdict = load_model(conn, trained_model_id, label_name, policy)
     report = ScoringReport(
         model_qualified_id=model.specification.qualified_id,
-        trained_model_id=model.trained_model_id)
+        trained_model_id=model.trained_model_id,
+        model_status=verdict.status.value,
+        model_verdict=verdict.verdict,
+        deployable=verdict.deployable,
+        eligibility_reasons=list(verdict.reasons))
 
     rows = candidates(conn, model, max_age_days, now, rescore)
     report.candidates = len(rows)

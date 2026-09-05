@@ -10,7 +10,20 @@
 # 2026-09-04, so pinning them changes nothing that runs today. It only
 # stops tomorrow from changing on its own.
 #
-# All three support the Python 3.11 that CI runs.
+# PYTHON VERSION (TD-13, fixed in Phase 18)
+#
+# CI ran 3.11 while development ran 3.12. Both are now 3.12 across all
+# 24 workflows. The full suite -- 2,900+ tests -- passes on 3.12
+# locally with exactly these pinned versions, which is the evidence
+# for the change.
+#
+# One surface is not verified locally: `yfinance` is imported lazily
+# inside `backtest_engine.fetch_prices`, and it is not installed in
+# the development environment, so its 3.12 compatibility rests on the
+# package metadata rather than on a run here. It is reached only by
+# `run_backtest.yml`, which is manual and has never produced a row.
+# If that workflow ever fails on import, this is the first place to
+# look.
 #
 # To move one: bump it here in its own commit, run the full suite, and
 # say in the message what changed and why. Never as a side effect of

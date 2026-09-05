@@ -3,6 +3,23 @@ web_scraper.py
 -----------------
 Web Scraper module for MarketLens.
 
+STATUS: DEPRECATED, KEPT (TD-08, reviewed Phase 18)
+--------------------------------------------------------
+Nothing in the running system imports this module. `run_daily.py` --
+the only scheduled production job -- collects through the RSS, Finnhub
+and AlphaVantage collectors instead. Verified again on 2026-09-05: a
+repository-wide search for consumers outside this file and its own
+tests returns nothing.
+
+It is kept rather than deleted because it is a working, tested
+implementation of a real collection strategy, and the cost of keeping
+it is one file. It should be removed if it still has no consumer after
+one more phase.
+
+Do not treat this notice as permission to delete it silently: removing
+a collector is a decision about what news the system can reach, and
+belongs in a phase that says so.
+
 RESPONSIBILITY:
 Collect news articles from sources that expose NEITHER an RSS feed NOR
 a JSON API — only a plain HTML page listing recent articles. This is

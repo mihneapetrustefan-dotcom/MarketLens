@@ -135,7 +135,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -196,10 +196,23 @@ jobs:
         continue-on-error: true
         run: python scripts/train_models.py --apply
 
-      - name: '9/11 Predict (score current observations)'
+      # --experimental is deliberate and belongs HERE, in the open,
+      # rather than as a default inside the code.
+      #
+      # Since Phase 18 inference refuses by default to score with a
+      # model no human promoted. No model currently passes the gate --
+      # all four are worse than predicting the mean -- so the honest
+      # options are (a) produce nothing, or (b) produce clearly-marked
+      # research output. (b) keeps the eleven-stage chain exercised,
+      # which is the system's actual value today, and every prediction
+      # and signal it makes is labelled experimental end to end.
+      #
+      # When a model is finally promoted, DELETE the flag. The stage
+      # then produces production output and nothing else changes.
+      - name: '9/11 Predict (score current observations, EXPERIMENTAL)'
         id: s09
         continue-on-error: true
-        run: python scripts/predict.py --apply
+        run: python scripts/predict.py --apply --experimental
 
       - name: '10/11 Generate signals'
         id: s10

@@ -25,10 +25,20 @@ WHERE IT SITS
 -----------------
     compute_features  ->  train_models  ->  [ predict ]  ->  generate_signals
 
-Run it after training, before signal generation. It does not train and
-it does not judge: a model with no edge scores just as willingly as a
-good one. Whether the resulting predictions are worth anything is what
-`model_evaluations.beats_all_baselines` is for.
+Run it after training, before signal generation. It does not train.
+
+IT DOES, SINCE PHASE 18, JUDGE
+----------------------------------
+The sentence that used to sit here read: *it does not judge -- a model
+with no edge scores just as willingly as a good one*. That was
+accurate and it was the bug. `beats_all_baselines` existed and nothing
+consulted it, so a model worse than predicting the mean scored 422
+observations that became signals on a public page.
+
+Selection now goes through `src/modeling/selection.py`, which asks the
+evaluator's own `is_deployable`. By default only a model a human
+promoted may score. `--experimental` scores with an unpromoted one for
+research, says so loudly, and marks the report.
 
 WHAT IT REFUSES
 -------------------
@@ -56,6 +66,7 @@ from src.data_access.model_schema import initialize_model_schema
 from src.modeling.inference import (
     FeatureContractBroken, NoUsableModel, save_predictions, score,
 )
+from src.modeling.selection import NoValidatedModel, SelectionPolicy
 
 DEFAULT_DB = os.path.join("data", "marketlens.db")
 
@@ -84,10 +95,18 @@ def main() -> int:
     parser.add_argument("--rescore", action="store_true",
                         help="Also re-score observations this model has "
                              "already predicted.")
+    parser.add_argument("--experimental", action="store_true",
+                        help="Score with a model that has NOT been promoted. "
+                             "For research and for keeping the chain "
+                             "exercised while no model passes the gate. "
+                             "Everything produced is marked experimental.")
     parser.add_argument("--apply", action="store_true",
                         help="Actually write. Without this the script is a "
                              "dry run.")
     args = parser.parse_args()
+
+    policy = (SelectionPolicy.EXPERIMENTAL if args.experimental
+              else SelectionPolicy.ACTIVE_ONLY)
 
     if not os.path.exists(args.db):
         print(f"No database at {args.db}.")
@@ -110,7 +129,18 @@ def main() -> int:
             label_name=args.label or None,
             max_age_days=(None if args.max_age_days == 0 else args.max_age_days),
             min_feature_coverage=args.min_feature_coverage,
-            rescore=args.rescore)
+            rescore=args.rescore,
+            policy=policy)
+    except NoValidatedModel as error:
+        line("NO VALIDATED MODEL AVAILABLE")
+        print(error.report())
+        print()
+        print("  Nothing was written. This is the gate working, not a")
+        print("  failure to configure: scoring with a model that does not")
+        print("  beat its baselines produces numbers indistinguishable from")
+        print("  real ones. Promote a model (scripts/promote_model.py) or")
+        print("  pass --experimental to score for research.")
+        return 1
     except NoUsableModel as error:
         line("NO MODEL")
         print(f"  {error}")
@@ -126,6 +156,16 @@ def main() -> int:
 
     line("MODEL")
     print(f"  {report.model_qualified_id}  ({report.trained_model_id})")
+    print(f"  status                   {report.model_status}"
+          f"   verdict: {report.model_verdict}")
+    if report.is_experimental:
+        print()
+        print("  " + "!" * 66)
+        print("  EXPERIMENTAL. This model has not been promoted, so these")
+        print("  predictions are research output, not production output.")
+        for reason in report.eligibility_reasons:
+            print(f"    - {reason}")
+        print("  " + "!" * 66)
 
     line("SCORING")
     print(f"  candidate observations   {report.candidates:,}")

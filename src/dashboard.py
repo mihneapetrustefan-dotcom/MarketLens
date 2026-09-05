@@ -138,13 +138,30 @@ class DashboardGenerator:
         except sqlite3.OperationalError:
             pass
 
-        total_articles = _scalar(conn, "SELECT COUNT(*) FROM articles", default=0) if _table_exists(conn, "articles") else 0
+        # TD-02b. These three aggregates now describe the CANONICAL
+        # corpus (`news_articles`), which is the source of truth the
+        # migration established. They fall back to the legacy table on
+        # a database predating the migration -- a health page that
+        # reports zero articles because a table is absent is worse than
+        # one reporting the older number.
+        #
+        # The two corpora differ on purpose: `archive_old_articles.py`
+        # prunes `articles` to 60 days and nothing prunes canonical, so
+        # canonical is a superset reaching further back. Measured on
+        # production 2026-09-05: 48,955 canonical vs 48,906 legacy,
+        # oldest 2023-12-15 vs 2026-07-07.
+        news_table = ("news_articles" if _table_exists(conn, "news_articles")
+                      and _scalar(conn, "SELECT COUNT(*) FROM news_articles", default=0)
+                      else "articles")
+        source_column = "source_name" if news_table == "news_articles" else "source"
+        total_articles = _scalar(conn, f"SELECT COUNT(*) FROM {news_table}", default=0) if _table_exists(conn, news_table) else 0
         linked_articles = _scalar(
             conn, "SELECT COUNT(DISTINCT article_id) FROM article_entities", default=0
         ) if _table_exists(conn, "article_entities") else 0
-        sources = _scalar(conn, "SELECT COUNT(DISTINCT source) FROM articles WHERE source IS NOT NULL", default=0) \
+        sources = _scalar(conn, f"SELECT COUNT(DISTINCT {source_column}) FROM {news_table} WHERE {source_column} IS NOT NULL", default=0) \
             if _table_exists(conn, "articles") else 0
-        latest_article = _scalar(conn, "SELECT MAX(published_at) FROM articles") if _table_exists(conn, "articles") else None
+        latest_article = _scalar(conn, f"SELECT MAX(published_at) FROM {news_table}") if _table_exists(conn, news_table) else None
+        oldest_article = _scalar(conn, f"SELECT MIN(published_at) FROM {news_table}") if _table_exists(conn, news_table) else None
         return {
             "size_bytes": size_bytes,
             "total_articles": total_articles,
@@ -152,6 +169,13 @@ class DashboardGenerator:
             "entity_coverage": (linked_articles / total_articles) if total_articles else None,
             "sources": sources,
             "latest_article": latest_article,
+            "oldest_article": oldest_article,
+            #: Which corpus the four numbers above describe. Named so
+            #: the page can say it rather than leaving a reader to
+            #: assume, and so a fallback to legacy is visible.
+            "news_table": news_table,
+            "legacy_articles": _scalar(conn, "SELECT COUNT(*) FROM articles",
+                                       default=0) if _table_exists(conn, "articles") else 0,
         }
 
     def _collect_events(self, conn: sqlite3.Connection) -> Dict[str, Any]:
@@ -194,16 +218,38 @@ class DashboardGenerator:
                 "feature_coverage": feature_coverage, "feature_count": total_features_attempted}
 
     def _collect_models(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Models, with the lifecycle status that decides whether they may
+        score (Phase 18, NEW-01).
+
+        Columns 7-11 are APPENDED to the existing seven. The page reads
+        this tuple positionally, so a new column goes on the end or it
+        silently relabels five others.
+        """
         if not _table_exists(conn, "trained_models"):
             return {"available": False}
         models = _rows(conn, """
             SELECT m.model_qualified_id, m.label_name, m.train_sample_size, m.train_cluster_count,
-                   e.small_sample, e.beats_all_baselines, e.metrics_json
+                   e.small_sample, e.beats_all_baselines, e.metrics_json,
+                   m.status, m.trained_at, e.evaluated_at,
+                   m.dataset_version, m.feature_set_version
             FROM trained_models m LEFT JOIN model_evaluations e ON e.trained_model_id = m.trained_model_id
             ORDER BY m.trained_at DESC LIMIT 20
         """)
         predictions = _scalar(conn, "SELECT COUNT(*) FROM predictions", default=0) if _table_exists(conn, "predictions") else 0
-        return {"available": True, "models": models, "predictions": predictions}
+        active = _scalar(conn, """
+            SELECT COUNT(*) FROM trained_models WHERE status = 'active'
+        """, default=0)
+        # Promotion history is optional: the table only exists once
+        # something has been promoted, and a dashboard must not require
+        # it in order to render.
+        promotions = _rows(conn, """
+            SELECT trained_model_id, action, from_status, to_status,
+                   approved_by, reason, promoted_at
+            FROM model_promotions ORDER BY promoted_at DESC LIMIT 10
+        """) if _table_exists(conn, "model_promotions") else []
+        return {"available": True, "models": models, "predictions": predictions,
+                "active": active, "promotions": promotions}
 
     def _collect_signals(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         if not _table_exists(conn, "signals"):
@@ -241,7 +287,33 @@ class DashboardGenerator:
             JOIN companies co ON co.company_id = se.company_id
         """):
             names[instrument_id] = (name, ticker)
+
+        # Index 10: the status of the model that produced this signal
+        # (Phase 18, NEW-01/§11/§12).
+        #
+        # DERIVED at read time from `trained_models.status` rather than
+        # stored on the signal. Storing a snapshot would let a signal go
+        # on claiming validated provenance after its model was demoted,
+        # and "was this produced by a model that is approved NOW" is the
+        # question a reader is actually asking before acting on it.
+        #
+        # Guarded separately for the same reason the name lookup is:
+        # `_rows` swallows a missing table into [], so joining this into
+        # the signals query would delete every signal on a database
+        # without a model registry.
+        model_status = {}
+        for signal_id, status in _rows(conn, """
+            SELECT c.signal_id, m.status
+            FROM signal_contributions c
+            JOIN trained_models m ON m.trained_model_id = c.trained_model_id
+        """):
+            # A signal with several contributions is only as validated
+            # as its weakest input: one unpromoted model in the mix
+            # makes the whole signal experimental.
+            if signal_id not in model_status or status != "active":
+                model_status[signal_id] = status
         recent = [tuple(row) + names.get(row[1], (None, None))
+                  + (model_status.get(row[0]),)
                   for row in recent]
         evaluations = _rows(conn, """
             SELECT cohort_kind, cohort_value, horizon, sample_size, hit_rate,
@@ -1786,6 +1858,34 @@ table.data tr.sel { background:var(--accent-bg); }
       '</div><div class="blk-body">' + bodyHtml + '</div></section>';
   }
 
+  // Phase 18 / NEW-01. One definition of what a model status looks
+  // like, used by the model cards, the signal rows and the detail
+  // panel, so the three cannot end up disagreeing about whether a
+  // model is approved.
+  var MODEL_STATUS_LABEL = {
+    active:    ["VALIDAT", "#00795a", "model promovat de un om dupa ce a trecut pragul de calitate"],
+    evaluated: ["EXPERIMENTAL", "#ae6c00", "model masurat dar nepromovat — rezultat de cercetare, nu de productie"],
+    trained:   ["NEEVALUAT", "#8a8a8a", "model antrenat dar neevaluat — nu poate fi judecat"],
+    draft:     ["SCHITA", "#8a8a8a", "model incomplet"],
+    degraded:  ["DEGRADAT", "#ae1800", "a fost activ; dovezile ulterioare l-au retras"],
+    retired:   ["RETRAS", "#8a8a8a", "inlocuit de un model mai bun; pastrat pentru audit"]
+  };
+
+  function modelStatusPill(status, size) {
+    var entry = MODEL_STATUS_LABEL[String(status || "").toLowerCase()];
+    if (!entry) return "";
+    return '<span class="pill" title="' + esc(entry[2]) + '" style="border:1px solid ' +
+      entry[1] + ';color:' + entry[1] + ';font-size:' + (size || 10) + 'px;padding:2px 6px;">' +
+      entry[0] + '</span>';
+  }
+
+  // s[10] is the status of the model that produced this signal.
+  // Anything that is not 'active' means the reader must not treat the
+  // number as a validated claim.
+  function signalIsExperimental(s) {
+    return String(s[10] || "").toLowerCase() !== "active";
+  }
+
   function signalLabel(s) {
     // s[8] company name, s[9] ticker, s[1] instrument_id.
     // The id is the fallback, not the default: it is a storage key, and
@@ -2280,7 +2380,7 @@ table.data tr.sel { background:var(--accent-bg); }
         cell("strategie", fmtPct(m.total_return, 2)) +
         cell("benchmark", fmtPct(m.benchmark_return, 2)) +
         cell("excedent", fmtPct(m.excess_return, 2)) +
-        '</div></section>';
+      '</div></section>';
     }
 
     // --- equity curve ---
@@ -2314,7 +2414,7 @@ table.data tr.sel { background:var(--accent-bg); }
           ? '<div class="copy" style="margin-top:12px;">' + q.notes.map(function (n) {
               return '<p>- ' + esc(n) + '</p>'; }).join("") + '</div>'
           : "") +
-        '</div></section>';
+      '</div></section>';
     }
 
     // --- warnings ---
@@ -2507,7 +2607,7 @@ table.data tr.sel { background:var(--accent-bg); }
     { label: "Inteligenta", items: [
       { id: "news", label: "Stiri", tag: fmtNum(D.health.total_articles) },
       { id: "events", label: "Evenimente", tag: D.events.available ? fmtNum(D.events.total) : "0" },
-      { id: "signals", label: "Semnale", tag: D.signals.available ? fmtNum(D.signals.total) : "0" }
+      { id: "signals", label: "Semnale (model)", tag: D.signals.available ? fmtNum(D.signals.total) : "0" }
     ]},
     { label: "Portofoliu", items: [
       { id: "portfolio", label: "Portofoliu", tag: PF_COUNT ? String(PF_COUNT) : "0" },
@@ -2517,7 +2617,7 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "execution", label: "Executie", tag: XE_BROKERS.length ? String(XE_BROKERS.length) : "0" }
     ]},
     { label: "Performanta", items: [
-      { id: "outcomes", label: "Rezultate", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
+      { id: "outcomes", label: "Recomandari (sentiment)", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
       { id: "models", label: "Modele", tag: D.models.available ? String(D.models.models.length) : "0" },
       { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true }
     ]}
@@ -2637,7 +2737,7 @@ table.data tr.sel { background:var(--accent-bg); }
       html += '<section class="blk"><div class="grid2">' +
         '<div><div class="blk-head"><h2>Evenimente pe tip</h2><span class="blk-note">' + fmtNum(D.events.total) + ' evenimente canonice</span></div><div class="blk-body">' + evLeft + '</div></div>' +
         '<div><div class="blk-head"><h2>Corroborare</h2><span class="blk-note warn">' + corrobPct + '% o singura sursa</span></div><div class="blk-body">' + evRight + '</div></div>' +
-        '</div></section>';
+      '</div></section>';
     } else {
       html += blk("Evenimente si fuziune", null, '<div class="empty">Fazele 4-5 nu au rulat inca pe aceasta baza de date.</div>');
     }
@@ -2655,14 +2755,14 @@ table.data tr.sel { background:var(--accent-bg); }
 
     if (D.signals.available) {
       var sigRows = D.signals.recent.slice(0, 8).map(function (s) {
-        return '<tr><td style="font-weight:700;">' + signalLabel(s) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
+        return '<tr><td style="font-weight:700;">' + signalLabel(s) + (signalIsExperimental(s) ? ' ' + modelStatusPill(s[10], 9) : '') + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
       }).join("");
       var activeCount = 0; D.signals.by_status.forEach(function (p) { if (p[0] === "active") activeCount = p[1]; });
       html += '<section class="blk"><div class="grid32">' +
         '<div><div class="blk-head"><h2>Semnale recente</h2><span class="blk-note warn">' + activeCount + ' / ' + D.signals.total + ' active</span></div>' +
-        '<table class="data"><thead><tr><th>Instrument</th><th>Directie</th><th class="r">Forta</th><th class="r">Incredere</th><th class="r">R. asteptat</th></tr></thead><tbody>' + (sigRows || '<tr><td colspan="5" class="empty">Niciun semnal</td></tr>') + '</tbody></table></div>' +
+        '<table class="data"><thead><tr><th>Instrument</th><th>Directie</th><th class="r" title="Marimea miscarii asteptate raportata la scara strategiei. Nu este probabilitate.">Forta</th><th class="r" title="Scor euristic, nu probabilitate. scor = increderea modelului x calitatea datelor x acordul intre modele x esantion. Nu este calibrat fata de rezultate: 0,30 nu inseamna 30% sanse.">Scor incredere</th><th class="r">R. asteptat</th></tr></thead><tbody>' + (sigRows || '<tr><td colspan="5" class="empty">Niciun semnal</td></tr>') + '</tbody></table></div>' +
         '<div><div class="blk-head"><h2>Suprimari</h2></div><div class="blk-body">' + barRows(D.signals.suppression) + '</div></div>' +
-        '</div></section>';
+      '</div></section>';
     } else {
       html += blk("Semnale", null, '<div class="empty">Faza 10 nu a rulat inca pe aceasta baza de date.</div>');
     }
@@ -2677,7 +2777,7 @@ table.data tr.sel { background:var(--accent-bg); }
       html += '<section class="blk"><div class="grid2">' +
         '<div><div class="blk-head"><h2>Istoric recomandari</h2></div><div class="blk-body">' + legLeft + '</div></div>' +
         '<div><div class="blk-head"><h2>Distributia recomandarilor</h2></div><div class="blk-body">' + barRows(mixRows) + '</div></div>' +
-        '</div></section>';
+      '</div></section>';
     }
 
     html += blk("Sectoare active", D.legacy.available ? "companii cu recomandari, pe sector" : null,
@@ -2849,6 +2949,19 @@ table.data tr.sel { background:var(--accent-bg); }
 
   function viewNews() {
     var html = pageHead("Inteligenta · fluxul de stiri", "Stiri", [["Cel mai recent", fmtDate(D.health.latest_article)]]);
+
+    // TD-02b. These counts describe the canonical corpus. It is a
+    // superset of the legacy table, which is pruned to 60 days, so the
+    // difference is by design and saying so beats letting a reader
+    // wonder why two numbers disagree.
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Corpus: <span class="mono">' + esc(D.health.news_table) + '</span>.</strong> ' +
+      fmtNum(D.health.total_articles) + ' articole, din ' + fmtDate(D.health.oldest_article) + ' pana in ' + fmtDate(D.health.latest_article) + '. ' +
+      (D.health.news_table === "news_articles" && D.health.legacy_articles
+        ? 'Tabela veche <span class="mono">articles</span> are ' + fmtNum(D.health.legacy_articles) + ' randuri: este taiata la 60 de zile de arhivator, ' +
+          'in timp ce corpusul canonic pastreaza tot istoricul. Diferenta este intentionata, nu o pierdere de date.'
+        : 'Corpusul canonic nu este inca populat pe aceasta baza de date; numerele vin din tabela veche.') +
+      '</div></section>';
     html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
       '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(D.health.total_articles) + '</div><div class="l">articole</div></div>' +
       '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(D.health.sources) + '</div><div class="l">surse</div></div>' +
@@ -2940,32 +3053,56 @@ table.data tr.sel { background:var(--accent-bg); }
 
   function viewSignals() {
     if (!D.signals.available) {
-      return pageHead("Inteligenta · semnale", "Semnale", null) + blk("Fara date", null, '<div class="empty">Faza 10 nu a rulat inca pe aceasta baza de date.</div>');
+      return pageHead("Inteligenta · semnale", "Semnale (model)", null) + blk("Fara date", null, '<div class="empty">Faza 10 nu a rulat inca pe aceasta baza de date.</div>');
     }
     var activeCount = 0; D.signals.by_status.forEach(function (p) { if (p[0] === "active") activeCount = p[1]; });
-    var html = pageHead("Centrul de semnale", "Semnale", [["Active", activeCount + " / " + D.signals.total]]);
+    var html = pageHead("Centrul de semnale (derivate din model)", "Semnale (model)", [["Active", activeCount + " / " + D.signals.total]]);
+
+    // TD-03, the other half. See the note on the recommendations page.
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Sursa canonica pentru ideile derivate din model.</strong> Fiecare semnal are instrument_id, ' +
+      'legatura catre modelul si predictia care l-au produs, orizont, prag de informatie si ciclu de viata. ' +
+      'Pagina <strong>Recomandari (sentiment)</strong> arata un obiect diferit — euristica pe stiri, cheie pe numele companiei — ' +
+      'nu o versiune mai veche a acestuia. Cele doua nu se compara direct.' +
+      '</div></section>';
 
     var sig = D.signals.recent[state.sigIdx] || D.signals.recent[0];
     var rows = D.signals.recent.map(function (s, idx) {
       var active = idx === state.sigIdx;
-      return '<tr class="rowlink' + (active ? " sel" : "") + '" onclick="MLSetSigIdx(' + idx + ')"><td style="font-weight:700;">' + signalLabel(s) + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
+      return '<tr class="rowlink' + (active ? " sel" : "") + '" onclick="MLSetSigIdx(' + idx + ')"><td style="font-weight:700;">' + signalLabel(s) + (signalIsExperimental(s) ? ' ' + modelStatusPill(s[10], 9) : '') + '</td><td><span class="pill outline-up">' + esc(s[2]) + '</span></td><td class="r">' + fmtNum(s[4], 2) + '</td><td class="r" style="color:var(--accent-dark);font-weight:700;">' + fmtNum(s[5], 2) + '</td><td class="r">' + fmtSignedPct(s[6]) + '</td></tr>';
     }).join("");
 
     var detail = "";
     if (sig) {
-      detail = '<div style="font-size:20px;font-weight:800;letter-spacing:-0.02em;margin-bottom:2px;">' + signalLabel(sig) + '</div>' +
+      detail = (signalIsExperimental(sig)
+          ? '<div style="border:1px solid #ae6c00;background:rgba(174,108,0,0.07);padding:9px 11px;margin-bottom:12px;font-size:11px;line-height:1.5;">' +
+            '<strong>' + modelStatusPill(sig[10], 10) + '</strong> ' +
+            'Semnal produs de un model care nu a fost promovat. Modelul nu a depasit baseline-ul propriu, ' +
+            'deci acest numar este un rezultat de cercetare, nu o recomandare validata.' +
+            '</div>'
+          : '') +
+        '<div style="font-size:20px;font-weight:800;letter-spacing:-0.02em;margin-bottom:2px;">' + signalLabel(sig) + '</div>' +
         '<div style="font-size:11px;color:var(--muted);" class="mono">' + esc(sig[1]) + ' · cutoff ' + esc(sig[7] || "—") + '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding:14px 0;margin-top:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);">' +
         '<div><div style="font-size:17px;font-weight:800;">' + fmtNum(sig[4], 2) + '</div><div style="font-size:10px;color:var(--muted);">forta</div></div>' +
-        '<div><div style="font-size:17px;font-weight:800;color:var(--accent-dark);">' + fmtNum(sig[5], 2) + '</div><div style="font-size:10px;color:var(--muted);">incredere</div></div>' +
+        '<div><div style="font-size:17px;font-weight:800;color:var(--accent-dark);" title="Scor euristic, nu probabilitate. scor = increderea modelului x calitatea datelor x acordul intre modele x esantion. Nu este calibrat fata de rezultate: 0,30 nu inseamna 30% sanse.">' + fmtNum(sig[5], 2) + '</div><div style="font-size:10px;color:var(--muted);">scor incredere</div></div>' +
         '<div><div style="font-size:17px;font-weight:800;">' + fmtSignedPct(sig[6]) + '</div><div style="font-size:10px;color:var(--muted);">r. asteptat</div></div></div>' +
         '<div style="padding:14px 0;"><div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;">stare</div>' +
         '<span class="pill" style="border:1px solid var(--line-strong);">' + esc(sig[3]) + '</span></div>';
     }
 
     html += '<section class="blk"><div class="grid32">' +
-      '<div><table class="data"><thead><tr><th>Instrument</th><th>Directie</th><th class="r">Forta</th><th class="r">Incredere</th><th class="r">R. asteptat</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="empty">Niciun semnal</td></tr>') + '</tbody></table></div>' +
+      '<div><table class="data"><thead><tr><th>Instrument</th><th>Directie</th><th class="r" title="Marimea miscarii asteptate raportata la scara strategiei. Nu este probabilitate.">Forta</th><th class="r" title="Scor euristic, nu probabilitate. scor = increderea modelului x calitatea datelor x acordul intre modele x esantion. Nu este calibrat fata de rezultate: 0,30 nu inseamna 30% sanse.">Scor incredere</th><th class="r">R. asteptat</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="empty">Niciun semnal</td></tr>') + '</tbody></table></div>' +
       '<div><div class="blk-head"><h2>Detaliu semnal</h2></div><div class="blk-body">' + detail + '</div></div>' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="blk-body" style="font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Despre cele doua numere.</strong> <em>Forta</em> este marimea miscarii asteptate raportata la scara strategiei (5% = 1,00). ' +
+      '<em>Scorul de incredere</em> este o euristica multiplicativa: increderea modelului x calitatea datelor x acordul intre modele x esantion. ' +
+      'Niciunul nu este o probabilitate si niciunul nu este calibrat fata de rezultate. ' +
+      'Scorul este aproape constant (0,30) fiindca trei din cei patru factori sunt momentan ficsi: modelul ridge nu raporteaza incredere proprie (0,5), ' +
+      'exista o singura familie de modele deci nu exista acord de verificat (0,6), iar toate observatiile trec drept calitate inalta (1,0). ' +
+      'Va incepe sa varieze cand apare o a doua familie de modele, nu inainte.' +
       '</div></section>';
 
     if (D.signals.evaluations.length) {
@@ -2985,7 +3122,18 @@ table.data tr.sel { background:var(--accent-bg); }
     if (!D.legacy.available) {
       return pageHead("Performanta · rezultate", "Rezultate", null) + blk("Fara date", null, '<div class="empty">Nicio recomandare in baza de date.</div>');
     }
-    var html = pageHead("Performanta · track record", "Rezultate", [["Emise", fmtNum(D.legacy.total_recs)]]);
+    var html = pageHead("Recomandari din sentiment · track record", "Recomandari (sentiment)", [["Emise", fmtNum(D.legacy.total_recs)]]);
+
+    // TD-03. Two tables in this database describe trade ideas and they
+    // are NOT the same object. Saying so here and on the signals page
+    // is the whole remediation: the ambiguity was in the presentation,
+    // not in the data.
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Ce este aceasta pagina.</strong> Recomandari produse de motorul de sentiment din stiri (Fazele 1-9), ' +
+      'cheie pe <em>numele companiei</em>, aproximativ 1.940 pe zi, regenerate integral la fiecare rulare. ' +
+      'Nu au model, nu au orizont de informatie si nu au ciclu de viata — dar au singurul istoric verificat fata de pret din sistem. ' +
+      'Sursa canonica pentru ideile derivate din model este pagina <strong>Semnale (model)</strong>, care este un obiect diferit, nu o versiune mai noua a acesteia.' +
+      '</div></section>';
 
     html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
       '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(D.legacy.checked) + '</div><div class="l">verificate</div></div>' +
@@ -3019,19 +3167,49 @@ table.data tr.sel { background:var(--accent-bg); }
     if (!D.models.available) {
       return pageHead("Performanta · modele", "Modele", null) + blk("Fara date", null, '<div class="empty">Faza 9 nu a rulat inca pe aceasta baza de date.</div>');
     }
-    var html = pageHead("Performanta · inteligenta modelelor", "Modele", [["Antrenate", String(D.models.models.length)], ["Predictii", fmtNum(D.models.predictions)]]);
+    var html = pageHead("Performanta · inteligenta modelelor", "Modele", [["Antrenate", String(D.models.models.length)], ["Validate", String(D.models.active || 0)], ["Predictii", fmtNum(D.models.predictions)]]);
+
+    // Phase 18 / NEW-01. Inference used to take the newest model. It
+    // now takes only a promoted one, and this states which of the two
+    // situations the system is in rather than leaving a reader to
+    // infer it from a table of numbers.
+    html += (D.models.active
+      ? '<section class="blk"><div class="blk-body" style="border-left:3px solid #00795a;font-size:12px;line-height:1.6;">' +
+        '<strong>' + D.models.active + ' model validat.</strong> Semnalele de productie provin din modelul promovat. ' +
+        'Promovarea este o decizie umana, inregistrata cu autor si motiv.</div></section>'
+      : '<section class="blk"><div class="blk-body" style="border-left:3px solid #ae6c00;font-size:12px;line-height:1.6;">' +
+        '<strong>Niciun model validat.</strong> Niciun model nu a depasit baseline-ul propriu pe un esantion efectiv suficient, ' +
+        'deci niciunul nu a fost promovat. Inferenta refuza implicit sa scoreze in acest caz; etapa 9 a pipeline-ului ' +
+        'ruleaza explicit in mod <em>experimental</em>, iar toate semnalele rezultate sunt marcate ca atare. ' +
+        'Aceasta este poarta de calitate functionand, nu o eroare de configurare.</div></section>');
+
+    if (D.models.promotions && D.models.promotions.length) {
+      var promoRows = D.models.promotions.map(function (r) {
+        return '<tr><td class="mono" style="font-size:10px;">' + esc(String(r[6] || "").slice(0, 19)) + '</td>' +
+          '<td>' + esc(r[1]) + '</td><td class="mono" style="font-size:10px;">' + esc(r[0]) + '</td>' +
+          '<td>' + esc(r[2]) + ' &rarr; ' + esc(r[3]) + '</td><td>' + esc(r[4]) + '</td><td>' + esc(r[5]) + '</td></tr>';
+      }).join("");
+      html += blk("Istoric promovari", "cine, cand, si de ce", '<table class="data"><thead><tr><th>Cand</th><th>Actiune</th><th>Model</th><th>Stare</th><th>Aprobat de</th><th>Motiv</th></tr></thead><tbody>' + promoRows + '</tbody></table>');
+    }
 
     var cards = D.models.models.map(function (m) {
       var qid = m[0], label = m[1], n = m[2], clusters = m[3], small = m[4], beats = m[5], metricsJson = m[6];
+      var status = m[7], trainedAt = m[8], evaluatedAt = m[9], dsv = m[10], fsv = m[11];
       var metrics = {}; try { metrics = metricsJson ? JSON.parse(metricsJson) : {}; } catch (e) {}
-      var verdict = beats ? '<span class="pill" style="border:1px solid #00795a;color:#00795a;">bate baseline</span>' : (beats === 0 ? '<span class="pill" style="border:1px solid #ae1800;color:#ae1800;">nu bate baseline</span>' : "");
-      return '<div class="regcard" style="margin-bottom:14px;"><div class="rc-top"><span class="rc-key">' + esc(qid) + '</span>' + (small ? '<span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);">esantion mic</span>' : '') + '</div>' +
+      var verdict = beats ? '<span class="pill" style="border:1px solid #00795a;color:#00795a;">bate baseline</span>' : (beats === 0 ? '<span class="pill" style="border:1px solid #ae1800;color:#ae1800;">nu bate baseline</span>' : '<span class="pill" style="border:1px solid #8a8a8a;color:#8a8a8a;">fara baseline — nejudecabil</span>');
+      var num = function (v, d) { return (v === undefined || v === null) ? "—" : Number(v).toFixed(d); };
+      return '<div class="regcard" style="margin-bottom:14px;"><div class="rc-top"><span class="rc-key">' + esc(qid) + '</span>' + modelStatusPill(status, 10) + '</div>' +
         '<div style="font-size:11px;color:var(--muted);" class="mono">' + esc(label) + '</div>' +
-        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">' +
+        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">' +
         '<div><div style="font-size:17px;font-weight:800;">' + fmtNum(n) + '</div><div style="font-size:10px;color:var(--muted);">N antrenare</div></div>' +
-        '<div><div style="font-size:17px;font-weight:800;">' + (clusters === null ? "—" : fmtNum(clusters)) + '</div><div style="font-size:10px;color:var(--muted);">clustere</div></div>' +
-        '<div><div style="font-size:17px;font-weight:800;">' + (metrics.mae !== undefined ? Number(metrics.mae).toFixed(4) : "—") + '</div><div style="font-size:10px;color:var(--muted);">MAE</div></div></div>' +
-        (verdict ? '<div style="margin-top:12px;">' + verdict + '</div>' : "") + '</div>';
+        '<div><div style="font-size:17px;font-weight:800;' + (small ? 'color:var(--accent-dark);' : '') + '">' + (clusters === null ? "—" : fmtNum(clusters)) + '</div><div style="font-size:10px;color:var(--muted);">esantion efectiv' + (small ? ' (mic)' : '') + '</div></div>' +
+        '<div><div style="font-size:17px;font-weight:800;' + (metrics.r_squared < 0 ? 'color:#ae1800;' : '') + '">' + num(metrics.r_squared, 3) + '</div><div style="font-size:10px;color:var(--muted);">r&sup2;</div></div>' +
+        '<div><div style="font-size:17px;font-weight:800;' + (metrics.directional_accuracy < 0.5 ? 'color:#ae1800;' : '') + '">' + num(metrics.directional_accuracy, 3) + '</div><div style="font-size:10px;color:var(--muted);">acuratete directionala</div></div></div>' +
+        '<div style="margin-top:12px;">' + verdict + '</div>' +
+        '<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:10px;color:var(--muted);line-height:1.6;" class="mono">' +
+        'antrenat ' + esc(String(trainedAt || "—").slice(0, 19)) +
+        ' · evaluat ' + esc(String(evaluatedAt || "—").slice(0, 19)) +
+        '<br>dataset ' + esc(dsv || "—") + ' · caracteristici ' + esc(fsv || "—") + '</div></div>';
     }).join("");
 
     var featHtml = D.research.available && D.research.feature_coverage.length

@@ -24,10 +24,10 @@ exercised does not score as if it were proven.
 | **Execution** | 88 | One choke point, gates in the right order, fails closed everywhere, 449 tests. The strongest subsystem. |
 | **Reconciliation** | 82 | Graded severity, critical blocks, system cannot self-resolve a capital discrepancy. Never run against real broker data. |
 | **Security** | 78 | Zero credentials in source, no credential field at all in the IBKR config, mechanically re-checked. Low ceiling only because unpinned dependencies remain. |
-| **Testing** | 80 | 2,815 tests, all ten critical categories covered, adversarial suites throughout. Distribution skews hard to recent phases. |
+| **Testing** | 80 | 2,982 tests, all ten critical categories covered, adversarial suites throughout. Distribution skews hard to recent phases. |
 | **Observability** | 62 | Correlation ids, structured audit, health capabilities, alerts, journal — in the execution stack. The Phase 1–10 pipeline logs to stdout. |
 | **API** | n/a | No HTTP API by design. The typed facade with `Caller` permissions is the right shape for what this is. |
-| **Database** | 70 | Sound schema, good indexes where they matter, additive migrations, retention that keeps what research needs. FK enforcement off; 38 empty tables. |
+| **Database** | 70 | Sound schema, good indexes where they matter, additive migrations, retention that keeps what research needs. FK enforcement off; 5 empty tables in production. |
 | **Frontend** | 65 | Truthful — it reports absence as absence rather than rendering a confident zero. 3,853 lines with 15 tests. |
 | **Deployment** | 58 | GitHub Actions + SQLite in a release asset works and is honest about its limits. 19 of 23 workflows are manual, which is the central operational problem. |
 

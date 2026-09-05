@@ -4,7 +4,8 @@ Spec §46, §47. No coverage tool is installed, so this measures test
 **counts and distribution** against risk, and says so rather than
 reporting a percentage it did not compute.
 
-Full suite: **2,815 tests, all passing** (`PYTHONPATH=src`, 132s).
+Full suite: **2,982 tests, all passing** (`PYTHONPATH=src`, 124s).
+Last measured 2026-09-05 at the end of Phase 18.
 
 ---
 
@@ -32,7 +33,7 @@ Full suite: **2,815 tests, all passing** (`PYTHONPATH=src`, 132s).
 | providers | 23 | 2 | ingestion | adequate |
 
 Coverage tracks phase recency almost exactly. Phases 11–17 carry 1,336
-of 2,815 tests; Phases 0–10 share the rest across far more surface.
+of 2,982 tests; Phases 0–10 share the rest across far more surface.
 
 ## 2. What the critical-test list requires (spec §47)
 

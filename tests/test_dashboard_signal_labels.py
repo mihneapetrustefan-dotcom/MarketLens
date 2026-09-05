@@ -44,6 +44,12 @@ IDX_EXPECTED_RETURN = 6
 IDX_CUTOFF = 7
 IDX_NAME = 8
 IDX_TICKER = 9
+#: Phase 18: the status of the model that produced this signal.
+IDX_MODEL_STATUS = 10
+
+#: Tuple width. Named once so a change fails in one place instead of
+#: silently shifting a column the page reads positionally.
+SIGNAL_TUPLE_WIDTH = 11
 
 
 class SignalLabelCase(unittest.TestCase):
@@ -147,7 +153,7 @@ class TestTheLabelCannotDeleteTheSignal(SignalLabelCase):
         """The page indexes positionally; a short tuple would raise there."""
         self.conn.execute("DROP TABLE instruments")
         self.add_signal("crypto-btc")
-        self.assertEqual(len(self.recent()[0]), 10)
+        self.assertEqual(len(self.recent()[0]), SIGNAL_TUPLE_WIDTH)
 
 
 class TestTheTupleShapeIsStable(SignalLabelCase):
@@ -175,7 +181,7 @@ class TestTheTupleShapeIsStable(SignalLabelCase):
     def test_the_name_and_ticker_are_appended_at_the_end(self):
         self.register("us_and_intl-aapl", "AAPL", "Apple")
         self.add_signal("us_and_intl-aapl")
-        self.assertEqual(len(self.recent()[0]), 10)
+        self.assertEqual(len(self.recent()[0]), SIGNAL_TUPLE_WIDTH)
 
 
 class TestTheCompanyPageMatch(unittest.TestCase):
