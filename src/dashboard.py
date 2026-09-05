@@ -360,6 +360,151 @@ class DashboardGenerator:
                 conn, "SELECT MAX(data_as_of) FROM outcome_measurements"),
         }
 
+    def _collect_attribution(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Error attribution (Phase 20).
+
+        Guarded throughout: the tables only exist once
+        `scripts/attribute_errors.py` has run, and a dashboard must
+        render on a database where it has not.
+
+        Coverage is collected FIRST and rendered first. An error rate
+        over two thirds of the record means something different from one
+        over all of it, and six of the nine layers have no evidence
+        source at all — so the denominator is the honest headline.
+        """
+        if not _table_exists(conn, "error_attributions"):
+            return {"available": False}
+
+        # ONE methodology version, never a blend. Versions coexist by
+        # design (§44) — a rule change writes new rows beside the old
+        # ones — so a page that did not filter would add two
+        # methodologies together and report double the findings over the
+        # same subjects. Newest wins, and the page says which it is.
+        # Ordered by time written, then by version string. The second
+        # key is not decoration: two versions written in the same second
+        # would otherwise tie and the page would pick one arbitrarily,
+        # which is a reproducibility bug (§65) that only shows up when
+        # somebody recomputes twice quickly.
+        version = _scalar(conn, """
+            SELECT method_version FROM error_attributions
+            ORDER BY attributed_at DESC, method_version DESC LIMIT 1
+        """, default="")
+        if not version:
+            return {"available": False}
+        v = (version,)
+
+        by_status = _rows(conn, """
+            SELECT status, COUNT(*) FROM error_attributions
+            WHERE method_version=? AND role='primary' AND observability='observed'
+            GROUP BY 1
+        """, v)
+        total = sum(row[1] for row in by_status) or 0
+        assessable = total - dict(by_status).get("insufficient_evidence", 0)
+
+        primary = _rows(conn, """
+            SELECT error_type, COUNT(*) FROM error_attributions
+            WHERE method_version=? AND role='primary' AND observability='observed'
+            GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+        contributing = _rows(conn, """
+            SELECT error_type, COUNT(*) FROM error_attributions
+            WHERE method_version=? AND role='contributing' AND observability='observed'
+            GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+
+        cohort = lambda kind: _rows(conn, """
+            SELECT a.trained_model_id, a.error_type, COUNT(*)
+            FROM error_attributions a WHERE a.role='primary'
+              AND a.observability='observed' AND a.status != 'insufficient_evidence'
+            GROUP BY 1,2 ORDER BY 3 DESC LIMIT 40
+        """) if kind == "model" else []
+
+        # Per model: assessed count and the leading failure mode (49, 50).
+        models = _rows(conn, """
+            SELECT trained_model_id,
+                   SUM(CASE WHEN status != 'insufficient_evidence' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN error_type NOT IN ('no_error','expected_loss','unknown')
+                            AND status != 'insufficient_evidence' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN error_type='prediction_error' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN error_type='magnitude_error' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN error_type='horizon_mismatch' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN error_type='timing_error' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN error_type='expected_loss' THEN 1 ELSE 0 END)
+            FROM error_attributions
+            WHERE method_version=? AND role='primary' AND observability='observed'
+              AND trained_model_id IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+        """, v)
+
+        by_horizon = _rows(conn, """
+            SELECT horizon,
+                   SUM(CASE WHEN status != 'insufficient_evidence' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN error_type NOT IN ('no_error','expected_loss','unknown')
+                            AND status != 'insufficient_evidence' THEN 1 ELSE 0 END)
+            FROM error_attributions
+            WHERE method_version=? AND role='primary' AND observability='observed'
+            GROUP BY 1
+        """, v)
+
+        by_signal_status = _rows(conn, """
+            SELECT signal_status, error_type, COUNT(*)
+            FROM error_attributions
+            WHERE method_version=? AND role='primary' AND observability='observed'
+              AND subject_kind='signal' AND signal_status IS NOT NULL
+            GROUP BY 1,2 ORDER BY 3 DESC LIMIT 30
+        """, v)
+
+        # Individual cases, with their evidence (52).
+        recent = _rows(conn, """
+            SELECT a.subject_kind, a.subject_id, a.horizon, a.error_type,
+                   a.confidence, a.severity, a.status, a.summary,
+                   a.expected_direction, a.expected_return, a.realized_return,
+                   a.instrument_id, a.model_status,
+                   (SELECT COUNT(*) FROM attribution_evidence e
+                     WHERE e.subject_kind=a.subject_kind AND e.subject_id=a.subject_id
+                       AND e.horizon=a.horizon AND e.error_type=a.error_type)
+            FROM error_attributions a
+            WHERE a.method_version=? AND a.role='primary'
+              AND a.observability='observed' AND a.error_type NOT IN ('unknown')
+            ORDER BY CASE a.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                     WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+                     a.subject_id LIMIT 40
+        """, v)
+
+        evidence = _rows(conn, """
+            SELECT kind, COUNT(*) FROM attribution_evidence
+            WHERE method_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+
+        review = _rows(conn, """
+            SELECT subject_kind, subject_id, horizon, reason, candidate_types,
+                   recommended_check, severity, queued_at
+            FROM attribution_review_queue
+            WHERE method_version=? AND state='open'
+            ORDER BY queued_at DESC LIMIT 25
+        """, v) if _table_exists(conn, "attribution_review_queue") else []
+
+        return {
+            "available": True,
+            "total": total,
+            "assessable": assessable,
+            "coverage": (assessable / total) if total else None,
+            "by_status": by_status,
+            "primary": primary,
+            "contributing": contributing,
+            "models": models,
+            "by_horizon": by_horizon,
+            "by_signal_status": by_signal_status,
+            "recent": recent,
+            "evidence_kinds": evidence,
+            "review": review,
+            "evidence_rows": _scalar(
+                conn, "SELECT COUNT(*) FROM attribution_evidence "
+                      "WHERE method_version=?", v, default=0),
+            "method_version": version,
+        }
+
     def _collect_signals(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         if not _table_exists(conn, "signals"):
             return {"available": False}
@@ -1243,7 +1388,8 @@ class DashboardGenerator:
             "sessions": sessions, "active": active, "events": events,
             "promotions": promotions, "readiness": readiness,
             "health": health, "alerts": alerts, "breaches": breaches,
-            "outcomes": outcomes, "quality": quality, "missed": missed,
+            "outcomes": outcomes,
+            "attribution": attribution, "quality": quality, "missed": missed,
         }
 
     def _collect_paper(self, conn: sqlite3.Connection) -> Dict[str, Any]:
@@ -1615,6 +1761,7 @@ class DashboardGenerator:
         models = self._collect_models(conn)
         signals = self._collect_signals(conn)
         outcomes = self._collect_outcomes(conn)
+        attribution = self._collect_attribution(conn)
         legacy = self._collect_legacy(conn, watchlist)
         rec_index = self._collect_rec_index(conn)
         portfolio = self._collect_portfolio(conn)
@@ -2731,6 +2878,7 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "outcomes", label: "Recomandari (sentiment)", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
       { id: "models", label: "Modele", tag: D.models.available ? String(D.models.models.length) : "0" },
       { id: "outcomes", label: "Rezultate reale", tag: D.outcomes.available ? fmtNum(D.outcomes.total) : "0" },
+      { id: "attribution", label: "Diagnostic erori", tag: D.attribution.available ? fmtNum(D.attribution.total) : "0" },
       { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true }
     ]}
   ];
@@ -3391,6 +3539,151 @@ table.data tr.sel { background:var(--accent-bg); }
     }).join("");
     html += blk("Masuratori recente", "un rand per semnal si orizont",
       '<table class="data"><thead><tr><th>Instrument</th><th>Orizont</th><th>Directie</th><th>Verdict</th><th class="r">Randament</th><th class="r">MFE</th><th class="r">MAE</th><th class="r">Bare</th></tr></thead><tbody>' + recentRows + '</tbody></table>');
+
+    return html;
+  }
+
+  // Phase 20. One place that decides how an error type is shown, so the
+  // distribution table, the case list and the model table cannot end up
+  // disagreeing about what counts as a fault.
+  var ERROR_LABEL = {
+    prediction_error: ["Predictie", "#ae1800", "directia a fost gresita la orizontul declarat"],
+    magnitude_error:  ["Magnitudine", "#ae6c00", "directia corecta, marimea prost estimata"],
+    horizon_mismatch: ["Orizont", "#ae6c00", "gresit la orizontul cerut, corect mai tarziu"],
+    signal_error:     ["Semnal", "#ae6c00", "traducerea predictie-semnal a costat ceva"],
+    timing_error:     ["Sincronizare", "#ae6c00", "miscarea favorabila a existat si nu a fost prinsa"],
+    sizing_error:     ["Dimensionare", "#ae1800", "pozitia nepotrivita fata de bugetul de risc"],
+    risk_error:       ["Risc", "#ae1800", "decizia de risc a contrazis propria politica"],
+    execution_error:  ["Executie", "#ae1800", "pretul obtinut a deviat material"],
+    regime_error:     ["Regim", "#ae6c00", "modelul se comporta diferit in acest regim"],
+    data_error:       ["Date", "#ae1800", "datele erau proaste in momentul deciziei"],
+    portfolio_error:  ["Portofoliu", "#ae1800", "constructia portofoliului, nu semnalul"],
+    no_error:         ["Fara eroare", "#00795a", "fiecare strat evaluabil s-a comportat conform proiectului"],
+    expected_loss:    ["Pierdere normala", "#00795a", "o miscare adversa obisnuita pentru aceasta cohorta"],
+    unknown:          ["Necunoscut", "#8a8a8a", "dovezile nu sustin o concluzie"]
+  };
+
+  function errorPill(type, size) {
+    var e = ERROR_LABEL[String(type || "").toLowerCase()];
+    if (!e) return esc(String(type || ""));
+    return '<span class="pill" title="' + esc(e[2]) + '" style="border:1px solid ' + e[1] +
+      ';color:' + e[1] + ';font-size:' + (size || 10) + 'px;padding:2px 6px;">' + e[0] + '</span>';
+  }
+
+  function confPill(c) {
+    var m = { high: ["inalta", "#00795a"], medium: ["medie", "#ae6c00"],
+              low: ["scazuta", "#8a8a8a"], insufficient_evidence: ["dovezi insuficiente", "#8a8a8a"] };
+    var e = m[String(c || "").toLowerCase()];
+    if (!e) return "";
+    return '<span class="pill" style="border:1px solid ' + e[1] + ';color:' + e[1] + ';font-size:9px;">' + e[0] + '</span>';
+  }
+
+  function viewAttribution() {
+    if (!D.attribution.available) {
+      return pageHead("Performanta · diagnostic erori", "Diagnostic erori", null) +
+        blk("Fara date", null, '<div class="empty">Faza 20 nu a rulat inca. Ruleaza <span class="mono">scripts/attribute_errors.py --apply</span>.</div>');
+    }
+    var A = D.attribution;
+    var pct = function (v, d) { return v === null || v === undefined ? "—" : (100 * v).toFixed(d === undefined ? 1 : d) + "%"; };
+    var sgn = function (v) { return v === null || v === undefined ? "—" : (v >= 0 ? "+" : "") + (100 * v).toFixed(2) + "%"; };
+
+    var html = pageHead("Performanta · unde a aparut devierea", "Diagnostic erori",
+      [["Verdicte", fmtNum(A.total)], ["Evaluabile", pct(A.coverage)]]);
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Ce face aceasta pagina.</strong> Pentru fiecare rezultat masurat in Faza 19, unsprezece reguli deterministe verifica ' +
+      'unde a aparut devierea, si fiecare concluzie pastreaza numerele care au produs-o. ' +
+      '<strong>O pierdere nu este o greseala</strong> si un castig nu este o decizie corecta: ' +
+      '<em>Fara eroare</em>, <em>Pierdere normala</em> si <em>Necunoscut</em> sunt rezultate de prim rang, nu lipsuri. ' +
+      'Sase din cele noua straturi nu au nicio sursa de dovezi in aceasta baza — dimensionare, risc, executie, portofoliu, regim, ' +
+      'si stratul de semnal pentru predictii — iar detectoarele lor spun exact ce tabel lipseste in loc sa raporteze ca totul e in regula. ' +
+      'Metodologie <span class="mono">' + esc(A.method_version) + '</span>, ' + fmtNum(A.evidence_rows) + ' randuri de dovezi.' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(5,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + pct(A.coverage) + '</div><div class="l">evaluabile</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(A.assessable) + '</div><div class="l">verdicte cu dovezi</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(A.total - A.assessable) + '</div><div class="l">dovezi insuficiente</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(A.evidence_rows) + '</div><div class="l">randuri de dovezi</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(A.review.length) + '</div><div class="l">in asteptarea unui om</div></div>' +
+      '</div></section>';
+
+    var byType = {};
+    A.contributing.forEach(function (r) { byType[r[0]] = byType[r[0]] || [0, 0]; byType[r[0]][1] = r[1]; });
+    A.primary.forEach(function (r) { byType[r[0]] = byType[r[0]] || [0, 0]; byType[r[0]][0] = r[1]; });
+    var typeRows = Object.keys(byType).sort(function (a, b) {
+      return (byType[b][0] + byType[b][1]) - (byType[a][0] + byType[a][1]);
+    }).map(function (k) {
+      return '<tr><td>' + errorPill(k, 10) + '</td>' +
+        '<td class="r" style="font-weight:700;">' + fmtNum(byType[k][0]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + fmtNum(byType[k][1]) + '</td>' +
+        '<td class="r">' + fmtNum(byType[k][0] + byType[k][1]) + '</td></tr>';
+    }).join("");
+    html += blk("Distributia cauzelor", "principala vs. contribuitoare — sunt afirmatii diferite",
+      '<table class="data"><thead><tr><th>Tip</th><th class="r">Principala</th><th class="r">Contribuitoare</th><th class="r">Total</th></tr></thead><tbody>' + typeRows + '</tbody></table>');
+
+    var horizonRows = A.by_horizon.map(function (r) {
+      var rate = r[1] ? r[2] / r[1] : null;
+      return '<tr><td class="mono" style="font-weight:700;">' + esc(r[0]) + '</td>' +
+        '<td class="r">' + fmtNum(r[1]) + '</td><td class="r">' + fmtNum(r[2]) + '</td>' +
+        '<td class="r" style="font-weight:700;">' + pct(rate) + '</td></tr>';
+    }).join("");
+    html += blk("Dupa orizont", "rata este calculata doar peste rezultatele evaluabile",
+      '<table class="data"><thead><tr><th>Orizont</th><th class="r">Evaluate</th><th class="r">Cu eroare</th><th class="r">Rata</th></tr></thead><tbody>' + horizonRows + '</tbody></table>');
+
+    var modelRows = A.models.map(function (m) {
+      var rate = m[1] ? m[2] / m[1] : null;
+      var small = m[1] < 30;
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(m[0]) + '</td>' +
+        '<td class="r">' + fmtNum(m[1]) + (small ? ' <span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);font-size:9px;">esantion mic</span>' : '') + '</td>' +
+        '<td class="r" style="font-weight:700;">' + (small ? "—" : pct(rate)) + '</td>' +
+        '<td class="r">' + fmtNum(m[3]) + '</td><td class="r">' + fmtNum(m[4]) + '</td>' +
+        '<td class="r">' + fmtNum(m[5]) + '</td><td class="r">' + fmtNum(m[6]) + '</td>' +
+        '<td class="r" style="color:#00795a;">' + fmtNum(m[7]) + '</td></tr>';
+    }).join("");
+    html += blk("Profil de eroare pe model", "sub 30 de observatii nu se afiseaza nicio rata",
+      '<table class="data"><thead><tr><th>Model</th><th class="r">Evaluate</th><th class="r">Rata eroare</th><th class="r">Predictie</th><th class="r">Magnitudine</th><th class="r">Orizont</th><th class="r">Sincronizare</th><th class="r">Pierdere normala</th></tr></thead><tbody>' + (modelRows || '<tr><td colspan="8" class="empty">Fara date</td></tr>') + '</tbody></table>');
+
+    var evidenceRows = A.evidence_kinds.map(function (e) {
+      return '<tr><td class="mono">' + esc(e[0]) + '</td><td class="r">' + fmtNum(e[1]) + '</td></tr>';
+    }).join("");
+    html += blk("Dovezi, dupa tip", "fiecare concluzie citeaza numerele care au produs-o",
+      '<table class="data"><thead><tr><th>Tip dovada</th><th class="r">Randuri</th></tr></thead><tbody>' + evidenceRows + '</tbody></table>');
+
+    var caseRows = A.recent.map(function (r) {
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(r[11] || r[1]) + '</td>' +
+        '<td class="mono">' + esc(r[2]) + '</td>' +
+        '<td>' + errorPill(r[3], 10) + '</td>' +
+        '<td>' + confPill(r[4]) + '</td>' +
+        '<td>' + esc(r[5]) + '</td>' +
+        '<td class="r">' + sgn(r[9]) + '</td><td class="r">' + sgn(r[10]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + fmtNum(r[13]) + '</td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(r[7]) + '</td></tr>';
+    }).join("");
+    html += blk("Cazuri individuale", "cele mai severe intai — asteptat, realizat, si cate dovezi sustin concluzia",
+      '<div style="overflow-x:auto;"><table class="data"><thead><tr><th>Instrument</th><th>Orizont</th><th>Cauza principala</th><th>Incredere</th><th>Severitate</th><th class="r">Asteptat</th><th class="r">Realizat</th><th class="r">Dovezi</th><th>Rezumat</th></tr></thead><tbody>' + caseRows + '</tbody></table></div>');
+
+    if (A.review.length) {
+      var reviewRows = A.review.map(function (r) {
+        return '<tr><td class="mono" style="font-size:10px;">' + esc(r[1]) + '</td>' +
+          '<td class="mono">' + esc(r[2]) + '</td>' +
+          '<td>' + esc(r[6]) + '</td>' +
+          '<td style="font-size:10px;">' + esc(r[3]) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc(r[5]) + '</td></tr>';
+      }).join("");
+      html += blk("Coada de revizuire umana", "cazuri in care regulile nu au putut decide",
+        '<table class="data"><thead><tr><th>Subiect</th><th>Orizont</th><th>Severitate</th><th>Motiv</th><th>Verificare recomandata</th></tr></thead><tbody>' + reviewRows + '</tbody></table>' +
+        '<div class="blk-body" style="font-size:11px;color:var(--muted);line-height:1.6;padding-top:0;">' +
+        'Aceste cazuri nu se inchid automat. Coada exista fiindca regulile nu au putut decide, deci o regula nu poate decide nici ca s-a terminat.' +
+        '</div>');
+    }
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid #ae6c00;font-size:11px;line-height:1.6;">' +
+      '<strong>Ce nu spune aceasta pagina.</strong> Increderea este o eticheta ordinala, nu o probabilitate: nimic nu a verificat vreodata ' +
+      'cat de des o atribuire se dovedeste corecta, iar un numar precum 0,87 ar sugera o calibrare care nu exista. ' +
+      'Severitatea spune cat de mult a contat, nu cat de siguri suntem — cele doua sunt separate deliberat. ' +
+      'Nicio concluzie de aici nu modifica vreun model, prag, strategie, limita de risc sau capital.' +
+      '</div></section>';
 
     return html;
   }
@@ -4400,6 +4693,7 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "events") main.innerHTML = viewEvents(state.param);
     else if (v === "signals") main.innerHTML = viewSignals();
     else if (v === "outcomes") main.innerHTML = viewOutcomes();
+    else if (v === "attribution") main.innerHTML = viewAttribution();
     else if (v === "models") main.innerHTML = viewModels();
     else if (v === "outcomes") main.innerHTML = viewOutcomes();
     else if (v === "portfolio") main.innerHTML = viewPortfolio();

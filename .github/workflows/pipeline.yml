@@ -4,13 +4,13 @@ name: Research Pipeline (all stages, automatic)
 #
 # DE CE EXISTA
 # ------------
-# Toate cele 12 etape erau `workflow_dispatch` — rulau doar cand apasa
+# Toate cele 13 etape erau `workflow_dispatch` — rulau doar cand apasa
 # cineva un buton. Pe 2026-09-04 asta insemna: articole colectate zilnic
 # pana la 49.093, evenimente inghetate la 846 din 27 august, si toate
 # semnalele suprimate ca `stale_prediction`. Nu era nimic stricat.
 # Nimeni nu apasase.
 #
-# Un sistem care are nevoie de douasprezece clicuri saptamanale ca sa
+# Un sistem care are nevoie de treisprezece clicuri saptamanale ca sa
 # ramana curent nu ramane curent.
 #
 # O SINGURA DESCARCARE, O SINGURA INCARCARE
@@ -142,22 +142,22 @@ jobs:
 
       # ---------------- the chain, in dependency order ----------------
 
-      - name: '1/12 Backfill article entities'
+      - name: '1/13 Backfill article entities'
         id: s01
         continue-on-error: true
         run: python scripts/backfill_article_entities.py --apply
 
-      - name: '2/12 Populate events'
+      - name: '2/13 Populate events'
         id: s02
         continue-on-error: true
         run: python scripts/populate_events.py --apply
 
-      - name: '3/12 Fuse events'
+      - name: '3/13 Fuse events'
         id: s03
         continue-on-error: true
         run: python scripts/fuse_events.py --apply
 
-      - name: '4/12 Cache price candles'
+      - name: '4/13 Cache price candles'
         id: s04
         if: steps.plan.outputs.prices == 'true'
         continue-on-error: true
@@ -175,22 +175,22 @@ jobs:
         # afiseaza nicaieri.
         run: python scripts/cache_price_candles.py --include-unstudied
 
-      - name: '5/12 Build event studies'
+      - name: '5/13 Build event studies'
         id: s05
         continue-on-error: true
         run: python scripts/build_event_studies.py --apply
 
-      - name: '6/12 Build research observations'
+      - name: '6/13 Build research observations'
         id: s06
         continue-on-error: true
         run: python scripts/build_research_observations.py --apply
 
-      - name: '7/12 Compute features'
+      - name: '7/13 Compute features'
         id: s07
         continue-on-error: true
         run: python scripts/compute_features.py --apply
 
-      - name: '8/12 Train models'
+      - name: '8/13 Train models'
         id: s08
         if: steps.plan.outputs.train == 'true'
         continue-on-error: true
@@ -209,12 +209,12 @@ jobs:
       #
       # When a model is finally promoted, DELETE the flag. The stage
       # then produces production output and nothing else changes.
-      - name: '9/12 Predict (score current observations, EXPERIMENTAL)'
+      - name: '9/13 Predict (score current observations, EXPERIMENTAL)'
         id: s09
         continue-on-error: true
         run: python scripts/predict.py --apply --experimental
 
-      - name: '10/12 Generate signals'
+      - name: '10/13 Generate signals'
         id: s10
         continue-on-error: true
         run: python scripts/generate_signals.py --apply
@@ -227,13 +227,27 @@ jobs:
       #
       # Moving this earlier would be a leakage bug, and
       # tests/outcomes/test_leakage.py fails if the order changes.
-      - name: '11/12 Measure outcomes'
+      - name: '11/13 Measure outcomes'
         id: s11
         continue-on-error: true
         run: python scripts/measure_outcomes.py --apply --predictions
 
-      - name: '12/12 Rebuild dashboard'
+      # Attribution reads outcomes and diagnoses where the deviation
+      # occurred. It must run AFTER measurement for the same reason
+      # measurement runs after signals: a diagnosis of what happened
+      # needs what happened to exist first.
+      #
+      # It changes no model, strategy, threshold, risk limit or capital
+      # figure (Phase 20, section 59), and
+      # tests/attribution/test_engine_and_leakage.py fails if this
+      # stage moves before measurement.
+      - name: '12/13 Attribute errors'
         id: s12
+        continue-on-error: true
+        run: python scripts/attribute_errors.py --apply
+
+      - name: '13/13 Rebuild dashboard'
+        id: s13
         continue-on-error: true
         run: python scripts/build_dashboard.py
 
@@ -275,7 +289,8 @@ jobs:
             echo "| 9 | Predict | ${{ steps.s09.outcome }} |"
             echo "| 10 | Generate signals | ${{ steps.s10.outcome }} |"
             echo "| 11 | Measure outcomes | ${{ steps.s11.outcome }} |"
-            echo "| 12 | Rebuild dashboard | ${{ steps.s12.outcome }} |"
+            echo "| 12 | Attribute errors | ${{ steps.s12.outcome }} |"
+            echo "| 13 | Rebuild dashboard | ${{ steps.s13.outcome }} |"
             echo ""
             echo "\`skipped\` on stage 4 or 8 is expected on a refresh run."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -286,7 +301,8 @@ jobs:
                    "${{ steps.s05.outcome }}" "${{ steps.s06.outcome }}" \
                    "${{ steps.s07.outcome }}" "${{ steps.s08.outcome }}" \
                    "${{ steps.s09.outcome }}" "${{ steps.s10.outcome }}" \
-                   "${{ steps.s11.outcome }}" "${{ steps.s12.outcome }}"; do
+                   "${{ steps.s11.outcome }}" "${{ steps.s12.outcome }}" \
+                   "${{ steps.s13.outcome }}"; do
             [ "$o" = "failure" ] && FAILED=$((FAILED+1))
           done
           echo "Etape esuate: $FAILED"
