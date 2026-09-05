@@ -452,7 +452,7 @@ Phase 17.5.
 |---|---|---|
 | **TD-15** archive path | **FIXED** | `archive_dir_for()` + `--archive-dir`. Rehearsed: deleted 24,531 rows from a copy, wrote 1.95 MB of archives to a scratch directory, and all **31 real archives were byte-identical by checksum** with `git status data/` clean |
 | **TD-11** stale worktree | **FIXED** | `c3256a3` is an ancestor of `main`; no unique commits; the three uncommitted edits were the same `.close()` fixes already on main as `ad88df3`. Backed up, removed, branch deleted |
-| **TD-13** Python version | **FIXED** | All 24 workflows 3.11 → 3.12; 2,982 tests pass on 3.12 with the pinned versions. Caveat recorded: `yfinance` is imported lazily and is not installed locally, so its 3.12 support rests on package metadata. Reached only by manual `run_backtest.yml` |
+| **TD-13** Python version | **FIXED, CI-verified** | All 24 workflows 3.11 → 3.12. 2,982 tests pass locally on 3.12, and **GitHub Actions ran the suite on 3.12 for commit `8851ed2` and reported `success`** — so this is verified on the runner, not only on the development machine. Caveat recorded: `yfinance` is imported lazily and is not installed locally, so its 3.12 support rests on package metadata. Reached only by manual `run_backtest.yml` |
 | **TD-06** script duplication | **HALF WITHDRAWN** | `research/builder.py` holds `CohortEngine`/`DatasetBuilder`/`ResearchRegistry` — read-time dataset assembly. The script creates observations at write time and its own docstring points at `DatasetBuilder` for the other half. **Not a duplicate; a layering Phase 17 misread.** The `backfill_article_entities` / `entity_repository` half stands |
 | **TD-07** clustering | **REVIEWED, NOT DELETED** | Two facts: there is **no `event_clusters` table** — only an index — so wiring it needs a schema first; and a *different, coarser* clustering is already load-bearing (`research_observations.event_cluster_id`, 299 clusters over 1,049 observations, used as effective sample size). The real question is whether the relation graph should replace the coarse id, which changes every model evaluation. Status written into the module |
 | **TD-08** legacy collectors | **DEPRECATED IN PLACE** | Zero consumers outside their own tests, re-verified. `DEPRECATED, KEPT` notice written into both docstrings with the removal condition |
@@ -514,6 +514,12 @@ Ran 2982 tests in 124.354s
 OK (skipped=1)
 exit 0
 ```
+
+**CI is green on the Phase 18 commit.** The `Tests` workflow ran the
+full suite for `8851ed2` on **Python 3.12** — the version this phase
+moved CI to — and reported `success`. That matters more than the local
+run: it is the first evidence that the 3.11 → 3.12 change is safe on
+the runner rather than only on the development machine.
 
 Zero failures, zero errors. **+79 tests**, and no existing test was
 suppressed or deleted. Four existing `test_inference.py` tests were

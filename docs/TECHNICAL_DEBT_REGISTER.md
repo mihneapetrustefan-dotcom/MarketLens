@@ -284,7 +284,8 @@ message saying what changed and why.
 
 All 24 workflows moved to 3.12. Evidence: the full suite — 2,982
 tests — passes on 3.12 locally against the pinned dependency
-versions. One surface is unverified here: `yfinance` is imported
+versions, and GitHub Actions ran the same suite on 3.12 for commit
+`8851ed2` and reported success. One surface is unverified here: `yfinance` is imported
 lazily inside `backtest_engine.fetch_prices` and is not installed
 in the development environment, so its 3.12 support rests on package
 metadata. It is reached only by `run_backtest.yml`, which is manual
