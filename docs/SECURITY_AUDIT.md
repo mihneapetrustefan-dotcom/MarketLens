@@ -92,10 +92,12 @@ Swept for the usual shapes. Findings:
 
 ## 7. Dependencies
 
-Three: `feedparser`, `pandas`, `yfinance`. All **unpinned** (TD-12).
-No known-vulnerable version is currently installed, but an unpinned
-dependency is a supply-chain surface and a reproducibility hazard for a
-research pipeline. Recommended: pin.
+Three: `feedparser`, `pandas`, `yfinance`. All **pinned** as of
+commit `f1c0868` (TD-12, fixed) — `6.0.14`, `3.0.5`, `1.7.0`. No
+known-vulnerable version is installed. Pinning closes both the
+supply-chain surface and the reproducibility hazard: a research result
+that cannot be recomputed on the same library versions is not a
+result.
 
 ## 8. Verdict
 

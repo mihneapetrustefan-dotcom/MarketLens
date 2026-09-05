@@ -257,7 +257,7 @@ rehearse a destructive script safely.
 
 **Recommended:** `git worktree remove`.
 
-### TD-12 — `requirements.txt` is unpinned · **OPEN**
+### TD-12 — `requirements.txt` is unpinned · **FIXED**
 
 Three packages, no version constraints: `feedparser`, `pandas`,
 `yfinance`. CI installed `pandas 3.0.5` during this phase.
@@ -266,7 +266,11 @@ Three packages, no version constraints: `feedparser`, `pandas`,
 `.iloc` and NaN semantics under a research pipeline whose whole value
 is reproducibility.
 
-**Recommended:** pin to the versions CI currently resolves.
+**Done** (commit `f1c0868`): pinned to exactly what an unpinned install
+resolved to on 2026-09-04 — `feedparser==6.0.14`, `pandas==3.0.5`,
+`yfinance==1.7.0` — so pinning changed nothing that ran that day. The
+file carries the rule for moving one: its own commit, full suite, and a
+message saying what changed and why.
 
 ### TD-13 — CI runs Python 3.11, development is 3.12 · **OPEN**
 
