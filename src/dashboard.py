@@ -251,6 +251,115 @@ class DashboardGenerator:
         return {"available": True, "models": models, "predictions": predictions,
                 "active": active, "promotions": promotions}
 
+    def _collect_outcomes(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Outcome intelligence (Phase 19).
+
+        Guarded end to end: this table only exists once
+        `scripts/measure_outcomes.py` has run, and a dashboard must
+        render on a database where it has not. Every query goes through
+        `_rows`/`_scalar`, which swallow a missing table into an empty
+        result — so an absent outcome layer produces an empty workspace,
+        never a broken page.
+        """
+        if not _table_exists(conn, "outcome_measurements"):
+            return {"available": False}
+
+        by_status = _rows(conn, """
+            SELECT status, COUNT(*) FROM outcome_measurements GROUP BY status
+        """)
+        total = sum(row[1] for row in by_status) or 0
+        available = dict(by_status).get("available", 0)
+
+        verdicts = dict(_rows(conn, """
+            SELECT direction_result, COUNT(*) FROM outcome_measurements
+            WHERE status='available' GROUP BY direction_result
+        """))
+        hits, misses = verdicts.get("hit", 0), verdicts.get("miss", 0)
+
+        # The decay curve, ordered by TIME rather than by string. '10d'
+        # sorts before '5d' as text, and a decay chart built on string
+        # order is wrong in a way that looks entirely plausible.
+        decay = _rows(conn, """
+            SELECT a.horizon, a.sample_size, a.directional_accuracy,
+                   a.mean_return, a.median_return, a.mean_mfe, a.mean_mae,
+                   a.small_sample, a.ci_low, a.ci_high,
+                   MIN(m.horizon_value), MIN(m.horizon_unit)
+            FROM outcome_aggregates a
+            JOIN outcome_measurements m ON m.horizon = a.horizon
+            WHERE a.cohort_kind='overall' AND a.cohort_value='all'
+              AND a.subject_kind='signal'
+            GROUP BY a.horizon
+        """)
+        def seconds(row):
+            value, unit = row[10] or 0, row[11] or "d"
+            return value * {"m": 60.0, "h": 3600.0}.get(unit, 6.5 * 3600.0)
+        decay = sorted(decay, key=seconds)
+
+        cohort_for = lambda kind: _rows(conn, """
+            SELECT cohort_value, horizon, sample_size, directional_accuracy,
+                   mean_return, median_return, mean_mfe, mean_mae, small_sample
+            FROM outcome_aggregates
+            WHERE cohort_kind = ? AND subject_kind='signal' AND horizon='5d'
+            ORDER BY sample_size DESC LIMIT 25
+        """, (kind,))
+
+        # Model training metrics beside the realized record (section 45).
+        # Kept apart deliberately: a model that scored well on a held-out
+        # split and badly forward is exactly the case worth seeing.
+        quality = _rows(conn, """
+            SELECT m.trained_model_id, m.model_qualified_id, m.status,
+                   e.metrics_json, e.beats_all_baselines,
+                   a.sample_size, a.directional_accuracy, a.mean_return,
+                   a.small_sample
+            FROM trained_models m
+            LEFT JOIN model_evaluations e ON e.trained_model_id = m.trained_model_id
+            LEFT JOIN outcome_aggregates a
+                   ON a.cohort_kind='model' AND a.cohort_value = m.trained_model_id
+                  AND a.horizon='5d' AND a.subject_kind='signal'
+            ORDER BY m.trained_at DESC LIMIT 10
+        """) if _table_exists(conn, "trained_models") else []
+
+        recent = _rows(conn, """
+            SELECT subject_id, instrument_id, horizon, expected_direction,
+                   status, simple_return, mfe, mae, direction_result,
+                   confidence, strength, model_status, reference_price,
+                   end_price, bars_observed, information_cutoff
+            FROM outcome_measurements
+            WHERE subject_kind='signal'
+            ORDER BY information_cutoff DESC, horizon LIMIT 60
+        """)
+
+        return {
+            "available": True,
+            "total": total,
+            "by_status": by_status,
+            "coverage": (available / total) if total else None,
+            "hits": hits, "misses": misses,
+            "neutrals": verdicts.get("neutral", 0),
+            # None, not 0.0, when nothing was decided: "no signal was
+            # right" and "nothing was measured" are different facts.
+            "accuracy": (hits / (hits + misses)) if (hits + misses) else None,
+            "decay": decay,
+            "by_instrument": cohort_for("instrument"),
+            "by_regime": cohort_for("regime"),
+            "by_direction": cohort_for("direction"),
+            "by_confidence": cohort_for("confidence_bucket"),
+            "by_strength": cohort_for("strength_bucket"),
+            "by_model_status": cohort_for("model_status"),
+            "quality": quality,
+            "recent": recent,
+            "cohorts": _scalar(conn, "SELECT COUNT(*) FROM outcome_aggregates",
+                               default=0),
+            "method_version": _scalar(
+                conn, "SELECT method_version FROM outcome_measurements LIMIT 1",
+                default=""),
+            "measured_at": _scalar(
+                conn, "SELECT MAX(computed_at) FROM outcome_measurements"),
+            "data_as_of": _scalar(
+                conn, "SELECT MAX(data_as_of) FROM outcome_measurements"),
+        }
+
     def _collect_signals(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         if not _table_exists(conn, "signals"):
             return {"available": False}
@@ -1505,6 +1614,7 @@ class DashboardGenerator:
         research = self._collect_research(conn)
         models = self._collect_models(conn)
         signals = self._collect_signals(conn)
+        outcomes = self._collect_outcomes(conn)
         legacy = self._collect_legacy(conn, watchlist)
         rec_index = self._collect_rec_index(conn)
         portfolio = self._collect_portfolio(conn)
@@ -1547,6 +1657,7 @@ class DashboardGenerator:
             "research": research,
             "models": models,
             "signals": signals,
+            "outcomes": outcomes,
             "legacy": legacy,
             "portfolio": portfolio,
             "constraints": constraints,
@@ -2619,6 +2730,7 @@ table.data tr.sel { background:var(--accent-bg); }
     { label: "Performanta", items: [
       { id: "outcomes", label: "Recomandari (sentiment)", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
       { id: "models", label: "Modele", tag: D.models.available ? String(D.models.models.length) : "0" },
+      { id: "outcomes", label: "Rezultate reale", tag: D.outcomes.available ? fmtNum(D.outcomes.total) : "0" },
       { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true }
     ]}
   ];
@@ -3159,6 +3271,126 @@ table.data tr.sel { background:var(--accent-bg); }
       return '<tr><td>' + esc(r[0]) + '</td><td style="font-weight:700;">' + esc(r[1] || "") + '</td><td><span class="pill solid">' + esc(r[2]) + '</span></td><td class="r" style="font-weight:700;">' + fmtPct(r[3]) + '</td><td class="r">' + verify + '</td></tr>';
     }).join("");
     html += blk("Recomandari recente", null, '<table class="data"><thead><tr><th>Companie</th><th>Ticker</th><th>Apel</th><th class="r">Incredere</th><th class="r">Verificare</th></tr></thead><tbody>' + (recRows || '<tr><td colspan="5" class="empty">Fara recomandari</td></tr>') + '</tbody></table>');
+
+    return html;
+  }
+
+  function viewOutcomes() {
+    if (!D.outcomes.available) {
+      return pageHead("Performanta · rezultate reale", "Rezultate reale", null) +
+        blk("Fara date", null, '<div class="empty">Faza 19 nu a rulat inca pe aceasta baza de date. Ruleaza <span class="mono">scripts/measure_outcomes.py --apply</span>.</div>');
+    }
+    var O = D.outcomes;
+    var pct = function (v, d) { return v === null || v === undefined ? "—" : (100 * v).toFixed(d === undefined ? 1 : d) + "%"; };
+    var sgn = function (v, d) { return v === null || v === undefined ? "—" : (v >= 0 ? "+" : "") + (100 * v).toFixed(d === undefined ? 2 : d) + "%"; };
+
+    var html = pageHead("Performanta · ce s-a intamplat dupa semnal", "Rezultate reale",
+      [["Masuratori", fmtNum(O.total)], ["Acoperire", pct(O.coverage)]]);
+
+    // Coverage FIRST, deliberately. "51% acuratete" inseamna ceva foarte
+    // diferit la 66% acoperire fata de 95%, iar o pagina care ar incepe cu
+    // rata l-ar invita pe cititor sa sara peste numarul care o califica.
+    var statusRows = O.by_status.map(function (s) {
+      var label = { available: "masurate", pending: "in asteptare (fereastra deschisa)",
+                    insufficient_data: "date insuficiente", invalid: "semnalate ca invalide",
+                    superseded: "inlocuite" }[s[0]] || s[0];
+      return '<tr><td>' + esc(label) + '</td><td class="r" style="font-weight:700;">' + fmtNum(s[1]) + '</td><td class="r" style="color:var(--muted);">' + pct(s[1] / O.total) + '</td></tr>';
+    }).join("");
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Ce masoara aceasta pagina.</strong> Ce a facut piata DUPA fiecare semnal — randament, excursie favorabila (MFE), excursie adversa (MAE), directie. ' +
+      'Nu masoara profit: nu exista ordine si nu exista pozitii, iar un "randament" care ar presupune tacit marimi egale de pozitie ar fi un rezultat de portofoliu deghizat in semnal. ' +
+      '<em>Date insuficiente</em> nu inseamna niciodata randament zero si nu inseamna niciodata ratare — inseamna ca datele de pret nu pot raspunde la intrebare. ' +
+      'Metodologie <span class="mono">' + esc(O.method_version) + '</span>, preturi pana la ' + fmtDate(O.data_as_of) + '.' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(5,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + pct(O.coverage) + '</div><div class="l">acoperire</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + pct(O.accuracy) + '</div><div class="l">acuratete directionala</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(O.hits) + '</div><div class="l">corecte</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(O.misses) + '</div><div class="l">gresite</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(O.neutrals) + '</div><div class="l">neutre (excluse din rata)</div></div>' +
+      '</div></section>';
+
+    html += blk("Stare masuratori", "acoperirea inainte de rezultat",
+      '<table class="data"><thead><tr><th>Stare</th><th class="r">N</th><th class="r">Pondere</th></tr></thead><tbody>' + statusRows + '</tbody></table>');
+
+    // Decay: the question section 14 asks — does the edge fade?
+    var decayRows = O.decay.map(function (d) {
+      return '<tr><td class="mono" style="font-weight:700;">' + esc(d[0]) + '</td>' +
+        '<td class="r">' + fmtNum(d[1]) + (d[7] ? ' <span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);font-size:9px;">esantion mic</span>' : '') + '</td>' +
+        '<td class="r" style="font-weight:700;">' + pct(d[2]) + '</td>' +
+        '<td class="r">' + sgn(d[3]) + '</td><td class="r">' + sgn(d[4]) + '</td>' +
+        '<td class="r" style="color:#00795a;">' + sgn(d[5]) + '</td>' +
+        '<td class="r" style="color:#ae1800;">' + sgn(d[6]) + '</td></tr>';
+    }).join("");
+    html += blk("Decaderea semnalului", "acelasi semnal, masurat pe orizonturi crescatoare",
+      '<table class="data"><thead><tr><th>Orizont</th><th class="r">N</th><th class="r">Acuratete</th><th class="r">Randament mediu</th><th class="r">Median</th><th class="r">MFE mediu</th><th class="r">MAE mediu</th></tr></thead><tbody>' + decayRows + '</tbody></table>');
+
+    // Section 45 — training metrics beside the realized record.
+    var qualityRows = O.quality.map(function (m) {
+      var metrics = {}; try { metrics = m[3] ? JSON.parse(m[3]) : {}; } catch (e) {}
+      var r2 = metrics.r_squared;
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(m[0]) + '</td>' +
+        '<td>' + modelStatusPill(m[2], 9) + '</td>' +
+        '<td class="r" style="' + (r2 < 0 ? 'color:#ae1800;' : '') + '">' + (r2 === undefined ? "—" : Number(r2).toFixed(3)) + '</td>' +
+        '<td>' + (m[4] === 1 ? '<span class="pill" style="border:1px solid #00795a;color:#00795a;">da</span>' : (m[4] === 0 ? '<span class="pill" style="border:1px solid #ae1800;color:#ae1800;">nu</span>' : '—')) + '</td>' +
+        '<td class="r">' + (m[5] === null ? "—" : fmtNum(m[5])) + (m[8] ? ' <span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);font-size:9px;">mic</span>' : '') + '</td>' +
+        '<td class="r" style="font-weight:700;">' + pct(m[6]) + '</td>' +
+        '<td class="r">' + sgn(m[7]) + '</td></tr>';
+    }).join("");
+    html += blk("Evaluare la antrenare vs. rezultat realizat", "orizont 5d — cele doua coloane raspund la intrebari diferite",
+      '<table class="data"><thead><tr><th>Model</th><th>Stare</th><th class="r">r&sup2; (antrenare)</th><th>Bate baseline</th><th class="r">N (realizat)</th><th class="r">Acuratete realizata</th><th class="r">Randament mediu</th></tr></thead><tbody>' + qualityRows + '</tbody></table>' +
+      '<div class="blk-body" style="font-size:11px;color:var(--muted);line-height:1.6;padding-top:0;">' +
+      'Coloanele din stanga sunt masurate pe o impartire chronologica retinuta la antrenare; cele din dreapta sunt ce a facut piata dupa aceea. ' +
+      'Un model bun la antrenare si slab in realitate este exact cazul care merita vazut, iar amestecarea celor doua l-ar ascunde.' +
+      '</div>');
+
+    var cohortTable = function (title, note, rows) {
+      var body = rows.map(function (r) {
+        return '<tr><td>' + esc(r[0]) + '</td><td class="r">' + fmtNum(r[2]) +
+          (r[8] ? ' <span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);font-size:9px;">mic</span>' : '') + '</td>' +
+          '<td class="r" style="font-weight:700;">' + pct(r[3]) + '</td>' +
+          '<td class="r">' + sgn(r[4]) + '</td><td class="r">' + sgn(r[5]) + '</td>' +
+          '<td class="r" style="color:#00795a;">' + sgn(r[6]) + '</td>' +
+          '<td class="r" style="color:#ae1800;">' + sgn(r[7]) + '</td></tr>';
+      }).join("");
+      return blk(title, note, '<table class="data"><thead><tr><th>Cohorta</th><th class="r">N</th><th class="r">Acuratete</th><th class="r">Mediu</th><th class="r">Median</th><th class="r">MFE</th><th class="r">MAE</th></tr></thead><tbody>' + (body || '<tr><td colspan="7" class="empty">Fara date</td></tr>') + '</tbody></table>');
+    };
+
+    html += cohortTable("Dupa directie", "orizont 5d", O.by_direction);
+    html += cohortTable("Dupa stare model", "experimental vs. validat — nu se amesteca", O.by_model_status);
+    html += cohortTable("Dupa regim de piata", "orizont 5d", O.by_regime);
+    html += cohortTable("Dupa scor de incredere", "scorul e aproape constant (0,30) — vezi pagina Semnale", O.by_confidence);
+    html += cohortTable("Dupa forta semnalului", "forta NU e acelasi lucru cu increderea", O.by_strength);
+    html += cohortTable("Dupa instrument", "primele 25 dupa marimea esantionului", O.by_instrument);
+
+    // Section 41 — the multiplicity caveat, on the page with the numbers.
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid #ae6c00;font-size:11px;line-height:1.6;">' +
+      '<strong>Despre tabelele de mai sus.</strong> ' + fmtNum(O.cohorts) + ' cohorte au fost calculate din aceleasi masuratori. ' +
+      'Feliind repetat dupa orizont, model, instrument, regim, directie si incredere se obtin subgrupuri care difera din intamplare: ' +
+      'la pragul obisnuit de 5%, aproximativ una din douazeci va parea remarcabila fara sa existe vreun efect, ' +
+      'iar cohorta cu valoarea cea mai extrema este cea mai probabil zgomot. ' +
+      'Niciun test de semnificatie nu a fost rulat si niciun numar de aici nu este prezentat ca semnificativ.' +
+      '</div></section>';
+
+    var recentRows = O.recent.slice(0, 40).map(function (r) {
+      var statusPill = r[4] === "available" ? "" :
+        '<span class="pill" style="border:1px solid var(--accent);color:var(--accent-dark);font-size:9px;">' + esc(r[4]) + '</span>';
+      var verdict = { hit: '<span style="color:#00795a;font-weight:700;">corect</span>',
+                      miss: '<span style="color:#ae1800;font-weight:700;">gresit</span>',
+                      neutral: '<span style="color:var(--muted);">neutru</span>' }[r[8]] ||
+                    '<span style="color:var(--muted);">—</span>';
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(r[1]) + '</td>' +
+        '<td class="mono">' + esc(r[2]) + '</td><td>' + esc(r[3]) + '</td>' +
+        '<td>' + verdict + ' ' + statusPill + '</td>' +
+        '<td class="r">' + sgn(r[5]) + '</td>' +
+        '<td class="r" style="color:#00795a;">' + sgn(r[6]) + '</td>' +
+        '<td class="r" style="color:#ae1800;">' + sgn(r[7]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + (r[14] || 0) + '</td></tr>';
+    }).join("");
+    html += blk("Masuratori recente", "un rand per semnal si orizont",
+      '<table class="data"><thead><tr><th>Instrument</th><th>Orizont</th><th>Directie</th><th>Verdict</th><th class="r">Randament</th><th class="r">MFE</th><th class="r">MAE</th><th class="r">Bare</th></tr></thead><tbody>' + recentRows + '</tbody></table>');
 
     return html;
   }
@@ -4169,6 +4401,7 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "signals") main.innerHTML = viewSignals();
     else if (v === "outcomes") main.innerHTML = viewOutcomes();
     else if (v === "models") main.innerHTML = viewModels();
+    else if (v === "outcomes") main.innerHTML = viewOutcomes();
     else if (v === "portfolio") main.innerHTML = viewPortfolio();
     else if (v === "risk") main.innerHTML = viewRisk();
     else if (v === "backtests") main.innerHTML = viewBacktests();
