@@ -505,6 +505,118 @@ class DashboardGenerator:
             "method_version": version,
         }
 
+    def _collect_memory(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Trading memory (Phase 21).
+
+        Guarded throughout: the tables exist only after
+        `scripts/build_memory.py` has run.
+
+        Pinned to ONE memory version, for the reason the attribution
+        page is: versions coexist by design, so an unfiltered page would
+        add two methodologies together over the same experiences.
+        """
+        if not _table_exists(conn, "trading_experiences"):
+            return {"available": False}
+
+        version = _scalar(conn, """
+            SELECT memory_version FROM trading_experiences
+            ORDER BY created_at DESC, memory_version DESC LIMIT 1
+        """, default="")
+        if not version:
+            return {"available": False}
+        v = (version,)
+
+        by_quality = _rows(conn, """
+            SELECT quality, COUNT(*) FROM trading_experiences
+            WHERE memory_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+        by_class = _rows(conn, """
+            SELECT experience_class, COUNT(*) FROM trading_experiences
+            WHERE memory_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+        total = sum(r[1] for r in by_quality) or 0
+
+        # The timeline is built from `available_at` — when knowledge
+        # BECAME available — not from when rows were written. Any other
+        # version of this chart would be meaningless.
+        timeline = _rows(conn, """
+            SELECT substr(available_at,1,10), COUNT(*)
+            FROM trading_experiences
+            WHERE memory_version=? AND available_at IS NOT NULL
+            GROUP BY 1 ORDER BY 1
+        """, v)
+
+        patterns_by_quality = _rows(conn, """
+            SELECT quality, COUNT(*) FROM memory_patterns
+            WHERE memory_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v) if _table_exists(conn, "memory_patterns") else []
+        patterns_by_confidence = _rows(conn, """
+            SELECT confidence, COUNT(*) FROM memory_patterns
+            WHERE memory_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v) if _table_exists(conn, "memory_patterns") else []
+
+        top_patterns = _rows(conn, """
+            SELECT pattern_type, conditions_json, sample_size, hit_rate,
+                   mean_return, quality, confidence, stability,
+                   instrument_count, experimental_count, first_seen, last_seen
+            FROM memory_patterns WHERE memory_version=?
+            ORDER BY sample_size DESC LIMIT 30
+        """, v) if _table_exists(conn, "memory_patterns") else []
+
+        # Model, event and instrument memory, from the pattern families.
+        family = lambda name: _rows(conn, """
+            SELECT conditions_json, sample_size, hit_rate, mean_return,
+                   quality, confidence, stability
+            FROM memory_patterns WHERE memory_version=? AND pattern_type=?
+            ORDER BY sample_size DESC LIMIT 15
+        """, (version, name)) if _table_exists(conn, "memory_patterns") else []
+
+        recent = _rows(conn, """
+            SELECT experience_id, subject_kind, subject_id, horizon,
+                   instrument_id, expected_direction, expected_return,
+                   actual_return, direction_result, primary_error,
+                   experience_class, quality, evidence_count, available_at,
+                   event_type, mfe, mae
+            FROM trading_experiences
+            WHERE memory_version=? AND available_at IS NOT NULL
+            ORDER BY available_at DESC LIMIT 40
+        """, v)
+
+        snapshots = _rows(conn, """
+            SELECT as_of, experience_count, pattern_count, validated_count,
+                   experimental_count, created_at
+            FROM memory_snapshots WHERE memory_version=? ORDER BY as_of
+        """, v) if _table_exists(conn, "memory_snapshots") else []
+
+        return {
+            "available": True,
+            "memory_version": version,
+            "total": total,
+            "by_quality": by_quality,
+            "by_class": by_class,
+            "timeline": timeline,
+            "patterns_total": _scalar(
+                conn, "SELECT COUNT(*) FROM memory_patterns WHERE memory_version=?",
+                v, default=0),
+            "patterns_by_quality": patterns_by_quality,
+            "patterns_by_confidence": patterns_by_confidence,
+            "top_patterns": top_patterns,
+            "model_memory": family("model_horizon"),
+            "event_memory": family("event_direction"),
+            "instrument_memory": family("instrument_direction"),
+            "regime_memory": family("regime_direction"),
+            "recent": recent,
+            "snapshots": snapshots,
+            "evidence_rows": _scalar(
+                conn, "SELECT COUNT(*) FROM memory_pattern_evidence "
+                      "WHERE memory_version=?", v, default=0),
+            "contradictions": _scalar(
+                conn, "SELECT COUNT(*) FROM memory_patterns "
+                      "WHERE memory_version=? AND quality='conflicting'",
+                v, default=0),
+        }
+
     def _collect_signals(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         if not _table_exists(conn, "signals"):
             return {"available": False}
@@ -1389,7 +1501,8 @@ class DashboardGenerator:
             "promotions": promotions, "readiness": readiness,
             "health": health, "alerts": alerts, "breaches": breaches,
             "outcomes": outcomes,
-            "attribution": attribution, "quality": quality, "missed": missed,
+            "attribution": attribution,
+            "memory": memory, "quality": quality, "missed": missed,
         }
 
     def _collect_paper(self, conn: sqlite3.Connection) -> Dict[str, Any]:
@@ -1762,6 +1875,7 @@ class DashboardGenerator:
         signals = self._collect_signals(conn)
         outcomes = self._collect_outcomes(conn)
         attribution = self._collect_attribution(conn)
+        memory = self._collect_memory(conn)
         legacy = self._collect_legacy(conn, watchlist)
         rec_index = self._collect_rec_index(conn)
         portfolio = self._collect_portfolio(conn)
@@ -2879,6 +2993,7 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "models", label: "Modele", tag: D.models.available ? String(D.models.models.length) : "0" },
       { id: "outcomes", label: "Rezultate reale", tag: D.outcomes.available ? fmtNum(D.outcomes.total) : "0" },
       { id: "attribution", label: "Diagnostic erori", tag: D.attribution.available ? fmtNum(D.attribution.total) : "0" },
+      { id: "memory", label: "Memorie", tag: D.memory.available ? fmtNum(D.memory.total) : "0" },
       { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true }
     ]}
   ];
@@ -3683,6 +3798,162 @@ table.data tr.sel { background:var(--accent-bg); }
       'cat de des o atribuire se dovedeste corecta, iar un numar precum 0,87 ar sugera o calibrare care nu exista. ' +
       'Severitatea spune cat de mult a contat, nu cat de siguri suntem — cele doua sunt separate deliberat. ' +
       'Nicio concluzie de aici nu modifica vreun model, prag, strategie, limita de risc sau capital.' +
+      '</div></section>';
+
+    return html;
+  }
+
+  // Phase 21. One definition of how an experience class and a pattern
+  // quality are shown, so the tables cannot drift apart.
+  var CLASS_LABEL = {
+    successful:      ["Reusit", "#00795a"],
+    unsuccessful:    ["Nereusit", "#ae1800"],
+    mixed:           ["Mixt", "#ae6c00"],
+    expected_loss:   ["Pierdere normala", "#8a8a8a"],
+    expected_win:    ["Castig normal", "#00795a"],
+    unexpected_loss: ["Pierdere neobisnuita", "#ae1800"],
+    unexpected_win:  ["Castig neobisnuit", "#ae6c00"],
+    no_clear_result: ["Fara rezultat clar", "#8a8a8a"]
+  };
+  var PATQ_LABEL = {
+    confirmed:       ["Confirmat", "#00795a", "esantion suficient si stabil intre subperioade"],
+    weak:            ["Slab", "#8a8a8a", "sub 30 de experiente — nu se citeaza nicio rata"],
+    conflicting:     ["Contradictoriu", "#ae1800", "subpopulatiile nu sunt de acord; o medie nu descrie niciuna"],
+    unstable:        ["Instabil", "#ae6c00", "rata variaza mult intre subperioade"],
+    stale:           ["Invechit", "#8a8a8a", "cea mai recenta dovada e veche"],
+    superseded:      ["Inlocuit", "#8a8a8a", ""],
+    requires_review: ["De revizuit", "#ae6c00", "destule observatii, prea putin istoric"]
+  };
+
+  function classPill(c) {
+    var e = CLASS_LABEL[String(c || "").toLowerCase()];
+    if (!e) return esc(String(c || ""));
+    return '<span class="pill" style="border:1px solid ' + e[1] + ';color:' + e[1] + ';font-size:9px;">' + e[0] + '</span>';
+  }
+  function patQualityPill(q) {
+    var e = PATQ_LABEL[String(q || "").toLowerCase()];
+    if (!e) return esc(String(q || ""));
+    return '<span class="pill" title="' + esc(e[2]) + '" style="border:1px solid ' + e[1] + ';color:' + e[1] + ';font-size:9px;">' + e[0] + '</span>';
+  }
+
+  function viewMemory() {
+    if (!D.memory.available) {
+      return pageHead("Inteligenta · memorie", "Memorie", null) +
+        blk("Fara date", null, '<div class="empty">Faza 21 nu a rulat inca. Ruleaza <span class="mono">scripts/build_memory.py --apply</span>.</div>');
+    }
+    var M = D.memory;
+    var pct = function (v, d) { return v === null || v === undefined ? "—" : (100 * v).toFixed(d === undefined ? 1 : d) + "%"; };
+    var sgn = function (v) { return v === null || v === undefined ? "—" : (v >= 0 ? "+" : "") + (100 * v).toFixed(2) + "%"; };
+    var cond = function (raw) { try { var o = JSON.parse(raw); return Object.keys(o).sort().map(function (k) { return k + "=" + o[k]; }).join(" · "); } catch (e) { return esc(String(raw)); } };
+
+    var validated = 0, experimental = 0, incomplete = 0;
+    M.by_quality.forEach(function (r) {
+      if (r[0] === "validated") validated = r[1];
+      else if (r[0] === "experimental") experimental = r[1];
+      else if (r[0] === "incomplete") incomplete = r[1];
+    });
+
+    var html = pageHead("Inteligenta · ce a trait sistemul pana acum", "Memorie",
+      [["Experiente", fmtNum(M.total)], ["Tipare", fmtNum(M.patterns_total)]]);
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Ce este memoria.</strong> O experienta este o imbinare, nu o parafraza: context la momentul deciziei + ce s-a asteptat + ce s-a intamplat + ce eroare a fost atribuita + dovezile. ' +
+      'Nimic nu este inventat si nicio propozitie de aici nu poate fi urmarita inapoi la altceva decat la un rand. ' +
+      '<strong>Un tipar descrie o co-aparitie, nu o cauza</strong>, si nu spune ce se va intampla data viitoare. ' +
+      'Experienta <em>experimentala</em> (model nepromovat) este pastrata dar niciodata amestecata cu cea de productie. ' +
+      'Versiuni: memorie <span class="mono">' + esc(M.memory_version) + '</span>, ' + fmtNum(M.evidence_rows) + ' legaturi tipar&rarr;experienta.' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(5,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(validated) + '</div><div class="l">validate</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;color:var(--accent-dark);">' + fmtNum(experimental) + '</div><div class="l">experimentale</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;color:var(--muted);">' + fmtNum(incomplete) + '</div><div class="l">incomplete</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(M.patterns_total) + '</div><div class="l">tipare</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(M.timeline.length) + '</div><div class="l">zile de istoric</div></div>' +
+      '</div></section>';
+
+    var classRows = M.by_class.map(function (r) {
+      return '<tr><td>' + classPill(r[0]) + '</td><td class="r" style="font-weight:700;">' + fmtNum(r[1]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + pct(r[1] / M.total) + '</td></tr>';
+    }).join("");
+    html += blk("Clasificarea experientei", "condusa de atribuire, nu de profit — un rezultat profitabil poate fi tot o decizie slaba",
+      '<table class="data"><thead><tr><th>Clasa</th><th class="r">N</th><th class="r">Pondere</th></tr></thead><tbody>' + classRows + '</tbody></table>');
+
+    var patQualRows = M.patterns_by_quality.map(function (r) {
+      return '<tr><td>' + patQualityPill(r[0]) + '</td><td class="r" style="font-weight:700;">' + fmtNum(r[1]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + pct(r[1] / (M.patterns_total || 1)) + '</td></tr>';
+    }).join("");
+    html += blk("Calitatea tiparelor", "majoritatea sunt slabe, fiindca istoricul e scurt — asta este constatarea, nu un defect",
+      '<table class="data"><thead><tr><th>Calitate</th><th class="r">N</th><th class="r">Pondere</th></tr></thead><tbody>' + patQualRows + '</tbody></table>');
+
+    var patRows = M.top_patterns.map(function (r) {
+      var small = r[2] < 30;
+      return '<tr><td style="font-size:10px;">' + esc(cond(r[1])) + '</td>' +
+        '<td class="mono" style="font-size:10px;color:var(--muted);">' + esc(r[0]) + '</td>' +
+        '<td class="r">' + fmtNum(r[2]) + '</td>' +
+        '<td class="r" style="font-weight:700;">' + (small ? "—" : pct(r[3])) + '</td>' +
+        '<td class="r">' + (small ? "—" : sgn(r[4])) + '</td>' +
+        '<td>' + patQualityPill(r[5]) + '</td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(r[7]) + '</td>' +
+        '<td class="r" style="color:var(--accent-dark);">' + fmtNum(r[9]) + '</td></tr>';
+    }).join("");
+    html += blk("Cele mai sustinute tipare", "sub 30 de experiente nu se afiseaza nicio rata",
+      '<div style="overflow-x:auto;"><table class="data"><thead><tr><th>Conditii</th><th>Familie</th><th class="r">N</th><th class="r">Rata succes</th><th class="r">Randament mediu</th><th>Calitate</th><th>Stabilitate</th><th class="r">Din model nepromovat</th></tr></thead><tbody>' + patRows + '</tbody></table></div>');
+
+    var famTable = function (title, note, rows) {
+      var body = rows.map(function (r) {
+        var small = r[1] < 30;
+        return '<tr><td style="font-size:10px;">' + esc(cond(r[0])) + '</td>' +
+          '<td class="r">' + fmtNum(r[1]) + '</td>' +
+          '<td class="r" style="font-weight:700;">' + (small ? "—" : pct(r[2])) + '</td>' +
+          '<td class="r">' + (small ? "—" : sgn(r[3])) + '</td>' +
+          '<td>' + patQualityPill(r[4]) + '</td></tr>';
+      }).join("");
+      return blk(title, note, '<table class="data"><thead><tr><th>Conditii</th><th class="r">N</th><th class="r">Rata succes</th><th class="r">Mediu</th><th>Calitate</th></tr></thead><tbody>' + (body || '<tr><td colspan="5" class="empty">Fara date</td></tr>') + '</tbody></table>');
+    };
+    html += famTable("Memoria modelelor", "un istoric, nu un verdict — promovarea ramane o decizie umana", M.model_memory);
+    html += famTable("Memoria evenimentelor", "co-aparitie; nimic de aici nu stabileste ca evenimentul a cauzat miscarea", M.event_memory);
+    html += famTable("Memoria instrumentelor", "un singur instrument e cel mai usor loc de supra-ajustare", M.instrument_memory);
+    html += famTable("Memoria regimurilor", "goala prin date, nu prin proiectare: market_regime nu e populat nicaieri", M.regime_memory);
+
+    var timelineRows = M.timeline.map(function (r) {
+      var max = Math.max.apply(null, M.timeline.map(function (x) { return x[1]; })) || 1;
+      return '<div style="display:grid;grid-template-columns:90px 1fr 50px;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding:4px 0;font-size:11px;">' +
+        '<span class="mono">' + esc(r[0]) + '</span>' +
+        '<span style="height:8px;background:var(--line);"><span style="display:block;height:8px;width:' + (100 * r[1] / max).toFixed(0) + '%;background:var(--ink);"></span></span>' +
+        '<span style="text-align:right;font-weight:700;">' + r[1] + '</span></div>';
+    }).join("");
+    html += blk("Cronologia memoriei", "cand a devenit cunoscuta fiecare experienta — nu cand a fost scris randul",
+      '<div class="blk-body">' + timelineRows + '</div>');
+
+    if (M.snapshots.length) {
+      var snapRows = M.snapshots.map(function (s) {
+        return '<tr><td class="mono">' + esc(String(s[0]).slice(0, 10)) + '</td>' +
+          '<td class="r">' + fmtNum(s[1]) + '</td><td class="r">' + fmtNum(s[2]) + '</td>' +
+          '<td class="r">' + fmtNum(s[3]) + '</td><td class="r" style="color:var(--accent-dark);">' + fmtNum(s[4]) + '</td></tr>';
+      }).join("");
+      html += blk("Instantanee", "ce stia sistemul la un moment dat",
+        '<table class="data"><thead><tr><th>La data</th><th class="r">Experiente</th><th class="r">Tipare</th><th class="r">Validate</th><th class="r">Experimentale</th></tr></thead><tbody>' + snapRows + '</tbody></table>');
+    }
+
+    var recentRows = M.recent.map(function (r) {
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(r[4] || r[2]) + '</td>' +
+        '<td class="mono">' + esc(r[3]) + '</td>' +
+        '<td>' + esc(r[5]) + '</td>' +
+        '<td class="r">' + sgn(r[6]) + '</td><td class="r">' + sgn(r[7]) + '</td>' +
+        '<td>' + classPill(r[10]) + '</td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(r[9] || "—") + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + fmtNum(r[12]) + '</td>' +
+        '<td class="mono" style="font-size:10px;color:var(--muted);">' + esc(String(r[13] || "").slice(0, 10)) + '</td></tr>';
+    }).join("");
+    html += blk("Experiente recente", "cele mai recent devenite cunoscute",
+      '<div style="overflow-x:auto;"><table class="data"><thead><tr><th>Instrument</th><th>Orizont</th><th>Directie</th><th class="r">Asteptat</th><th class="r">Realizat</th><th>Clasa</th><th>Cauza principala</th><th class="r">Dovezi</th><th>Cunoscuta din</th></tr></thead><tbody>' + recentRows + '</tbody></table></div>');
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid #ae6c00;font-size:11px;line-height:1.6;">' +
+      '<strong>Ce nu spune aceasta pagina.</strong> Un tipar este o observatie despre co-aparitie: nu stabileste o cauza si nu prezice. ' +
+      'Increderea in memorie este o eticheta ordinala si este un lucru diferit de increderea modelului si de scorul de incredere al semnalului. ' +
+      'Contradictiile intre tipare sunt pastrate vizibile, nu rezolvate — care generalizeaza este o intrebare de cercetare, nu un departajaj. ' +
+      'Nimic de aici nu modifica vreun model, prag, strategie, dimensionare, risc, executie sau capital.' +
       '</div></section>';
 
     return html;
@@ -4694,6 +4965,7 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "signals") main.innerHTML = viewSignals();
     else if (v === "outcomes") main.innerHTML = viewOutcomes();
     else if (v === "attribution") main.innerHTML = viewAttribution();
+    else if (v === "memory") main.innerHTML = viewMemory();
     else if (v === "models") main.innerHTML = viewModels();
     else if (v === "outcomes") main.innerHTML = viewOutcomes();
     else if (v === "portfolio") main.innerHTML = viewPortfolio();
