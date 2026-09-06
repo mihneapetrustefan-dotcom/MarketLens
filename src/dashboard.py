@@ -69,12 +69,33 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     ).fetchone() is not None
 
 
+def _absent_table(exc: sqlite3.OperationalError) -> bool:
+    """
+    True only for "no such table", the one failure these helpers are
+    meant to absorb.
+
+    WHY THIS DISTINCTION IS DRAWN AT ALL: a missing table is expected
+    -- an older export, or a phase that has not run -- and degrading to
+    an empty section is the correct behaviour. A missing COLUMN is not
+    expected: it means the query and the schema disagree, which is a
+    bug in this file. Absorbing both looks identical from the outside
+    (an empty section) and the second one cost real debugging time
+    three separate times, because a page that renders "no data" is
+    indistinguishable from a page whose query never ran.
+
+    So the narrow error is swallowed and everything else is raised.
+    """
+    return "no such table" in str(exc).lower()
+
+
 def _scalar(conn: sqlite3.Connection, sql: str, params: tuple = (), default=None):
     try:
         row = conn.execute(sql, params).fetchone()
         return row[0] if row and row[0] is not None else default
-    except sqlite3.OperationalError:
-        return default
+    except sqlite3.OperationalError as exc:
+        if _absent_table(exc):
+            return default
+        raise
 
 
 def _safe_json(raw, default):
@@ -90,8 +111,10 @@ def _safe_json(raw, default):
 def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> List[tuple]:
     try:
         return conn.execute(sql, params).fetchall()
-    except sqlite3.OperationalError:
-        return []
+    except sqlite3.OperationalError as exc:
+        if _absent_table(exc):
+            return []
+        raise
 
 
 class DashboardGenerator:
@@ -700,6 +723,188 @@ class DashboardGenerator:
         active_entities = {r[0] for r in _rows(conn, "SELECT DISTINCT entity FROM recommendations")}
         counts = Counter(sector for company, sector in COMPANY_SECTOR_MAP.items() if company in active_entities)
         return counts.most_common(20)
+
+    def _collect_experiments(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        The Experiment Lab (Phase 22, 67, 68).
+
+        Guarded like every collector since Phase 19: the tables exist
+        only once `scripts/run_experiment.py` has run, and the dashboard
+        must render on a database where it has not.
+
+        THE HEADLINE IS THE DENOMINATOR, NOT THE PASS RATE.
+        An experiment that was proposed and never run is not evidence of
+        anything, and a lab whose page counts drafts alongside completed
+        runs reports a body of research it has not done. So `total`,
+        `completed` and `drafted` are collected separately and the page
+        leads with all three.
+
+        PASS MEANS THE PREDEFINED CRITERIA WERE MET (4). It does not
+        mean profitable, it does not mean deployable, and nothing on
+        this page promotes anything: the Lab is read-only over tables
+        that only the CLI writes.
+        """
+        if not _table_exists(conn, "experiments"):
+            return {"available": False}
+
+        # ONE methodology version, exactly as Phases 20 and 21 pin
+        # theirs. Versions coexist by design, so an unfiltered page
+        # would add two methodologies over the same experiments. Newest
+        # written wins; the version string breaks a same-second tie so
+        # the choice is deterministic rather than arbitrary.
+        version = _scalar(conn, """
+            SELECT method_version FROM experiments
+            ORDER BY created_at DESC, method_version DESC LIMIT 1
+        """, default="")
+        if not version:
+            return {"available": False}
+        v = (version,)
+
+        by_status = _rows(conn, """
+            SELECT status, COUNT(*) FROM experiments WHERE method_version=?
+            GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+        status_map = dict(by_status)
+        total = sum(row[1] for row in by_status) or 0
+        # A finished experiment does NOT sit in status 'completed': the
+        # engine writes the verdict as the status, so a FAIL lands in
+        # 'rejected' and a PASS in 'passed'. Counting only 'completed'
+        # reported zero finished experiments on a database that had
+        # run one, which understates the work done rather than
+        # overstating it -- still wrong, and in a way a reader cannot
+        # detect. 'completed' here means "ran to a verdict".
+        completed = sum(status_map.get(s, 0) for s in
+                        ("completed", "passed", "rejected", "inconclusive"))
+        drafted = sum(status_map.get(s, 0) for s in
+                      ("draft", "planned", "queued"))
+
+        by_type = _rows(conn, """
+            SELECT experiment_type, COUNT(*) FROM experiments
+            WHERE method_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+        by_source = _rows(conn, """
+            SELECT hypothesis_source, COUNT(*) FROM experiments
+            WHERE method_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+
+        has_results = _table_exists(conn, "experiment_results")
+        by_decision = _rows(conn, """
+            SELECT r.decision, COUNT(*) FROM experiment_results r
+            JOIN experiments e ON e.experiment_id = r.experiment_id
+            WHERE e.method_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v) if has_results else []
+        decided = sum(row[1] for row in by_decision) or 0
+
+        # Overfitting is the phase's central measurement, so it is a
+        # first-class number rather than something buried in a detail
+        # page: in-sample effect minus out-of-sample effect, per run.
+        overfit = _rows(conn, """
+            SELECT e.name, r.effect_in_sample, r.effect,
+                   r.effect_in_sample - r.effect, r.decision
+            FROM experiment_results r
+            JOIN experiments e ON e.experiment_id = r.experiment_id
+            WHERE e.method_version=? AND r.effect IS NOT NULL
+              AND r.effect_in_sample IS NOT NULL
+            ORDER BY 4 DESC LIMIT 12
+        """, v) if has_results else []
+
+        # An interval that includes zero is the single most common
+        # reason a candidate fails, and counting it separately stops a
+        # reader inferring that failures were near misses.
+        spans_zero = _scalar(conn, """
+            SELECT COUNT(*) FROM experiment_results r
+            JOIN experiments e ON e.experiment_id = r.experiment_id
+            WHERE e.method_version=? AND r.effect_low IS NOT NULL
+              AND r.effect_high IS NOT NULL
+              AND r.effect_low <= 0 AND r.effect_high >= 0
+        """, v, default=0) if has_results else 0
+
+        families = _rows(conn, """
+            SELECT f.name, COUNT(e.experiment_id), f.core_statement
+            FROM hypothesis_families f
+            LEFT JOIN experiments e ON e.family_id = f.family_id
+            GROUP BY f.family_id ORDER BY 2 DESC LIMIT 20
+        """) if _table_exists(conn, "hypothesis_families") else []
+
+        # How much of the record is a repeat (§41-§43). Two experiments
+        # calling the same evaluator with the same parameters over the
+        # same cohort measure one thing, however they are named -- and
+        # naming was the only difference between three of the first
+        # five proposals, which returned byte-identical results. Read
+        # as three findings they would treble the apparent evidence.
+        # Keyed on what is measured, never on the label.
+        duplicate_comparisons = _scalar(conn, """
+            SELECT COALESCE(SUM(n - 1), 0) FROM (
+                SELECT COUNT(*) AS n FROM experiments
+                WHERE method_version = ?
+                GROUP BY baseline_evaluator, baseline_params_json,
+                         candidate_evaluator, candidate_params_json,
+                         dataset_json, metric
+                HAVING COUNT(*) > 1)
+        """, v, default=0)
+
+        runs_total = _scalar(conn, "SELECT COUNT(*) FROM experiment_runs",
+                             default=0) if _table_exists(conn, "experiment_runs") else 0
+        cache_hits = _scalar(conn, "SELECT COUNT(*) FROM experiment_runs WHERE cache_hit=1",
+                             default=0) if _table_exists(conn, "experiment_runs") else 0
+
+        # The list the Lab page renders. LEFT JOIN so drafts appear
+        # with empty verdicts rather than vanishing -- a proposal that
+        # disappears until it is run is how a backlog becomes invisible.
+        listing = _rows(conn, """
+            SELECT e.experiment_id, e.name, e.experiment_type, e.status,
+                   e.statement, e.mechanism, e.hypothesis_source,
+                   e.created_at, e.family_id, e.source_reference,
+                   r.decision, r.effect, r.effect_in_sample,
+                   r.effect_low, r.effect_high,
+                   r.baseline_oos_json, r.candidate_oos_json,
+                   r.robust_slices, r.robust_slices_passing,
+                   r.economically_significant, r.family_experiment_count,
+                   e.baseline_name, e.candidate_name, e.changed_variables_json,
+                   r.reasons_json, r.limitations_json, e.fingerprint,
+                   e.metric, e.expected_effect, e.criteria_json,
+                   r.sensitivity_json, r.complexity_ratio
+            FROM experiments e
+            LEFT JOIN experiment_results r ON r.experiment_id = e.experiment_id
+            WHERE e.method_version=?
+            ORDER BY e.created_at DESC LIMIT 120
+        """, v) if has_results else _rows(conn, """
+            SELECT e.experiment_id, e.name, e.experiment_type, e.status,
+                   e.statement, e.mechanism, e.hypothesis_source,
+                   e.created_at, e.family_id, e.source_reference,
+                   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                   NULL, NULL,
+                   e.baseline_name, e.candidate_name, e.changed_variables_json,
+                   NULL, NULL, e.fingerprint, e.metric, e.expected_effect,
+                   e.criteria_json, NULL, NULL
+            FROM experiments e WHERE e.method_version=?
+            ORDER BY e.created_at DESC LIMIT 120
+        """, v)
+
+        return {
+            "available": True,
+            "method_version": version,
+            "total": total,
+            "completed": completed,
+            "drafted": drafted,
+            "running": status_map.get("running", 0),
+            "failed_runs": status_map.get("failed", 0),
+            "by_status": by_status,
+            "by_type": by_type,
+            "by_source": by_source,
+            "by_decision": by_decision,
+            "decided": decided,
+            "passed": dict(by_decision).get("pass", 0),
+            "failed": dict(by_decision).get("fail", 0),
+            "inconclusive": dict(by_decision).get("inconclusive", 0),
+            "spans_zero": spans_zero,
+            "duplicate_comparisons": duplicate_comparisons,
+            "overfit": overfit,
+            "families": families,
+            "runs_total": runs_total,
+            "cache_hits": cache_hits,
+            "listing": listing,
+        }
 
     def _collect_legacy(self, conn: sqlite3.Connection, watchlist: Optional[List[str]]) -> Dict[str, Any]:
         if not _table_exists(conn, "recommendations"):
@@ -1876,6 +2081,7 @@ class DashboardGenerator:
         outcomes = self._collect_outcomes(conn)
         attribution = self._collect_attribution(conn)
         memory = self._collect_memory(conn)
+        experiments = self._collect_experiments(conn)
         legacy = self._collect_legacy(conn, watchlist)
         rec_index = self._collect_rec_index(conn)
         portfolio = self._collect_portfolio(conn)
@@ -1919,6 +2125,17 @@ class DashboardGenerator:
             "models": models,
             "signals": signals,
             "outcomes": outcomes,
+            # Phases 20 and 21 collected these and put them only in the
+            # operations payload, while the sidebar dereferences
+            # D.attribution.available and D.memory.available at the top
+            # level. The nav array is evaluated before anything renders,
+            # so the missing keys threw a TypeError and the whole
+            # terminal came up blank -- a total failure that looked like
+            # a styling problem and survived two phases because the page
+            # was never opened in a browser.
+            "attribution": attribution,
+            "memory": memory,
+            "experiments": experiments,
             "legacy": legacy,
             "portfolio": portfolio,
             "constraints": constraints,
@@ -2989,16 +3206,18 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "execution", label: "Executie", tag: XE_BROKERS.length ? String(XE_BROKERS.length) : "0" }
     ]},
     { label: "Performanta", items: [
-      { id: "outcomes", label: "Recomandari (sentiment)", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
+      { id: "recommendations", label: "Recomandari (sentiment)", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
       { id: "models", label: "Modele", tag: D.models.available ? String(D.models.models.length) : "0" },
       { id: "outcomes", label: "Rezultate reale", tag: D.outcomes.available ? fmtNum(D.outcomes.total) : "0" },
+      { id: "experiments", label: "Experimente", tag: D.experiments.available ? fmtNum(D.experiments.total) : "0" },
       { id: "attribution", label: "Diagnostic erori", tag: D.attribution.available ? fmtNum(D.attribution.total) : "0" },
       { id: "memory", label: "Memorie", tag: D.memory.available ? fmtNum(D.memory.total) : "0" },
       { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true }
     ]}
   ];
 
-  var state = { view: "overview", param: null, mktFilter: "all", mktSector: "", mktQuery: "", sigIdx: 0, searchOpen: false };
+  var state = { view: "overview", param: null, mktFilter: "all", mktSector: "", mktQuery: "", sigIdx: 0, searchOpen: false,
+    expFilter: { type: "", status: "", source: "", decision: "", q: "" } };
 
   function parseHash() {
     var h = location.hash.replace(/^#\/?/, "");
@@ -3493,7 +3712,7 @@ table.data tr.sel { background:var(--accent-bg); }
     return html;
   }
 
-  function viewOutcomes() {
+  function viewRecommendations() {
     if (!D.legacy.available) {
       return pageHead("Performanta · rezultate", "Rezultate", null) + blk("Fara date", null, '<div class="empty">Nicio recomandare in baza de date.</div>');
     }
@@ -3956,6 +4175,285 @@ table.data tr.sel { background:var(--accent-bg); }
       'Nimic de aici nu modifica vreun model, prag, strategie, dimensionare, risc, executie sau capital.' +
       '</div></section>';
 
+    return html;
+  }
+
+
+  // ==================================================================
+  // Phase 22 - Experiment Lab (67, 68, 69, 70)
+  //
+  // Read-only over tables only the CLI writes. There is no "run" button
+  // and there cannot be one: the dashboard is a static file with no
+  // server behind it, and 80 forbids arbitrary execution through a
+  // public interface. Where an action is the sensible next step the
+  // page shows the exact command instead, which is honest about where
+  // the capability lives.
+  // ==================================================================
+  var EXPDEC_LABEL = {
+    pass:         ["Trecut", "#00795a", "criteriile definite INAINTE de rulare au fost indeplinite — nu inseamna profitabil"],
+    fail:         ["Cazut", "#ae1800", "cel putin un criteriu predefinit nu a fost indeplinit"],
+    inconclusive: ["Neconcludent", "#ae6c00", "dovezile nu sustin nici trecerea, nici respingerea"]
+  };
+  var EXPST_LABEL = {
+    draft:        ["Ciorna", "#8a8a8a"],
+    planned:      ["Planificat", "#8a8a8a"],
+    queued:       ["In asteptare", "#8a8a8a"],
+    running:      ["Ruleaza", "#ae6c00"],
+    completed:    ["Incheiat", "#00795a"],
+    passed:       ["Trecut", "#00795a"],
+    rejected:     ["Respins", "#ae1800"],
+    inconclusive: ["Neconcludent", "#ae6c00"],
+    failed:       ["Esuat", "#ae1800"],
+    cancelled:    ["Anulat", "#8a8a8a"]
+  };
+  var EXPSRC_LABEL = {
+    researcher:        "cercetator",
+    memory_pattern:    "tipar din memorie",
+    error_attribution: "eroare recurenta",
+    literature:        "literatura"
+  };
+
+  function expDecPill(d) {
+    if (!d) return '<span class="pill" style="border:1px solid var(--line);color:var(--muted);font-size:9px;" title="propunerea nu a fost rulata">nerulat</span>';
+    var e = EXPDEC_LABEL[String(d).toLowerCase()];
+    if (!e) return esc(String(d));
+    return '<span class="pill" title="' + esc(e[2]) + '" style="border:1px solid ' + e[1] + ';color:' + e[1] + ';font-size:9px;">' + e[0] + '</span>';
+  }
+  function expStatusPill(s) {
+    var e = EXPST_LABEL[String(s || "").toLowerCase()];
+    if (!e) return esc(String(s || ""));
+    return '<span class="pill" style="border:1px solid ' + e[1] + ';color:' + e[1] + ';font-size:9px;">' + e[0] + '</span>';
+  }
+  function expN(raw) {
+    // The stored blob is an ArmMetrics, whose field is `sample_size`.
+    // Reading `n` returned undefined every time, so the N column was
+    // permanently "—" on rows that had a perfectly good sample size.
+    try {
+      var o = JSON.parse(raw);
+      return (o && o.sample_size !== undefined && o.sample_size !== null) ? o.sample_size : null;
+    } catch (e) { return null; }
+  }
+  function expList(raw) {
+    try { var o = JSON.parse(raw); return (o && o.length) ? o : []; } catch (e) { return []; }
+  }
+  function expSgn(v, d) {
+    return (v === null || v === undefined) ? "—" : (v >= 0 ? "+" : "") + (100 * v).toFixed(d === undefined ? 2 : d) + "%";
+  }
+  function expCmd(text) {
+    return '<div class="mono" style="font-size:10px;background:var(--paper2);border:1px solid var(--line);padding:6px 8px;margin-top:6px;overflow-x:auto;white-space:nowrap;">' + esc(text) + '</div>';
+  }
+
+  window.MLSetExpFilter = function (k, v) { state.expFilter[k] = v; render(); };
+
+  function expFiltered() {
+    var f = state.expFilter;
+    return D.experiments.listing.filter(function (r) {
+      if (f.type && r[2] !== f.type) return false;
+      if (f.status && r[3] !== f.status) return false;
+      if (f.source && r[6] !== f.source) return false;
+      if (f.decision === "__none" ? r[10] : (f.decision && r[10] !== f.decision)) return false;
+      if (f.q) {
+        var hay = (String(r[1]) + " " + String(r[4])).toLowerCase();
+        if (hay.indexOf(f.q.toLowerCase()) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function viewExperiments() {
+    if (!D.experiments.available) {
+      return pageHead("Cercetare · laborator", "Experimente", null) +
+        blk("Fara date", null, '<div class="empty">Faza 22 nu a rulat inca pe aceasta baza de date. Ruleaza <span class="mono">scripts/run_experiment.py --propose --apply</span>.</div>');
+    }
+    var X = D.experiments;
+    var rows = expFiltered();
+
+    var html = pageHead("Cercetare · ipoteze testate impotriva propriei evidente", "Experimente",
+      [["Definite", fmtNum(X.total)], ["Rulate", fmtNum(X.decided)]]);
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Ce inseamna TRECUT.</strong> Ca au fost indeplinite criteriile scrise <em>inainte</em> de rulare. Nu inseamna profitabil, nu inseamna de pus in productie, si nu promoveaza nimic: ' +
+      'criteriile fac parte din amprenta experimentului, deci succesul nu poate fi redefinit dupa ce raspunsul e vizibil. ' +
+      '<strong>O ciorna nu este o dovada.</strong> Din ' + fmtNum(X.total) + ' experimente definite, ' + fmtNum(X.decided) + ' au fost efectiv rulate; restul sunt propuneri. ' +
+      'Impartirea este cronologica, niciodata aleatoare, iar efectul raportat este cel <em>in afara esantionului</em>. ' +
+      'Versiune metodologie <span class="mono">' + esc(X.method_version) + '</span>.' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(6,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(X.total) + '</div><div class="l">definite</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;color:var(--muted);">' + fmtNum(X.drafted) + '</div><div class="l">ciorne (nerulate)</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;">' + fmtNum(X.completed) + '</div><div class="l">duse pana la un verdict</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;color:#00795a;">' + fmtNum(X.passed) + '</div><div class="l">trecute</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;color:var(--accent-dark);">' + fmtNum(X.failed) + '</div><div class="l">cazute</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:26px;color:#ae6c00;">' + fmtNum(X.inconclusive) + '</div><div class="l">neconcludente</div></div>' +
+      '</div></section>';
+
+    if (X.decided === 0) {
+      html += blk("Nicio ipoteza testata inca", null,
+        '<div class="empty" style="text-align:left;line-height:1.6;">Exista ' + fmtNum(X.total) + ' propuneri si niciun rezultat. ' +
+        'Pagina nu raporteaza o rata de reusita, fiindca nu exista niciuna de raportat.' +
+        expCmd("PYTHONPATH=src python scripts/run_experiment.py --run <experiment_id> --apply") + '</div>');
+    } else if (X.spans_zero > 0) {
+      html += blk("Cate intervale includ zero", "un interval care contine zero nu este o reusita ratata la limita — este absenta unui efect masurabil",
+        '<div class="blk-body" style="font-size:11px;line-height:1.6;">' + fmtNum(X.spans_zero) + ' din ' + fmtNum(X.decided) +
+        ' rezultate au un interval bootstrap care include zero.</div>');
+    }
+
+    if (X.duplicate_comparisons > 0) {
+      html += blk("Experimente care repeta o comparatie existenta",
+        "acelasi evaluator, aceiasi parametri, acelasi esantion — numele difera, masuratoarea nu",
+        '<div class="blk-body" style="font-size:11px;line-height:1.6;">' +
+        fmtNum(X.duplicate_comparisons) + ' din ' + fmtNum(X.total) +
+        ' experimente masoara ceva ce alt experiment masoara deja. ' +
+        'Citite ca rezultate separate, ar inmulti dovada fara sa adauge una. ' +
+        'Corectia pentru testare multipla nu le prinde: stau in familii diferite.' +
+        '</div>');
+    }
+
+    // ---- filters (67) -------------------------------------------
+    var opts = function (key, pairs, label) {
+      return '<select class="field" onchange="MLSetExpFilter(\'' + key + '\', this.value)"><option value="">' + label + '</option>' +
+        pairs.map(function (pr) {
+          return '<option value="' + esc(pr[0]) + '"' + (state.expFilter[key] === pr[0] ? " selected" : "") + '>' + esc(pr[1]) + ' · ' + pr[2] + '</option>';
+        }).join("") + '</select>';
+    };
+    html += '<section class="blk"><div class="blk-body" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+      opts("type", X.by_type.map(function (r) { return [r[0], r[0], r[1]]; }), "toate tipurile") +
+      opts("status", X.by_status.map(function (r) { return [r[0], (EXPST_LABEL[r[0]] || [r[0]])[0], r[1]]; }), "toate starile") +
+      opts("source", X.by_source.map(function (r) { return [r[0], EXPSRC_LABEL[r[0]] || r[0], r[1]]; }), "toate sursele") +
+      opts("decision", X.by_decision.map(function (r) { return [r[0], (EXPDEC_LABEL[r[0]] || [r[0]])[0], r[1]]; }), "toate verdictele") +
+      '<input class="field" placeholder="cauta in nume si ipoteza" value="' + esc(state.expFilter.q || "") +
+      '" oninput="MLSetExpFilter(\'q\', this.value)" style="flex:1;min-width:180px;">' +
+      '<span style="font-size:10px;color:var(--muted);">' + fmtNum(rows.length) + ' din ' + fmtNum(X.listing.length) + '</span>' +
+      '</div></section>';
+
+    var listRows = rows.map(function (r) {
+      var n = expN(r[16]);
+      var gap = (r[11] !== null && r[12] !== null) ? (r[12] - r[11]) : null;
+      return '<tr class="rowlink" onclick="MLGo(\'experiment\',\'' + esc(r[0]) + '\')">' +
+        '<td style="font-size:10px;">' + esc(r[1]) + '</td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(EXPSRC_LABEL[r[6]] || r[6]) + '</td>' +
+        '<td>' + expStatusPill(r[3]) + '</td>' +
+        '<td>' + expDecPill(r[10]) + '</td>' +
+        '<td class="r" style="font-weight:700;">' + expSgn(r[11]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + expSgn(r[12]) + '</td>' +
+        '<td class="r" style="color:' + (gap !== null && gap > 0.02 ? "var(--accent-dark)" : "var(--muted)") + ';">' + expSgn(gap) + '</td>' +
+        '<td class="r" style="font-size:10px;color:var(--muted);">' + (r[13] === null ? "—" : "[" + expSgn(r[13], 1) + ", " + expSgn(r[14], 1) + "]") + '</td>' +
+        '<td class="r">' + (n === null ? "—" : fmtNum(n)) + '</td></tr>';
+    }).join("");
+    html += blk("Experimente", "efectul principal este cel din afara esantionului; diferenta fata de esantion arata cat s-a potrivit candidatul pe datele lui",
+      '<table class="data"><thead><tr><th>Nume</th><th>Sursa</th><th>Stare</th><th>Verdict</th>' +
+      '<th class="r">Efect (OOS)</th><th class="r">In esantion</th><th class="r">Diferenta</th><th class="r">Interval</th><th class="r">N</th></tr></thead><tbody>' +
+      (listRows || '<tr><td colspan="9" class="empty">Niciun experiment nu trece de filtre.</td></tr>') + '</tbody></table>');
+
+    if (X.overfit.length) {
+      var ofRows = X.overfit.map(function (r) {
+        return '<tr><td style="font-size:10px;">' + esc(r[0]) + '</td>' +
+          '<td class="r">' + expSgn(r[1]) + '</td><td class="r">' + expSgn(r[2]) + '</td>' +
+          '<td class="r" style="font-weight:700;color:' + (r[3] > 0.02 ? "var(--accent-dark)" : "var(--ink)") + ';">' + expSgn(r[3]) + '</td>' +
+          '<td>' + expDecPill(r[4]) + '</td></tr>';
+      }).join("");
+      html += blk("Supra-potrivire, masurata", "un efect mare in esantion care dispare in afara lui este semnatura potrivirii pe date, nu a unui efect",
+        '<table class="data"><thead><tr><th>Experiment</th><th class="r">In esantion</th><th class="r">In afara</th><th class="r">Diferenta</th><th>Verdict</th></tr></thead><tbody>' + ofRows + '</tbody></table>');
+    }
+
+    if (X.families.length) {
+      var famRows = X.families.map(function (r) {
+        return '<tr><td style="font-size:10px;">' + esc(r[0]) + '</td><td class="r">' + fmtNum(r[1]) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc(r[2] || "") + '</td></tr>';
+      }).join("");
+      html += blk("Familii de ipoteze", "cate experimente ating aceeasi idee — numarul conteaza fiindca a 20-a incercare pe aceeasi ipoteza trece si din intamplare",
+        '<table class="data"><thead><tr><th>Familie</th><th class="r">Experimente</th><th>Enunt</th></tr></thead><tbody>' + famRows + '</tbody></table>');
+    }
+
+    return html;
+  }
+
+  function viewExperiment(id) {
+    var X = D.experiments;
+    var r = null;
+    if (X.available) {
+      for (var i = 0; i < X.listing.length; i++) { if (X.listing[i][0] === id) { r = X.listing[i]; break; } }
+    }
+    if (!r) {
+      return pageHead("Cercetare · experiment", "Experiment", null) +
+        blk("Negasit", null, '<div class="empty">Nu exista niciun experiment cu identificatorul <span class="mono">' + esc(String(id || "")) + '</span>.</div>');
+    }
+
+    var n_b = expN(r[15]), n_c = expN(r[16]);
+    var gap = (r[11] !== null && r[12] !== null) ? (r[12] - r[11]) : null;
+    var html = '<div class="blk-body" style="border-bottom:1px solid var(--line);padding:14px 24px;">' +
+      '<button class="backbtn" onclick="MLGo(\'experiments\')">← inapoi la Experimente</button></div>';
+    html += pageHead("Cercetare · experiment", r[1],
+      [["Tip", esc(r[2])], ["Stare", esc((EXPST_LABEL[r[3]] || [r[3]])[0])]]);
+
+    html += '<section class="blk"><div class="blk-body" style="font-size:11px;line-height:1.7;">' +
+      '<div style="margin-bottom:8px;"><strong>Ipoteza.</strong> ' + esc(r[4]) + '</div>' +
+      '<div style="margin-bottom:8px;"><strong>Mecanismul propus.</strong> ' + esc(r[5]) + '</div>' +
+      (r[28] ? '<div style="margin-bottom:8px;"><strong>Efect asteptat.</strong> ' + esc(r[28]) + '</div>' : "") +
+      '<div style="color:var(--muted);"><strong>De ce exista.</strong> ' + esc(EXPSRC_LABEL[r[6]] || r[6]) +
+      (r[9] ? ' · <span class="mono">' + esc(r[9]) + '</span>' : "") +
+      (r[6] === "memory_pattern" ? ' — o ipoteza extrasa din exact inregistrarea pe care va fi testata; corelatia care a sugerat-o nu este o dovada pentru ea.' : "") +
+      '</div></div></section>';
+
+    html += blk("Bratele comparatiei", "un singur lucru difera; ce s-a schimbat este calculat din definitii, nu declarat",
+      '<table class="data"><tbody>' +
+      '<tr><td style="width:120px;color:var(--muted);">Referinta</td><td>' + esc(r[21]) + (n_b === null ? "" : ' <span style="color:var(--muted);">· N=' + fmtNum(n_b) + '</span>') + '</td></tr>' +
+      '<tr><td style="color:var(--muted);">Candidat</td><td>' + esc(r[22]) + (n_c === null ? "" : ' <span style="color:var(--muted);">· N=' + fmtNum(n_c) + '</span>') + '</td></tr>' +
+      '<tr><td style="color:var(--muted);">Variabile schimbate</td><td class="mono" style="font-size:10px;">' + esc(expList(r[23]).join(", ") || "—") + '</td></tr>' +
+      '<tr><td style="color:var(--muted);">Metrica</td><td class="mono" style="font-size:10px;">' + esc(r[27] || "") + '</td></tr>' +
+      '</tbody></table>');
+
+    var crit = "";
+    try {
+      var c = JSON.parse(r[29] || "{}");
+      crit = Object.keys(c).sort().map(function (k) {
+        return '<tr><td style="color:var(--muted);width:220px;">' + esc(k) + '</td><td class="mono" style="font-size:10px;">' + esc(String(c[k])) + '</td></tr>';
+      }).join("");
+    } catch (e) { crit = ""; }
+    html += blk("Criterii de acceptare", "scrise inainte de rulare si incluse in amprenta — daca s-ar schimba, experimentul ar deveni altul si rularea ar fi refuzata",
+      '<table class="data"><tbody>' + (crit || '<tr><td class="empty">—</td></tr>') + '</tbody></table>');
+
+    if (r[10]) {
+      html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+        '<div class="cell"><div class="n" style="font-size:24px;">' + expSgn(r[11]) + '</div><div class="l">efect in afara esantionului</div></div>' +
+        '<div class="cell"><div class="n" style="font-size:24px;color:var(--muted);">' + expSgn(r[12]) + '</div><div class="l">efect in esantion</div></div>' +
+        '<div class="cell"><div class="n" style="font-size:24px;color:' + (gap !== null && gap > 0.02 ? "var(--accent-dark)" : "var(--ink)") + ';">' + expSgn(gap) + '</div><div class="l">diferenta (supra-potrivire)</div></div>' +
+        '<div class="cell"><div class="n" style="font-size:16px;padding-top:6px;">' + expDecPill(r[10]) + '</div><div class="l">verdict</div></div>' +
+        '</div></section>';
+
+      html += blk("Interval bootstrap", "daca intervalul include zero, datele nu deosebesc candidatul de referinta",
+        '<div class="blk-body" style="font-size:12px;">' +
+        (r[13] === null ? "—" : '[' + expSgn(r[13]) + ", " + expSgn(r[14]) + ']' +
+          ((r[13] <= 0 && r[14] >= 0) ? ' <span style="color:var(--accent-dark);">· include zero</span>' : '')) +
+        '</div>');
+
+      var reasons = expList(r[24]).map(function (x) { return '<li style="margin-bottom:4px;">' + esc(String(x)) + '</li>'; }).join("");
+      html += blk("Motivele verdictului", "fiecare criteriu verificat este consemnat, indiferent daca a trecut sau nu",
+        '<div class="blk-body"><ul style="font-size:11px;line-height:1.6;margin:0;padding-left:18px;">' + (reasons || '<li>—</li>') + '</ul></div>');
+
+      var lims = expList(r[25]).map(function (x) { return '<li style="margin-bottom:4px;">' + esc(String(x)) + '</li>'; }).join("");
+      if (lims) {
+        html += blk("Limite", "raportate impreuna cu rezultatul, nu separat de el",
+          '<div class="blk-body"><ul style="font-size:11px;line-height:1.6;margin:0;padding-left:18px;color:var(--muted);">' + lims + '</ul></div>');
+      }
+
+      html += blk("Robustete si selectie", null,
+        '<table class="data"><tbody>' +
+        '<tr><td style="width:220px;color:var(--muted);">Felii care confirma</td><td>' + fmtNum(r[18]) + ' din ' + fmtNum(r[17]) + '</td></tr>' +
+        '<tr><td style="color:var(--muted);">Semnificatie economica</td><td>' + (r[19] === null ? "—" : (r[19] ? "da" : "nu")) + '</td></tr>' +
+        '<tr><td style="color:var(--muted);">Experimente in familie</td><td>' + fmtNum(r[20]) + '</td></tr>' +
+        '<tr><td style="color:var(--muted);">Raport de complexitate</td><td>' + (r[31] === null ? "—" : String(r[31])) + '</td></tr>' +
+        '</tbody></table>');
+    } else {
+      html += blk("Nerulat", null,
+        '<div class="empty" style="text-align:left;line-height:1.6;">Aceasta este o propunere. Nu exista niciun rezultat, deci nu exista nimic de interpretat.' +
+        expCmd("PYTHONPATH=src python scripts/run_experiment.py --run " + id + " --apply") + '</div>');
+    }
+
+    html += '<section class="blk"><div class="blk-body" style="font-size:10px;color:var(--muted);">' +
+      'Amprenta <span class="mono">' + esc(r[26]) + '</span> · creat ' + esc(String(r[7] || "")) +
+      '</div></section>';
     return html;
   }
 
@@ -4966,8 +5464,10 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "outcomes") main.innerHTML = viewOutcomes();
     else if (v === "attribution") main.innerHTML = viewAttribution();
     else if (v === "memory") main.innerHTML = viewMemory();
+    else if (v === "experiments") main.innerHTML = viewExperiments();
+    else if (v === "experiment") main.innerHTML = viewExperiment(state.param);
     else if (v === "models") main.innerHTML = viewModels();
-    else if (v === "outcomes") main.innerHTML = viewOutcomes();
+    else if (v === "recommendations") main.innerHTML = viewRecommendations();
     else if (v === "portfolio") main.innerHTML = viewPortfolio();
     else if (v === "risk") main.innerHTML = viewRisk();
     else if (v === "backtests") main.innerHTML = viewBacktests();

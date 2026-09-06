@@ -142,22 +142,22 @@ jobs:
 
       # ---------------- the chain, in dependency order ----------------
 
-      - name: '1/14 Backfill article entities'
+      - name: '1/15 Backfill article entities'
         id: s01
         continue-on-error: true
         run: python scripts/backfill_article_entities.py --apply
 
-      - name: '2/14 Populate events'
+      - name: '2/15 Populate events'
         id: s02
         continue-on-error: true
         run: python scripts/populate_events.py --apply
 
-      - name: '3/14 Fuse events'
+      - name: '3/15 Fuse events'
         id: s03
         continue-on-error: true
         run: python scripts/fuse_events.py --apply
 
-      - name: '4/14 Cache price candles'
+      - name: '4/15 Cache price candles'
         id: s04
         if: steps.plan.outputs.prices == 'true'
         continue-on-error: true
@@ -175,22 +175,22 @@ jobs:
         # afiseaza nicaieri.
         run: python scripts/cache_price_candles.py --include-unstudied
 
-      - name: '5/14 Build event studies'
+      - name: '5/15 Build event studies'
         id: s05
         continue-on-error: true
         run: python scripts/build_event_studies.py --apply
 
-      - name: '6/14 Build research observations'
+      - name: '6/15 Build research observations'
         id: s06
         continue-on-error: true
         run: python scripts/build_research_observations.py --apply
 
-      - name: '7/14 Compute features'
+      - name: '7/15 Compute features'
         id: s07
         continue-on-error: true
         run: python scripts/compute_features.py --apply
 
-      - name: '8/14 Train models'
+      - name: '8/15 Train models'
         id: s08
         if: steps.plan.outputs.train == 'true'
         continue-on-error: true
@@ -209,12 +209,12 @@ jobs:
       #
       # When a model is finally promoted, DELETE the flag. The stage
       # then produces production output and nothing else changes.
-      - name: '9/14 Predict (score current observations, EXPERIMENTAL)'
+      - name: '9/15 Predict (score current observations, EXPERIMENTAL)'
         id: s09
         continue-on-error: true
         run: python scripts/predict.py --apply --experimental
 
-      - name: '10/14 Generate signals'
+      - name: '10/15 Generate signals'
         id: s10
         continue-on-error: true
         run: python scripts/generate_signals.py --apply
@@ -227,7 +227,7 @@ jobs:
       #
       # Moving this earlier would be a leakage bug, and
       # tests/outcomes/test_leakage.py fails if the order changes.
-      - name: '11/14 Measure outcomes'
+      - name: '11/15 Measure outcomes'
         id: s11
         continue-on-error: true
         run: python scripts/measure_outcomes.py --apply --predictions
@@ -241,7 +241,7 @@ jobs:
       # figure (Phase 20, section 59), and
       # tests/attribution/test_engine_and_leakage.py fails if this
       # stage moves before measurement.
-      - name: '12/14 Attribute errors'
+      - name: '12/15 Attribute errors'
         id: s12
         continue-on-error: true
         run: python scripts/attribute_errors.py --apply
@@ -255,13 +255,28 @@ jobs:
       # execution or capital figure (Phase 21, section 63), and
       # tests/memory/test_patterns_and_leakage.py fails if this stage
       # moves before attribution.
-      - name: '13/14 Build trading memory'
+      - name: '13/15 Build trading memory'
         id: s13
         continue-on-error: true
         run: python scripts/build_memory.py --apply
 
-      - name: '14/14 Rebuild dashboard'
+      # Proposing only. The pipeline generates candidate experiments
+      # from memory patterns and recurring errors; it does not run
+      # them. Running is a deliberate act with a compute budget, and
+      # an automated loop that both proposes and evaluates its own
+      # hypotheses is the autonomous learning Phase 22 section 80
+      # forbids. Every row this writes is a DRAFT.
+      #
+      # It runs after memory because it mines memory, and
+      # tests/experiments/test_pipeline_position.py fails if it moves
+      # before build_memory.py.
+      - name: '14/15 Propose experiments (drafts only, nothing is run)'
         id: s14
+        continue-on-error: true
+        run: python scripts/run_experiment.py --propose --apply
+
+      - name: '15/15 Rebuild dashboard'
+        id: s15
         continue-on-error: true
         run: python scripts/build_dashboard.py
 
@@ -305,7 +320,8 @@ jobs:
             echo "| 11 | Measure outcomes | ${{ steps.s11.outcome }} |"
             echo "| 12 | Attribute errors | ${{ steps.s12.outcome }} |"
             echo "| 13 | Build trading memory | ${{ steps.s13.outcome }} |"
-            echo "| 14 | Rebuild dashboard | ${{ steps.s14.outcome }} |"
+            echo "| 14 | Propose experiments (drafts) | ${{ steps.s14.outcome }} |"
+            echo "| 15 | Rebuild dashboard | ${{ steps.s15.outcome }} |"
             echo ""
             echo "\`skipped\` on stage 4 or 8 is expected on a refresh run."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -317,7 +333,8 @@ jobs:
                    "${{ steps.s07.outcome }}" "${{ steps.s08.outcome }}" \
                    "${{ steps.s09.outcome }}" "${{ steps.s10.outcome }}" \
                    "${{ steps.s11.outcome }}" "${{ steps.s12.outcome }}" \
-                   "${{ steps.s13.outcome }}" "${{ steps.s14.outcome }}"; do
+                   "${{ steps.s13.outcome }}" "${{ steps.s14.outcome }}" \
+                   "${{ steps.s15.outcome }}"; do
             [ "$o" = "failure" ] && FAILED=$((FAILED+1))
           done
           echo "Etape esuate: $FAILED"
