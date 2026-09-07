@@ -906,6 +906,174 @@ class DashboardGenerator:
             "listing": listing,
         }
 
+    def _collect_research_lab(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        The Autonomous Research Lab (Phase 23, §78, §79, §80).
+
+        Guarded like every collector since Phase 19: the tables exist
+        only once `scripts/run_research.py` has run.
+
+        THE HEADLINE IS THE REFUSALS, NOT THE FINDINGS.
+        A research programme is described by what it declined to test
+        and what it failed to show, far more than by its successes. So
+        the page leads with the triage breakdown (seven of eight states
+        are a "no"), the blind spots, and the count of conclusions that
+        are not SUPPORTED — and only then the promising candidates.
+
+        Nothing here can change anything. The Lab is read-only over
+        tables only the CLI writes, and the dashboard is a static file
+        with no server behind it.
+        """
+        if not _table_exists(conn, "autoresearch_questions"):
+            return {"available": False}
+
+        # Availability is decided by questions OR conclusions, not by
+        # questions alone. A database holding findings but no stored
+        # questions would otherwise report the whole Lab as absent and
+        # silently hide real research -- the opposite of what an
+        # availability guard is for.
+        version = _scalar(conn, """
+            SELECT method_version FROM autoresearch_questions
+            ORDER BY created_at DESC, method_version DESC LIMIT 1
+        """, default="")
+        if not version and _table_exists(conn, "autoresearch_conclusions"):
+            version = _scalar(conn, """
+                SELECT method_version FROM autoresearch_conclusions
+                ORDER BY concluded_at DESC, method_version DESC LIMIT 1
+            """, default="")
+        if not version:
+            return {"available": False}
+        v = (version,)
+
+        by_triage = _rows(conn, """
+            SELECT triage, COUNT(*) FROM autoresearch_questions
+            WHERE method_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v)
+        triage_map = dict(by_triage)
+        questions_total = sum(row[1] for row in by_triage) or 0
+
+        by_conclusion = _rows(conn, """
+            SELECT conclusion, COUNT(*) FROM autoresearch_conclusions
+            WHERE method_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v) if _table_exists(conn, "autoresearch_conclusions") else []
+        conclusions_total = sum(row[1] for row in by_conclusion) or 0
+        supported = dict(by_conclusion).get("supported", 0)
+
+        by_confidence = _rows(conn, """
+            SELECT confidence, COUNT(*) FROM autoresearch_conclusions
+            WHERE method_version=? GROUP BY 1 ORDER BY 2 DESC
+        """, v) if _table_exists(conn, "autoresearch_conclusions") else []
+
+        conclusions = _rows(conn, """
+            SELECT c.conclusion_id, h.statement, c.conclusion, c.confidence,
+                   c.effect, c.effect_in_sample, c.effect_low, c.effect_high,
+                   c.sample_size, c.promising, c.warnings_json,
+                   c.reasons_json, c.limitations_json, c.experiment_id,
+                   h.mechanism, h.family_name, c.family_experiment_count,
+                   c.hypothesis_id, h.evaluator, h.source, h.source_reference,
+                   q.question, q.title, c.concluded_at
+            FROM autoresearch_conclusions c
+            LEFT JOIN autoresearch_hypotheses h
+                   ON h.hypothesis_id = c.hypothesis_id
+            LEFT JOIN autoresearch_questions q
+                   ON q.question_id = c.question_id
+            WHERE c.method_version=?
+            ORDER BY c.concluded_at DESC LIMIT 60
+        """, v) if _table_exists(conn, "autoresearch_conclusions") else []
+
+        # The refused questions, with their reasons. This is the part a
+        # reader most needs and would never think to ask for.
+        refused = _rows(conn, """
+            SELECT triage, question, triage_reason, priority, sample_size
+            FROM autoresearch_questions
+            WHERE method_version=? AND triage NOT IN ('testable','researching')
+            ORDER BY priority DESC LIMIT 40
+        """, v)
+
+        candidates = _rows(conn, """
+            SELECT candidate_id, name, status, effect, base_version,
+                   review_reason, requires_review, created_at
+            FROM autoresearch_candidates WHERE method_version=?
+            ORDER BY created_at DESC LIMIT 20
+        """, v) if _table_exists(conn, "autoresearch_candidates") else []
+
+        families = _rows(conn, """
+            SELECT f.family_id, f.status, f.experiments, f.supported,
+                   f.rejected, f.inconclusive, f.best_effect, f.median_effect,
+                   f.reason,
+                   (SELECT family_name FROM autoresearch_hypotheses h
+                     WHERE h.family_id = f.family_id LIMIT 1)
+            FROM autoresearch_family_state f
+            ORDER BY f.experiments DESC LIMIT 30
+        """) if _table_exists(conn, "autoresearch_family_state") else []
+
+        snooping = _rows(conn, """
+            SELECT window_key, COUNT(*), COUNT(DISTINCT hypothesis_id)
+            FROM autoresearch_window_usage
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+        """) if _table_exists(conn, "autoresearch_window_usage") else []
+
+        protected = _rows(conn, """
+            SELECT label, starts_at, ends_at, policy, reason
+            FROM autoresearch_protected_windows ORDER BY starts_at
+        """) if _table_exists(conn, "autoresearch_protected_windows") else []
+
+        cycles = _rows(conn, """
+            SELECT cycle_id, trigger, actor, observations_made,
+                   questions_raised, hypotheses_formed, conclusions_drawn,
+                   candidates_proposed, duplicates_skipped,
+                   termination_reason, runtime_seconds, started_at
+            FROM autoresearch_cycles ORDER BY started_at DESC LIMIT 12
+        """) if _table_exists(conn, "autoresearch_cycles") else []
+
+        by_actor = _rows(conn, """
+            SELECT actor, COUNT(*) FROM autoresearch_audit GROUP BY 1
+        """) if _table_exists(conn, "autoresearch_audit") else []
+
+        queue_states = _rows(conn, """
+            SELECT state, COUNT(*) FROM autoresearch_queue GROUP BY 1
+        """) if _table_exists(conn, "autoresearch_queue") else []
+
+        observations_total = _scalar(
+            conn, "SELECT COUNT(*) FROM autoresearch_observations",
+            default=0) if _table_exists(conn, "autoresearch_observations") else 0
+
+        hypotheses_total = _scalar(
+            conn, "SELECT COUNT(*) FROM autoresearch_hypotheses "
+                  "WHERE method_version=?", v,
+            default=0) if _table_exists(conn, "autoresearch_hypotheses") else 0
+        distinct_claims = _scalar(
+            conn, "SELECT COUNT(DISTINCT claim_fingerprint) "
+                  "FROM autoresearch_hypotheses WHERE method_version=?", v,
+            default=0) if _table_exists(conn, "autoresearch_hypotheses") else 0
+
+        return {
+            "available": True,
+            "method_version": version,
+            "observations": observations_total,
+            "questions_total": questions_total,
+            "by_triage": by_triage,
+            "testable": triage_map.get("testable", 0),
+            "refused_total": questions_total - triage_map.get("testable", 0),
+            "refused": refused,
+            "hypotheses": hypotheses_total,
+            "distinct_claims": distinct_claims,
+            "repeated_claims": max(0, hypotheses_total - distinct_claims),
+            "conclusions_total": conclusions_total,
+            "supported": supported,
+            "not_supported": conclusions_total - supported,
+            "by_conclusion": by_conclusion,
+            "by_confidence": by_confidence,
+            "conclusions": conclusions,
+            "candidates": candidates,
+            "families": families,
+            "snooping": snooping,
+            "protected": protected,
+            "cycles": cycles,
+            "by_actor": by_actor,
+            "queue_states": queue_states,
+        }
+
     def _collect_legacy(self, conn: sqlite3.Connection, watchlist: Optional[List[str]]) -> Dict[str, Any]:
         if not _table_exists(conn, "recommendations"):
             return {"available": False}
@@ -2082,6 +2250,7 @@ class DashboardGenerator:
         attribution = self._collect_attribution(conn)
         memory = self._collect_memory(conn)
         experiments = self._collect_experiments(conn)
+        research_lab = self._collect_research_lab(conn)
         legacy = self._collect_legacy(conn, watchlist)
         rec_index = self._collect_rec_index(conn)
         portfolio = self._collect_portfolio(conn)
@@ -2136,6 +2305,7 @@ class DashboardGenerator:
             "attribution": attribution,
             "memory": memory,
             "experiments": experiments,
+            "researchlab": research_lab,
             "legacy": legacy,
             "portfolio": portfolio,
             "constraints": constraints,
@@ -3212,7 +3382,7 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "experiments", label: "Experimente", tag: D.experiments.available ? fmtNum(D.experiments.total) : "0" },
       { id: "attribution", label: "Diagnostic erori", tag: D.attribution.available ? fmtNum(D.attribution.total) : "0" },
       { id: "memory", label: "Memorie", tag: D.memory.available ? fmtNum(D.memory.total) : "0" },
-      { id: "research", label: "Cercetare", tag: D.research.available ? fmtNum(D.research.total) : "0", stub: true }
+      { id: "researchlab", label: "Cercetare autonoma", tag: D.researchlab.available ? fmtNum(D.researchlab.conclusions_total) : "0" }
     ]}
   ];
 
@@ -4457,6 +4627,244 @@ table.data tr.sel { background:var(--accent-bg); }
     return html;
   }
 
+
+  // ==================================================================
+  // Phase 23 - Autonomous Research Lab (78, 79, 80)
+  //
+  // Read-only. The page leads with what the researcher REFUSED to
+  // test and what it failed to show, because a research programme is
+  // described far better by those than by its handful of successes.
+  // ==================================================================
+  var RTRIAGE_LABEL = {
+    testable:          ["Testabil", "#00795a", "poate deveni o ipoteza"],
+    untestable:        ["Netestabil", "#ae6c00", "nimic din sistem nu poate exprima testul"],
+    insufficient_data: ["Date insuficiente", "#8a8a8a", "sub pragul de 30 de observatii"],
+    duplicate:         ["Duplicat", "#8a8a8a", "aceeasi afirmatie a fost deja testata"],
+    low_priority:      ["Prioritate mica", "#8a8a8a", "real, dar nu merita bugetul acum"],
+    ignored:           ["Ignorat", "#8a8a8a", ""],
+    queued:            ["In asteptare", "#8a8a8a", ""],
+    researching:       ["In lucru", "#ae6c00", ""]
+  };
+  var RCONCL_LABEL = {
+    supported:            ["Sustinut", "#00795a", "criteriile fixate INAINTE de test au fost indeplinite"],
+    partially_supported:  ["Partial sustinut", "#ae6c00", "directia se potriveste, marimea nu"],
+    rejected:             ["Respins", "#ae1800", "efectul merge in directia opusa"],
+    inconclusive:         ["Neconcludent", "#8a8a8a", "datele nu deosebesc candidatul de referinta"],
+    insufficient_data:    ["Date insuficiente", "#8a8a8a", "esantion sub prag; nu se concluzioneaza nimic"],
+    conflicting_evidence: ["Dovezi contradictorii", "#ae6c00", "o concluzie anterioara nu este de acord"]
+  };
+  var RCONF_LABEL = {
+    high: ["Ridicata", "#00795a"], medium: ["Medie", "#ae6c00"],
+    low: ["Scazuta", "#8a8a8a"], insufficient: ["Insuficienta", "#8a8a8a"]
+  };
+
+  function rPill(map, key) {
+    var e = map[String(key || "").toLowerCase()];
+    if (!e) return esc(String(key || ""));
+    return '<span class="pill" title="' + esc(e[2] || "") + '" style="border:1px solid ' + e[1] + ';color:' + e[1] + ';font-size:9px;">' + e[0] + '</span>';
+  }
+  function rSgn(v, d) {
+    return (v === null || v === undefined) ? "—" : (v >= 0 ? "+" : "") + (100 * v).toFixed(d === undefined ? 2 : d) + "%";
+  }
+  function rList(raw) { try { var o = JSON.parse(raw); return (o && o.length) ? o : []; } catch (e) { return []; } }
+
+  function viewResearchLab() {
+    if (!D.researchlab.available) {
+      return pageHead("Cercetare · laborator autonom", "Cercetare autonoma", null) +
+        blk("Fara date", null, '<div class="empty">Faza 23 nu a rulat inca pe aceasta baza de date. Ruleaza <span class="mono">scripts/run_research.py --cycle --apply</span>.</div>');
+    }
+    var R = D.researchlab;
+
+    var html = pageHead("Cercetare · observa, intreaba, testeaza, afla ca s-a inselat", "Cercetare autonoma",
+      [["Intrebari", fmtNum(R.questions_total)], ["Concluzii", fmtNum(R.conclusions_total)]]);
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Ce face si ce nu face.</strong> Sistemul observa tiparele si erorile din propriul registru, formuleaza intrebari, le trece printr-un triaj, ' +
+      'transforma doar o parte in ipoteze falsificabile si le testeaza cu motorul Fazei 22. <strong>Nu modifica nimic din productie:</strong> ' +
+      'niciun model, nicio strategie, niciun prag, nicio limita de risc, niciun capital. Un rezultat promitator devine <em>candidat</em> si atat — ' +
+      'promovarea ramane o decizie umana. ' +
+      '<strong>O ipoteza respinsa este un rezultat.</strong> Din ' + fmtNum(R.conclusions_total) + ' concluzii, ' + fmtNum(R.not_supported) + ' nu sunt sustinute, si raman toate in registru. ' +
+      'Versiune metodologie <span class="mono">' + esc(R.method_version) + '</span>.' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(6,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(R.observations) + '</div><div class="l">observatii</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(R.questions_total) + '</div><div class="l">intrebari</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:var(--accent-dark);">' + fmtNum(R.refused_total) + '</div><div class="l">refuzate la triaj</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(R.hypotheses) + '</div><div class="l">ipoteze</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:#00795a;">' + fmtNum(R.supported) + '</div><div class="l">sustinute</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:var(--muted);">' + fmtNum(R.not_supported) + '</div><div class="l">nesustinute</div></div>' +
+      '</div></section>';
+
+    // ---- what it refused to test (the honest headline) ----------
+    var triageRows = R.by_triage.map(function (r) {
+      return '<tr><td>' + rPill(RTRIAGE_LABEL, r[0]) + '</td><td class="r" style="font-weight:700;">' + fmtNum(r[1]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + (100 * r[1] / (R.questions_total || 1)).toFixed(1) + '%</td></tr>';
+    }).join("");
+    html += blk("Triajul intrebarilor", "sapte din cele opt stari inseamna „nu” — decizia de a nu cerceta ceva este si ea o decizie de cercetare",
+      '<table class="data"><thead><tr><th>Stare</th><th class="r">N</th><th class="r">Pondere</th></tr></thead><tbody>' + triageRows + '</tbody></table>');
+
+    if (R.refused.length) {
+      var refRows = R.refused.slice(0, 14).map(function (r) {
+        return '<tr><td>' + rPill(RTRIAGE_LABEL, r[0]) + '</td>' +
+          '<td style="font-size:10px;">' + esc(String(r[1]).slice(0, 92)) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc(String(r[2]).slice(0, 150)) + '</td></tr>';
+      }).join("");
+      html += blk("De ce nu au fost testate", "motivul este pastrat, nu doar decizia",
+        '<table class="data"><thead><tr><th>Stare</th><th>Intrebare</th><th>Motiv</th></tr></thead><tbody>' + refRows + '</tbody></table>');
+    }
+
+    // ---- conclusions --------------------------------------------
+    var conclRows = R.conclusions.map(function (r) {
+      var gap = (r[4] !== null && r[5] !== null) ? (r[5] - r[4]) : null;
+      return '<tr class="rowlink" onclick="MLGo(\'conclusion\',\'' + esc(r[0]) + '\')">' +
+        '<td style="font-size:10px;">' + esc(String(r[1] || "").slice(0, 62)) + '</td>' +
+        '<td>' + rPill(RCONCL_LABEL, r[2]) + '</td>' +
+        '<td>' + rPill(RCONF_LABEL, r[3]) + '</td>' +
+        '<td class="r" style="font-weight:700;">' + rSgn(r[4]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + rSgn(r[5]) + '</td>' +
+        '<td class="r" style="color:' + (gap !== null && gap > 0.02 ? "var(--accent-dark)" : "var(--muted)") + ';">' + rSgn(gap) + '</td>' +
+        '<td class="r" style="font-size:10px;color:var(--muted);">' + (r[6] === null ? "—" : "[" + rSgn(r[6], 1) + ", " + rSgn(r[7], 1) + "]") + '</td>' +
+        '<td class="r">' + fmtNum(r[8]) + '</td>' +
+        '<td class="r" style="font-size:10px;">' + (r[9] ? '<span style="color:#00795a;">promitator</span>' : "—") + '</td></tr>';
+    }).join("");
+    html += blk("Concluzii", "efectul principal este cel din afara esantionului; toate concluziile raman, inclusiv cele negative",
+      '<table class="data"><thead><tr><th>Ipoteza</th><th>Concluzie</th><th>Incredere</th><th class="r">Efect (OOS)</th><th class="r">In esantion</th><th class="r">Diferenta</th><th class="r">Interval</th><th class="r">N</th><th class="r">Poarta</th></tr></thead><tbody>' +
+      (conclRows || '<tr><td colspan="9" class="empty">Nicio concluzie inca.</td></tr>') + '</tbody></table>');
+
+    // ---- candidates ---------------------------------------------
+    if (R.candidates.length) {
+      var candRows = R.candidates.map(function (r) {
+        return '<tr><td style="font-size:10px;">' + esc(String(r[1]).slice(0, 70)) + '</td>' +
+          '<td><span class="pill" style="border:1px solid #ae6c00;color:#ae6c00;font-size:9px;">' + esc(r[2]) + '</span></td>' +
+          '<td class="r" style="font-weight:700;">' + rSgn(r[3]) + '</td>' +
+          '<td class="mono" style="font-size:10px;color:var(--muted);">' + esc(r[4]) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc(String(r[5]).slice(0, 190)) + '</td></tr>';
+      }).join("");
+      html += blk("Candidati (necesita revizuire umana)", "un candidat este o inregistrare, nu o punere in productie — nimic de aici nu poate promova nimic",
+        '<table class="data"><thead><tr><th>Nume</th><th>Stare</th><th class="r">Efect</th><th>Referinta</th><th>De ce ajunge la un om</th></tr></thead><tbody>' + candRows + '</tbody></table>');
+    } else {
+      html += blk("Candidati", null, '<div class="empty">Nicio concluzie nu a trecut poarta de calitate.</div>');
+    }
+
+    // ---- families -----------------------------------------------
+    if (R.families.length) {
+      var famRows = R.families.map(function (r) {
+        return '<tr><td style="font-size:10px;">' + esc(r[9] || r[0]) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc(r[1]) + '</td>' +
+          '<td class="r">' + fmtNum(r[2]) + '</td><td class="r">' + fmtNum(r[3]) + '</td>' +
+          '<td class="r">' + fmtNum(r[4]) + '</td><td class="r">' + fmtNum(r[5]) + '</td>' +
+          '<td class="r" style="font-weight:700;">' + rSgn(r[6]) + '</td>' +
+          '<td class="r">' + rSgn(r[7]) + '</td></tr>';
+      }).join("");
+      html += blk("Familii de ipoteze", "cel mai bun SI medianul — o familie al carei cel mai bun rezultat e +0,4% si al carei median e -0,2% este o familie slaba, iar niciun numar singur nu ar spune asta",
+        '<table class="data"><thead><tr><th>Familie</th><th>Stare</th><th class="r">Exp.</th><th class="r">Sustinute</th><th class="r">Respinse</th><th class="r">Neconcl.</th><th class="r">Cel mai bun</th><th class="r">Median</th></tr></thead><tbody>' + famRows + '</tbody></table>');
+    }
+
+    // ---- governance ---------------------------------------------
+    var snoopRows = R.snooping.map(function (r) {
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(r[0]) + '</td>' +
+        '<td class="r" style="font-weight:700;color:' + (r[1] >= 3 ? "var(--accent-dark)" : "var(--ink)") + ';">' + fmtNum(r[1]) + '</td>' +
+        '<td class="r">' + fmtNum(r[2]) + '</td></tr>';
+    }).join("");
+    html += blk("Registrul de data snooping", "de cate ori a fost testata aceeasi fereastra — un rezultat gasit la a patra trecere peste aceleasi doua saptamani cantareste mai putin decat unul gasit la prima",
+      '<table class="data"><thead><tr><th>Fereastra de evaluare</th><th class="r">Utilizari</th><th class="r">Ipoteze distincte</th></tr></thead><tbody>' +
+      (snoopRows || '<tr><td colspan="3" class="empty">Nicio fereastra folosita inca.</td></tr>') + '</tbody></table>');
+
+    html += blk("Ferestre protejate", "date pe care cercetatorul autonom nu are voie sa le atinga",
+      R.protected.length
+        ? '<table class="data"><thead><tr><th>Eticheta</th><th>De la</th><th>Pana la</th><th>Politica</th></tr></thead><tbody>' +
+          R.protected.map(function (r) {
+            return '<tr><td>' + esc(r[0]) + '</td><td class="mono" style="font-size:10px;">' + esc(r[1]) + '</td>' +
+              '<td class="mono" style="font-size:10px;">' + esc(r[2]) + '</td><td>' + esc(r[3]) + '</td></tr>';
+          }).join("") + '</tbody></table>'
+        : '<div class="empty" style="text-align:left;line-height:1.6;">Nicio fereastra nu este rezervata pe aceasta baza. Declara una cu <span class="mono">scripts/run_research.py --protect &lt;eticheta&gt; &lt;de-la&gt; &lt;pana-la&gt; --apply</span>.</div>');
+
+    // ---- cycles and actors --------------------------------------
+    if (R.cycles.length) {
+      var cycRows = R.cycles.map(function (r) {
+        return '<tr><td class="mono" style="font-size:10px;">' + esc(r[0]) + '</td>' +
+          '<td style="font-size:10px;">' + esc(r[1]) + '</td>' +
+          '<td class="r">' + fmtNum(r[3]) + '</td><td class="r">' + fmtNum(r[4]) + '</td>' +
+          '<td class="r">' + fmtNum(r[5]) + '</td><td class="r">' + fmtNum(r[6]) + '</td>' +
+          '<td class="r">' + fmtNum(r[8]) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc(String(r[9]).slice(0, 110)) + '</td></tr>';
+      }).join("");
+      html += blk("Cicluri de cercetare", "fiecare ciclu spune de ce s-a oprit — o bucla care se termina fara sa spuna de ce nu se deosebeste de una care a crapat",
+        '<table class="data"><thead><tr><th>Ciclu</th><th>Declansat</th><th class="r">Obs.</th><th class="r">Intrebari</th><th class="r">Ipoteze</th><th class="r">Concluzii</th><th class="r">Dupl.</th><th>Motivul opririi</th></tr></thead><tbody>' + cycRows + '</tbody></table>');
+    }
+
+    var actorRows = R.by_actor.map(function (r) {
+      return '<tr><td>' + esc(r[0]) + '</td><td class="r">' + fmtNum(r[1]) + '</td></tr>';
+    }).join("");
+    html += blk("Cine a actionat", "randul „llm” este zero fiindca niciun LLM nu este folosit — absenta este masurata, nu afirmata",
+      '<table class="data"><thead><tr><th>Actor</th><th class="r">Actiuni</th></tr></thead><tbody>' +
+      (actorRows || '<tr><td colspan="2" class="empty">Nicio actiune inregistrata.</td></tr>') + '</tbody></table>');
+
+    return html;
+  }
+
+  function viewConclusion(id) {
+    var R = D.researchlab;
+    var r = null;
+    if (R.available) {
+      for (var i = 0; i < R.conclusions.length; i++) { if (R.conclusions[i][0] === id) { r = R.conclusions[i]; break; } }
+    }
+    if (!r) {
+      return pageHead("Cercetare · concluzie", "Concluzie", null) +
+        blk("Negasit", null, '<div class="empty">Nu exista nicio concluzie cu identificatorul <span class="mono">' + esc(String(id || "")) + '</span>.</div>');
+    }
+
+    var gap = (r[4] !== null && r[5] !== null) ? (r[5] - r[4]) : null;
+    var html = '<div class="blk-body" style="border-bottom:1px solid var(--line);padding:14px 24px;">' +
+      '<button class="backbtn" onclick="MLGo(\'researchlab\')">← inapoi la Cercetare</button></div>';
+    html += pageHead("Cercetare · concluzie", String(r[22] || r[1] || "").slice(0, 90), null);
+
+    html += '<section class="blk"><div class="blk-body" style="font-size:11px;line-height:1.7;">' +
+      (r[21] ? '<div style="margin-bottom:8px;"><strong>Intrebarea.</strong> ' + esc(r[21]) + '</div>' : "") +
+      '<div style="margin-bottom:8px;"><strong>Ipoteza.</strong> ' + esc(r[1] || "") + '</div>' +
+      '<div style="margin-bottom:8px;"><strong>Mecanismul propus.</strong> ' + esc(r[14] || "") + '</div>' +
+      '<div style="color:var(--muted);"><strong>Provenienta.</strong> ' + esc(r[19] || "") +
+      (r[20] ? ' · <span class="mono">' + esc(r[20]) + '</span>' : "") +
+      ' · experiment <span class="mono">' + esc(r[13] || "") + '</span></div>' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + rSgn(r[4]) + '</div><div class="l">efect in afara esantionului</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:var(--muted);">' + rSgn(r[5]) + '</div><div class="l">efect in esantion</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:' + (gap !== null && gap > 0.02 ? "var(--accent-dark)" : "var(--ink)") + ';">' + rSgn(gap) + '</div><div class="l">diferenta</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:15px;padding-top:8px;">' + rPill(RCONCL_LABEL, r[2]) + '</div><div class="l">concluzie</div></div>' +
+      '</div></section>';
+
+    html += blk("Interval bootstrap", "daca include zero, datele nu deosebesc candidatul de referinta",
+      '<div class="blk-body" style="font-size:12px;">' +
+      (r[6] === null ? "—" : '[' + rSgn(r[6]) + ", " + rSgn(r[7]) + ']' +
+        ((r[6] <= 0 && r[7] >= 0) ? ' <span style="color:var(--accent-dark);">· include zero</span>' : '')) +
+      ' · esantion ' + fmtNum(r[8]) + ' · incredere ' + rPill(RCONF_LABEL, r[3]) + '</div>');
+
+    var reasons = rList(r[11]).map(function (x) { return '<li style="margin-bottom:4px;">' + esc(String(x)) + '</li>'; }).join("");
+    html += blk("Motivele concluziei", "fiecare criteriu verificat este consemnat, indiferent daca a trecut sau nu",
+      '<div class="blk-body"><ul style="font-size:11px;line-height:1.6;margin:0;padding-left:18px;">' + (reasons || '<li>—</li>') + '</ul></div>');
+
+    var warns = rList(r[10]);
+    if (warns.length) {
+      html += blk("Semne de supra-potrivire", "forme in rezultat, nu judecati despre intentie",
+        '<div class="blk-body"><ul style="font-size:11px;line-height:1.6;margin:0;padding-left:18px;color:var(--accent-dark);">' +
+        warns.map(function (x) { return '<li>' + esc(String(x)) + '</li>'; }).join("") + '</ul></div>');
+    }
+
+    var lims = rList(r[12]).map(function (x) { return '<li style="margin-bottom:4px;">' + esc(String(x)) + '</li>'; }).join("");
+    if (lims) {
+      html += blk("Limite", "raportate impreuna cu rezultatul, nu separat de el",
+        '<div class="blk-body"><ul style="font-size:11px;line-height:1.6;margin:0;padding-left:18px;color:var(--muted);">' + lims + '</ul></div>');
+    }
+
+    html += '<section class="blk"><div class="blk-body" style="font-size:10px;color:var(--muted);">' +
+      fmtNum(r[16]) + ' ipoteze in aceasta familie · concluzionat ' + esc(String(r[23] || "")) +
+      '</div></section>';
+    return html;
+  }
+
   function viewModels() {
     if (!D.models.available) {
       return pageHead("Performanta · modele", "Modele", null) + blk("Fara date", null, '<div class="empty">Faza 9 nu a rulat inca pe aceasta baza de date.</div>');
@@ -5441,7 +5849,7 @@ table.data tr.sel { background:var(--accent-bg); }
     nav.innerHTML = html;
   }
 
-  var STUB_IDS = ["watchlist", "research", "features"];
+  var STUB_IDS = ["watchlist", "features"];
 
   function render() {
     renderNav();
@@ -5465,6 +5873,8 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "attribution") main.innerHTML = viewAttribution();
     else if (v === "memory") main.innerHTML = viewMemory();
     else if (v === "experiments") main.innerHTML = viewExperiments();
+    else if (v === "researchlab") main.innerHTML = viewResearchLab();
+    else if (v === "conclusion") main.innerHTML = viewConclusion(state.param);
     else if (v === "experiment") main.innerHTML = viewExperiment(state.param);
     else if (v === "models") main.innerHTML = viewModels();
     else if (v === "recommendations") main.innerHTML = viewRecommendations();
