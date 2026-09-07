@@ -358,4 +358,33 @@ def integrity_check(conn: sqlite3.Connection) -> Dict[str, int]:
         "cycles_without_a_termination_reason": scalar(
             "SELECT COUNT(*) FROM autoresearch_cycles "
             "WHERE TRIM(termination_reason) = ''"),
+
+        # Lineage (§41, §61). The research trail is only a trail if
+        # every link resolves; an orphan means a conclusion whose
+        # hypothesis, question or experiment cannot be reached, which
+        # is a finding nobody can check. Audited once by hand during
+        # Phase 23.5 and found clean -- enforced here so it stays that
+        # way.
+        "conclusions_without_a_hypothesis": scalar("""
+            SELECT COUNT(*) FROM autoresearch_conclusions c
+            WHERE NOT EXISTS (SELECT 1 FROM autoresearch_hypotheses h
+                              WHERE h.hypothesis_id = c.hypothesis_id)"""),
+        "hypotheses_without_a_question": scalar("""
+            SELECT COUNT(*) FROM autoresearch_hypotheses h
+            WHERE h.question_id != '' AND NOT EXISTS (
+                SELECT 1 FROM autoresearch_questions q
+                WHERE q.question_id = h.question_id)"""),
+        "questions_without_an_observation": scalar("""
+            SELECT COUNT(*) FROM autoresearch_questions q
+            WHERE q.observation_id != '' AND NOT EXISTS (
+                SELECT 1 FROM autoresearch_observations o
+                WHERE o.observation_id = q.observation_id)"""),
+        "queue_items_without_a_hypothesis": scalar("""
+            SELECT COUNT(*) FROM autoresearch_queue x
+            WHERE NOT EXISTS (SELECT 1 FROM autoresearch_hypotheses h
+                              WHERE h.hypothesis_id = x.hypothesis_id)"""),
+        "candidates_without_a_conclusion": scalar("""
+            SELECT COUNT(*) FROM autoresearch_candidates n
+            WHERE NOT EXISTS (SELECT 1 FROM autoresearch_conclusions c
+                              WHERE c.conclusion_id = n.conclusion_id)"""),
     }

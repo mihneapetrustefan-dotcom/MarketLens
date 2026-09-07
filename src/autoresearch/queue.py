@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.data_access.autoresearch_schema import initialize_autoresearch_schema
@@ -117,6 +118,93 @@ def cancel(conn: sqlite3.Connection, queue_id: str,
     long the work takes.
     """
     set_state(conn, queue_id, QueueState.CANCELLED, reason=reason)
+
+
+# ======================================================================
+# Claiming and recovery
+# ======================================================================
+
+#: A RUNNING item older than this is presumed abandoned. Generous
+#: relative to a cycle's own runtime budget, so a slow-but-alive run is
+#: never reclaimed out from under itself.
+STALE_AFTER_SECONDS = 3600
+
+
+def claim(conn: sqlite3.Connection, queue_id: str, *,
+          cycle_id: Optional[str] = None, reason: str = "") -> bool:
+    """
+    Atomically take ownership of a queued item. True if we got it.
+
+    WHY THIS EXISTS
+    -------------------
+    `next_batch` only READS. Two workers calling it before either
+    marked anything RUNNING both selected the same item -- verified
+    directly, and §10 requires that no experiment execute twice.
+
+    The transition is a single conditional UPDATE whose WHERE clause
+    includes the expected state, so SQLite decides the winner: exactly
+    one caller sees `rowcount == 1`. Nothing here depends on the
+    caller checking first, which is the pattern that produced the race.
+
+    Today `max_concurrent_jobs` is 1 and nothing runs cycles in
+    parallel, so this changes no behaviour. It is the difference
+    between "safe" and "safe until somebody adds a second worker".
+    """
+    initialize_autoresearch_schema(conn)
+    cursor = conn.execute("""
+        UPDATE autoresearch_queue
+        SET state = ?, started_at = ?, reason = ?,
+            cycle_id = COALESCE(?, cycle_id)
+        WHERE queue_id = ? AND state IN ('queued', 'prioritized')
+    """, (QueueState.RUNNING.value, utcnow(),
+          reason or "claimed", cycle_id, queue_id))
+    conn.commit()
+    return cursor.rowcount == 1
+
+
+def reclaim_stale(conn: sqlite3.Connection, *,
+                  older_than_seconds: int = STALE_AFTER_SECONDS
+                  ) -> List[Dict[str, Any]]:
+    """
+    Return abandoned RUNNING items to the queue (§59).
+
+    A worker that dies mid-run leaves its item RUNNING forever:
+    `next_batch` only considers queued and prioritized, so the item is
+    never retried and never reported -- it simply stops existing as far
+    as the research programme is concerned. Verified directly.
+
+    Reclaiming records WHY, so a reader can tell a reclaimed item from
+    one that was never started. Nothing is deleted and no result is
+    invented; the item goes back to QUEUED and will be re-run, which is
+    safe because every id downstream is derived from the hypothesis
+    rather than from the attempt.
+    """
+    initialize_autoresearch_schema(conn)
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=older_than_seconds)).isoformat()
+    stale = [{"queue_id": row[0], "hypothesis_id": row[1],
+              "started_at": row[2]}
+             for row in conn.execute("""
+        SELECT queue_id, hypothesis_id, started_at
+        FROM autoresearch_queue
+        WHERE state = 'running'
+          AND (started_at IS NULL OR started_at < ?)
+    """, (cutoff,))]
+
+    for item in stale:
+        conn.execute("""
+            UPDATE autoresearch_queue
+            SET state = ?, reason = ?, started_at = NULL
+            WHERE queue_id = ?
+        """, (QueueState.QUEUED.value,
+              "reclaimed: still marked running since %s, which is longer "
+              "than a cycle can take. The worker that held it did not "
+              "finish, so the item returns to the queue rather than "
+              "disappearing." % (item["started_at"] or "an unknown time"),
+              item["queue_id"]))
+    if stale:
+        conn.commit()
+    return stale
 
 
 # ======================================================================

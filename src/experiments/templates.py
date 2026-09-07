@@ -57,9 +57,18 @@ MINED_CAVEAT = (
 )
 
 
-def _experiment_id(name: str, conditions: Dict[str, Any]) -> str:
-    payload = json.dumps({"n": name, "c": conditions}, sort_keys=True,
-                         default=str)
+def _experiment_id(name: str, conditions: Dict[str, Any],
+                   cutoff: str = "") -> str:
+    """
+    Identity of an experiment: what it tests AND how much record it saw.
+
+    The cutoff is part of the id because the same comparison over a
+    longer record is a different experiment. Without it the two shared
+    an id and a fingerprint, and the later run was served the earlier
+    one's result from cache.
+    """
+    payload = json.dumps({"n": name, "c": conditions, "cutoff": cutoff},
+                         sort_keys=True, default=str)
     return f"exp-{hashlib.sha256(payload.encode()).hexdigest()[:20]}"
 
 
@@ -107,8 +116,10 @@ def threshold_experiment(*, name: str, evaluator: str, parameter: str,
     difference can be attributed without argument.
     """
     conditions = {parameter: value}
+    snapshot = dataset or DatasetSnapshot(universe="all signals")
     return Experiment(
-        experiment_id=_experiment_id(name, conditions),
+        experiment_id=_experiment_id(name, conditions,
+                                     snapshot.data_cutoff or ""),
         name=name,
         experiment_type=ExperimentType.SIGNAL,
         hypothesis=Hypothesis(
@@ -128,7 +139,7 @@ def threshold_experiment(*, name: str, evaluator: str, parameter: str,
             parameters={parameter: value, "subject_kind": "signal"},
             description=f"one variable changed: {parameter}",
             complexity=2),
-        dataset=dataset or DatasetSnapshot(universe="all signals"),
+        dataset=snapshot,
         criteria=criteria or AcceptanceCriteria(),
         created_by=created_by,
         description=("Template: threshold test. One parameter changed against "
@@ -156,8 +167,10 @@ def filter_experiment(*, name: str, evaluator: str,
     document multi-variable changes is satisfied by computation rather
     than by a promise in a description.
     """
+    snapshot = dataset or DatasetSnapshot(universe="all signals")
     return Experiment(
-        experiment_id=_experiment_id(name, parameters),
+        experiment_id=_experiment_id(name, parameters,
+                                     snapshot.data_cutoff or ""),
         name=name,
         experiment_type=ExperimentType.SIGNAL,
         hypothesis=Hypothesis(
@@ -173,7 +186,7 @@ def filter_experiment(*, name: str, evaluator: str,
         baseline=evaluators.baseline(baseline_name),
         candidate=ArmSpec(name=name, evaluator=evaluator,
                           parameters=dict(parameters), complexity=complexity),
-        dataset=dataset or DatasetSnapshot(universe="all signals"),
+        dataset=snapshot,
         criteria=criteria or AcceptanceCriteria(),
         created_by=created_by,
         description="Template: cohort filter against a registered baseline.")
@@ -302,6 +315,26 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
 # Memory -> hypothesis (§21, §69)
 # ======================================================================
 
+def _stamped_dataset(conn: sqlite3.Connection) -> DatasetSnapshot:
+    """
+    A dataset that records how far the record went when it was built.
+
+    WHY: without a cutoff, a dataset that GREW between two runs
+    produced an identical experiment fingerprint, and the run cache
+    keys on that fingerprint -- so the second run returned the first
+    run's effect and labelled it a cache hit. Reproduced during the
+    Phase 23.5 audit on the Phase 23 path; this is the same defect in
+    Phase 22's own generator.
+
+    A longer record is a different dataset and therefore a different
+    experiment. That is also what lets a hypothesis be re-tested once
+    more evidence exists, rather than colliding with its own history.
+    """
+    from src.experiments.engine import current_data_cutoff
+    return DatasetSnapshot(universe="all signals",
+                           data_cutoff=current_data_cutoff(conn))
+
+
 def propose_from_memory_pattern(conn: sqlite3.Connection, pattern_id: str, *,
                                 memory_version: str = "v1",
                                 created_by: str = "") -> Optional[Experiment]:
@@ -350,6 +383,7 @@ def propose_from_memory_pattern(conn: sqlite3.Connection, pattern_id: str, *,
     return filter_experiment(
         name=f"memory pattern: {described}",
         evaluator=evaluator, parameters=parameters,
+        dataset=_stamped_dataset(conn),
         metric="directional_accuracy",
         statement=(f"The cohort {described} is directionally more accurate "
                    f"than all signals."),
@@ -487,6 +521,7 @@ def propose_from_recurring_error(conn: sqlite3.Connection, error_type: str, *,
     return filter_experiment(
         name=f"response to recurring {error_type}",
         evaluator="signal_strength_threshold",
+        dataset=_stamped_dataset(conn),
         parameters={"threshold": 0.5, "subject_kind": "signal"},
         metric=("mean_return" if error_type == "timing_error"
                 else "directional_accuracy"),

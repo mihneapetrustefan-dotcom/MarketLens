@@ -57,6 +57,19 @@ WRITABLE = {
     "autoresearch_audit", "autoresearch_family_state",
 }
 
+#: Phase 22's tables. The research cycle DOES write these -- through
+#: Phase 22's own `save_experiment`, `api.start` and `ensure_family`,
+#: because §27 forbids building a second experiment engine. They are
+#: research-scope, not production: no model, strategy, threshold, risk
+#: limit or capital figure lives in any of them.
+#:
+#: They are listed explicitly rather than left implicit so that the
+#: boundary a reader is asked to trust is written down.
+EXPERIMENT_TABLES = {
+    "experiments", "experiment_runs", "experiment_results",
+    "experiment_artifacts", "hypothesis_families",
+}
+
 FORBIDDEN = {
     "trained_models", "model_evaluations", "model_promotions", "predictions",
     "signals", "signal_contributions", "signal_strategies",
@@ -64,8 +77,7 @@ FORBIDDEN = {
     "research_observations", "outcome_measurements", "outcome_aggregates",
     "error_attributions", "attribution_evidence", "trading_experiences",
     "memory_patterns", "memory_pattern_evidence", "portfolio_snapshots",
-    "orders", "executions", "risk_limits", "recommendations", "experiments",
-    "experiment_runs", "experiment_results", "hypothesis_families",
+    "orders", "executions", "risk_limits", "recommendations",
 }
 
 
@@ -199,6 +211,78 @@ class TestProductionBoundary(unittest.TestCase):
             "autoresearch_candidates")
         self.assertIsNone(
             write_target("SELECT experiments_run, updated_at FROM t"))
+
+    def test_a_cycle_changes_no_table_outside_research_scope(self):
+        """
+        THE BOUNDARY TEST THAT ACTUALLY MEASURES THE BOUNDARY.
+
+        The AST scan above reads SQL literals inside
+        `src/autoresearch/*.py`. It therefore cannot see a write
+        performed by calling into another package -- and the research
+        cycle does exactly that: `cycle.build_experiment` calls
+        `templates.ensure_family`, and the run calls
+        `engine.save_experiment` and `api.start`. Those write four
+        Phase 22 tables.
+
+        That is correct behaviour (§27 requires reusing the Phase 22
+        engine rather than building a second one), but the Phase 23
+        report claimed the cycle "writes none of Phase 22's tables",
+        and the AST test appeared to confirm it. A safety test that
+        cannot observe the thing it certifies is worse than no test,
+        because it is quoted.
+
+        So this counts every row in every table before and after a real
+        cycle and asserts that only research-scope tables moved.
+        Transitive calls are covered because rows are counted, not
+        source parsed.
+        """
+        conn = a_database()
+        tables = [row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%'")]
+
+        def snapshot():
+            counts = {}
+            for table in tables:
+                counts[table] = conn.execute(
+                    "SELECT COUNT(*) FROM %s" % table).fetchone()[0]
+            return counts
+
+        before = snapshot()
+        cycle.run_cycle(conn, apply=True,
+                        budget=ResearchBudget(max_experiments_per_cycle=3))
+        after = snapshot()
+
+        moved = {name for name in tables if before[name] != after[name]}
+        allowed = WRITABLE | EXPERIMENT_TABLES
+        self.assertTrue(
+            moved <= allowed,
+            "a research cycle changed %s, which is outside research scope"
+            % sorted(moved - allowed))
+        conn.close()
+
+    def test_the_row_counting_boundary_test_can_actually_detect_a_write(self):
+        """
+        A boundary test that silently observes nothing passes forever.
+        This writes one row to a production table by hand and proves
+        the counting method sees it.
+        """
+        conn = a_database()
+        before = conn.execute(
+            "SELECT COUNT(*) FROM trading_experiences").fetchone()[0]
+        conn.execute("""
+            INSERT INTO trading_experiences (
+                experience_id, memory_version, kind, subject_kind,
+                subject_id, horizon, quality, experience_class, created_at
+            ) VALUES ('probe','v1','signal','signal','s','5d','validated',
+                      'correct_call','2026-09-07')
+        """)
+        conn.commit()
+        after = conn.execute(
+            "SELECT COUNT(*) FROM trading_experiences").fetchone()[0]
+        self.assertEqual(after, before + 1,
+                         "the row-counting method cannot see a write")
+        conn.close()
 
     def test_phase_21_memory_is_never_written(self):
         """

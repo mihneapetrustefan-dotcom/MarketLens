@@ -93,6 +93,42 @@ def _parse(value: Optional[str]) -> Optional[datetime]:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
+def current_data_cutoff(conn: sqlite3.Connection) -> str:
+    """
+    How far the experience record currently extends.
+
+    THE DEFECT THIS EXISTS TO CLOSE
+    -----------------------------------
+    An experiment's dataset identity was purely DEFINITIONAL: `as_of`,
+    filters, universe, versions. With `as_of` unset -- which is the
+    normal case for "test this on everything we have" -- a dataset that
+    GREW between two runs produced an identical fingerprint.
+
+    The run cache keys on that fingerprint, so the second run was a
+    cache hit and returned the first run's effect. Reproduced during
+    the Phase 23.5 audit: 300 experiences gave +0.3333, 150 more
+    experiences arrived, and the re-run reported +0.3333 as current
+    research on 450 rows.
+
+    That is the worst possible failure for this project specifically:
+    the whole stated limitation of the current record is that it is
+    short and more data would change the answer, and the cache was
+    hiding exactly that.
+
+    Stamping the cutoff makes a larger record a DIFFERENT dataset, so
+    it becomes a different experiment rather than a stale answer -- and
+    that is also what makes re-testing a depleted hypothesis on new
+    evidence possible at all (Phase 23 §66).
+    """
+    try:
+        row = conn.execute(
+            "SELECT MAX(available_at) FROM trading_experiences "
+            "WHERE available_at IS NOT NULL").fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    return str(row[0]) if row and row[0] else ""
+
+
 def code_version() -> str:
     """The commit an experiment ran against (§9, §74). Best effort."""
     import subprocess

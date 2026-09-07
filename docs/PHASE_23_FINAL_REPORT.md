@@ -298,7 +298,9 @@ listing `updated_at` as an UPDATE.
 
 Enforced by absence, tested by parsing:
 
-- no module writes any Phase 6/19/20/21/22 table
+- no module writes any Phase 6/19/20/21 table, and the only Phase 22
+  tables written are the experiment tables, through Phase 22's own
+  functions (corrected in Phase 23.5; see the closing section)
 - no module imports `src.modeling.promotion`, `src.execution`,
   `src.risk`, `src.portfolio.rebalance` or `src.paper`
 - no `place_order`, `submit_order`, `set_capital`, `.fit(`, `def train`
@@ -736,10 +738,22 @@ questions wanted to filter on a field knowable only after the outcome,
 and 46 memory patterns are keyed on it.
 
 It changes no model, strategy, threshold, feature, sizing, risk limit,
-execution setting or capital figure. It writes none of Phase 6, 19, 20,
-21 or 22's tables. Interactive Brokers remains the only broker, live
-trading stays disabled, no LLM is used, and promotion remains a human
-decision — defined, ungrantable, and refused at every entrance.
+execution setting or capital figure. It writes no Phase 6, 19, 20 or 21
+table.
+
+**Correction (Phase 23.5).** This section originally claimed the cycle
+writes none of Phase 22's tables either. That was wrong: running an
+experiment necessarily writes `experiments`, `experiment_runs`,
+`experiment_results` and `hypothesis_families`, through Phase 22's own
+functions, because §27 forbids building a second engine. The AST test
+cited as proof scanned only SQL literals inside `src/autoresearch/`
+and so could not see writes made by calling into another package. The
+behaviour was always correct; the claim and its evidence were not.
+A row-counting boundary test now measures what actually moves.
+
+Interactive Brokers remains the only broker, live trading stays
+disabled, no LLM is used, and promotion remains a human decision —
+defined, ungrantable, and refused at every entrance.
 
 A researcher must be able to discover that it is wrong. This one spent
 most of its first cycle doing exactly that.

@@ -445,6 +445,62 @@ class TestQueueAndBudget(unittest.TestCase):
             queue_layer.assert_daily_budget(
                 self.conn, budget=budget, day="2026-09-07T00:00:00+00:00")
 
+    def test_only_one_worker_can_claim_an_item(self):
+        """
+        §10: no duplicate experiment execution.
+
+        `next_batch` only READS. Before `claim` existed, two workers
+        calling it before either marked anything RUNNING both selected
+        the same item -- verified directly during the Phase 23.5 audit.
+        The transition is now a single conditional UPDATE, so SQLite
+        picks the winner and exactly one caller sees rowcount 1.
+        """
+        queue_id = queue_layer.enqueue(self.conn, self.hypothesis,
+                                       priority=0.9)
+        first = queue_layer.claim(self.conn, queue_id)
+        second = queue_layer.claim(self.conn, queue_id)
+        self.assertTrue(first)
+        self.assertFalse(second, "two workers claimed the same item")
+
+    def test_a_claimed_item_leaves_the_selectable_pool(self):
+        queue_id = queue_layer.enqueue(self.conn, self.hypothesis,
+                                       priority=0.9)
+        queue_layer.claim(self.conn, queue_id)
+        selected, _skipped = queue_layer.next_batch(
+            self.conn, budget=ResearchBudget())
+        self.assertEqual(selected, [])
+
+    def test_an_abandoned_running_item_is_reclaimed(self):
+        """
+        §59: recovery.
+
+        A worker that dies mid-run left its item RUNNING forever --
+        `next_batch` considers only queued and prioritized, so it was
+        never retried and never reported. It simply stopped existing as
+        far as the research programme was concerned.
+        """
+        queue_id = queue_layer.enqueue(self.conn, self.hypothesis,
+                                       priority=0.9)
+        queue_layer.claim(self.conn, queue_id)
+        self.conn.execute(
+            "UPDATE autoresearch_queue SET started_at = ? WHERE queue_id = ?",
+            ("2020-01-01T00:00:00+00:00", queue_id))
+        self.conn.commit()
+
+        reclaimed = queue_layer.reclaim_stale(self.conn)
+        self.assertEqual(len(reclaimed), 1)
+        row = queue_layer.listing(self.conn)[0]
+        self.assertEqual(row["state"], "queued")
+        self.assertIn("reclaimed", row["reason"])
+
+    def test_a_live_running_item_is_not_reclaimed(self):
+        """A slow-but-alive run must not be taken from under itself."""
+        queue_id = queue_layer.enqueue(self.conn, self.hypothesis,
+                                       priority=0.9)
+        queue_layer.claim(self.conn, queue_id)
+        self.assertEqual(queue_layer.reclaim_stale(self.conn), [])
+        self.assertEqual(queue_layer.listing(self.conn)[0]["state"], "running")
+
     def test_two_items_making_one_claim_do_not_both_run(self):
         twin = a_hypothesis(self.conn)
         twin.hypothesis_id = "h-twin"
@@ -775,6 +831,99 @@ class TestTheCycle(unittest.TestCase):
             "SELECT COUNT(*) FROM autoresearch_hypotheses").fetchone()[0]
         self.assertEqual(first, second,
                          "re-running the cycle duplicated hypotheses")
+        conn.close()
+
+
+class TestDatasetIdentityAndCache(unittest.TestCase):
+    """
+    §18, §55 — an experiment must not silently observe a changed
+    dataset, and a cached result must not be served as current
+    research.
+    """
+
+    def _grow(self, conn, start, count):
+        columns = [row[1] for row in conn.execute(
+            "PRAGMA table_info(trading_experiences)")]
+        for i in range(start, start + count):
+            record = {
+                "experience_id": "exp-%04d" % i, "memory_version": "v1",
+                "kind": "signal", "subject_kind": "signal",
+                "subject_id": "s%d" % i, "horizon": "5d",
+                "quality": "validated", "experience_class": "correct_call",
+                "expected_direction": "long", "direction_result": "hit",
+                "actual_return": 0.03, "signal_strength": 0.9,
+                "signal_confidence": 0.8, "event_type": "earnings",
+                "asset_class": "equity", "instrument_id": "INST01",
+                "created_at": (BASE + timedelta(days=i)).isoformat(),
+                "available_at": (BASE + timedelta(days=i)).isoformat(),
+            }
+            usable = {k: v for k, v in record.items() if k in columns}
+            conn.execute(
+                "INSERT INTO trading_experiences (%s) VALUES (%s)"
+                % (", ".join(usable), ", ".join("?" * len(usable))),
+                tuple(usable.values()))
+        conn.commit()
+
+    def test_a_grown_record_is_a_different_experiment(self):
+        """
+        THE REGRESSION TEST FOR THE STALE-CACHE DEFECT.
+
+        Reproduced during the Phase 23.5 audit: 300 experiences gave an
+        effect of +0.3333; 150 more arrived; the re-run reported
+        +0.3333 as current research on 450 rows, flagged only as a
+        cache hit of the earlier run.
+
+        The dataset identity was purely definitional -- `as_of`,
+        filters, versions -- so a record that GREW produced an
+        identical fingerprint, and the run cache keys on that. It was
+        the worst possible failure for this project, whose stated
+        limitation is that the record is short and more data would
+        change the answer.
+        """
+        from src.experiments import api as experiment_api, engine
+        conn = a_database(count=300)
+        hypothesis = a_hypothesis(conn)
+        hypothesis_layer.save(conn, [hypothesis])
+
+        first = cycle.build_experiment(conn, hypothesis)
+        engine.save_experiment(conn, first)
+        run_one = experiment_api.start(conn, first.experiment_id)
+
+        self._grow(conn, 300, 150)
+
+        second = cycle.build_experiment(conn, hypothesis)
+        self.assertNotEqual(second.experiment_id, first.experiment_id,
+                            "a grown record produced the same experiment")
+        engine.save_experiment(conn, second)
+        run_two = experiment_api.start(conn, second.experiment_id)
+
+        self.assertFalse(run_two["run"]["cache_hit"],
+                         "a stale result was served as current research")
+        self.assertNotEqual(run_two["result"]["effect"],
+                            run_one["result"]["effect"])
+        conn.close()
+
+    def test_an_unchanged_record_keeps_one_experiment(self):
+        """
+        The fix must not make every run a new experiment. Identical
+        data must still produce an identical identity, or the cache
+        never hits and re-running a hypothesis silently multiplies the
+        multiple-testing count.
+        """
+        conn = a_database(count=300)
+        hypothesis = a_hypothesis(conn)
+        first = cycle.build_experiment(conn, hypothesis)
+        second = cycle.build_experiment(conn, hypothesis)
+        self.assertEqual(first.experiment_id, second.experiment_id)
+        self.assertEqual(first.fingerprint, second.fingerprint)
+        conn.close()
+
+    def test_the_dataset_records_how_far_the_record_went(self):
+        conn = a_database(count=300)
+        experiment = cycle.build_experiment(conn, a_hypothesis(conn))
+        self.assertTrue(experiment.dataset.data_cutoff,
+                        "the experiment does not record its data cutoff")
+        self.assertTrue(experiment.dataset.snapshot_id)
         conn.close()
 
 

@@ -142,15 +142,84 @@ check("Q10 no second broker is planned or stubbed",
       planned_gateways() == {}, f"planned: {planned_gateways()}")
 
 # Q11 -------------------------------------------------------------
-# This file is excluded from its own search: a check that names what
-# it forbids will always contain the word.
-hits = [f for f in subprocess.run(
-    ["git", "grep", "-riIl", "-e", "mt5", "-e", "metatrader",
-     "--", "src", "tests", "scripts"],
-    capture_output=True, text=True).stdout.split()
-    if not f.endswith("audit_live_safety.py")]
+# Searched at LINE level, not file level.
+#
+# The file-level version failed the moment Phases 22 and 23 added
+# safety tests that assert the broker's ABSENCE -- a test containing
+# `assertNotIn("metatrader", source)` looked identical to an
+# implementation. That is a false positive with a real cost: an audit
+# that cries wolf is one people start passing over, and this one is
+# the last line of defence on the broker boundary.
+#
+# So each matching line is classified. A line that names the broker
+# inside a prohibition -- a negative assertion, or a tuple of
+# forbidden words being scanned for -- is proving absence and is not
+# an implementation. Anything else is an offender.
+#
+# This keeps the check strict where it matters: any line under src/
+# or scripts/ that names the broker outside a prohibition still fails,
+# so no adapter, import, config key or call site can hide here.
+PROHIBITION_MARKERS = (
+    "assertnotin", "assertnot", "not in", "notin(", "forbidden",
+    "must not", "no second broker", "is absent", "self.fail",
+)
+
+# `--untracked` matters more than it looks. Without it `git grep`
+# searches only the index, so a broker adapter that had been written
+# but not yet committed would pass this audit -- which is exactly the
+# moment you want it to fail. A negative-control probe placed in
+# src/ went undetected until this flag was added.
+raw = subprocess.run(
+    ["git", "grep", "-rinI", "--untracked", "-e", "mt5", "-e", "metatrader",
+     "-e", "metaquotes", "--", "src", "tests", "scripts"],
+    capture_output=True, text=True).stdout.splitlines()
+
+#: A prohibition is a CONSTRUCT, not a line. The forbidden words are
+#: usually a tuple on one line and the assertion on the next:
+#:
+#:     for word in ("metatrader", "mt5", "alpaca"):
+#:         self.assertNotIn(word, lowered)
+#:
+#: so the classification reads a small window around the match. Three
+#: lines is enough for every such construct in this repository and
+#: narrow enough that a real implementation cannot hide behind a
+#: distant comment.
+CONTEXT = 3
+
+_source_cache = {}
+
+
+def _window(path, line_no):
+    if path not in _source_cache:
+        try:
+            _source_cache[path] = pathlib.Path(path).read_text(
+                encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            _source_cache[path] = []
+    lines = _source_cache[path]
+    lo = max(0, line_no - 1 - CONTEXT)
+    hi = min(len(lines), line_no + CONTEXT)
+    return " ".join(lines[lo:hi]).lower()
+
+
+offenders = []
+for entry in raw:
+    parts = entry.split(":", 2)
+    if len(parts) < 3:
+        continue
+    path, line_no, text = parts
+    if path.endswith("audit_live_safety.py"):
+        continue          # the search that proves the absence
+    try:
+        context = _window(path, int(line_no))
+    except ValueError:
+        context = text.lower()
+    if any(marker in context for marker in PROHIBITION_MARKERS):
+        continue          # naming what is forbidden, not implementing it
+    offenders.append("%s:%s" % (path, line_no))
+
 check("Q11 no MT5 reference remains in src, tests or scripts",
-      not hits, ", ".join(hits) or "clean")
+      not offenders, ", ".join(offenders) or "clean")
 
 # Q12 -------------------------------------------------------------
 SECRET = re.compile(

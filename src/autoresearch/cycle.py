@@ -100,7 +100,9 @@ def build_experiment(conn: sqlite3.Connection,
         Experiment, ExperimentType, Hypothesis as ExperimentHypothesis,
         HypothesisSource, ResourceLimits,
     )
-    from src.experiments import evaluators, templates
+    from src.experiments import (
+        engine as experiment_engine, evaluators, templates,
+    )
 
     source_map = {
         "memory_pattern": HypothesisSource.MEMORY_PATTERN,
@@ -120,8 +122,18 @@ def build_experiment(conn: sqlite3.Connection,
             falsifiability.require_interval_excludes_zero),
     )
 
+    # The experiment identity includes HOW MUCH RECORD it saw.
+    #
+    # Deriving it from the hypothesis alone asserted that one claim maps
+    # to exactly one experiment forever. It does not: the same claim
+    # tested on a longer record is a different experiment, and treating
+    # the two as one caused a stale cached result to be returned as
+    # current research (see `engine.current_data_cutoff`).
+    cutoff = experiment_engine.current_data_cutoff(conn)
     experiment = Experiment(
-        experiment_id="exp-" + hypothesis.hypothesis_id[2:22],
+        experiment_id="exp-" + _digest({
+            "hypothesis": hypothesis.hypothesis_id,
+            "cutoff": cutoff})[:20],
         name=hypothesis.statement[:110],
         experiment_type=ExperimentType.SIGNAL,
         hypothesis=ExperimentHypothesis(
@@ -142,7 +154,7 @@ def build_experiment(conn: sqlite3.Connection,
             description=("Proposed by the Phase 23 research loop from "
                          "question %s." % hypothesis.question_id),
             complexity=1 + len(hypothesis.parameters)),
-        dataset=DatasetSnapshot(),
+        dataset=DatasetSnapshot(data_cutoff=cutoff),
         protocol=EvaluationProtocol(),
         criteria=criteria,
         limits=ResourceLimits())
@@ -492,7 +504,8 @@ def run_cycle(conn: sqlite3.Connection, *,
         "budget": budget.as_dict(), "observations": 0, "blind_spots": [],
         "questions": {}, "hypotheses": 0, "duplicates_skipped": 0,
         "queued": 0, "selected": [], "skipped": [], "conclusions": [],
-        "candidates": [], "unrunnable": [], "termination_reason": "",
+        "candidates": [], "unrunnable": [], "reclaimed": [],
+        "not_claimed": [], "termination_reason": "",
     }
 
     # --- 1. observe ------------------------------------------------
@@ -566,6 +579,19 @@ def run_cycle(conn: sqlite3.Connection, *,
         report["runtime_seconds"] = round(time.time() - started, 2)
         return report
 
+    # Recover anything a previous worker abandoned before scheduling
+    # anything new, so a crashed run rejoins the queue instead of
+    # vanishing from the programme (§59).
+    reclaimed = queue_layer.reclaim_stale(conn)
+    if reclaimed:
+        report["reclaimed"] = [item["queue_id"] for item in reclaimed]
+        for item in reclaimed:
+            audit_record(conn, actor=actor, action="reclaim_stale_item",
+                         hypothesis_id=item["hypothesis_id"],
+                         cycle_id=cycle_id, decision="requeued",
+                         reason="left running since %s"
+                                % (item["started_at"] or "an unknown time"))
+
     try:
         queue_layer.assert_daily_budget(conn, budget=budget, day=utcnow())
     except BudgetExceeded as exc:
@@ -592,8 +618,16 @@ def run_cycle(conn: sqlite3.Connection, *,
             continue
         hypothesis = _rebuild(record)
 
-        queue_layer.set_state(conn, item["queue_id"], QueueState.RUNNING,
-                              reason="selected by cycle %s" % cycle_id)
+        # Claim atomically. `next_batch` only proposes; without this a
+        # second worker that had already selected the same item would
+        # run it too, double-spending the budget and inflating the
+        # data-snooping ledger with a window use that is not a
+        # separate test.
+        if not queue_layer.claim(conn, item["queue_id"], cycle_id=cycle_id,
+                                 reason="selected by cycle %s" % cycle_id):
+            report.setdefault("not_claimed", []).append(item["queue_id"])
+            continue
+
         try:
             experiment = build_experiment(conn, hypothesis)
             experiment_engine.save_experiment(conn, experiment)

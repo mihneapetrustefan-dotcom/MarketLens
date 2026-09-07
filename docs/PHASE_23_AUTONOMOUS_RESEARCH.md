@@ -236,7 +236,11 @@ set the project has and return nothing usable.
 - promote anything — no grantable permission, no code path, refusals at
   every entrance
 - modify a model, strategy, threshold, risk limit or capital figure
-- write any Phase 6, 19, 20, 21 or 22 table
+- write any Phase 6, 19, 20 or 21 table (it does write Phase 22's
+  experiment tables, through Phase 22's own engine — §27 requires
+  reusing it rather than building a second one; corrected in Phase
+  23.5, where a row-counting test replaced an AST scan that could not
+  see transitive writes)
 - place an order, or reach IBKR at all
 - execute arbitrary code — every evaluator is a registered name
 - read credentials or the environment
