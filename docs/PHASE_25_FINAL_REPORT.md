@@ -52,7 +52,7 @@ Everything the loop drives, and none of it was rebuilt:
 |---|---|---|
 | sizing, risk verdict, order intents | Phase 11 | correct, 0 rows ever written |
 | backtester | Phase 12 | tested, never run on real data |
-| simulated paper session | Phase 13 | 3 sessions, **0 orders** |
+| simulated paper session | Phase 13 | tables absent from production; 3 sessions and **0 orders** in an older local snapshot |
 | order lifecycle, validation, limits | Phase 14 | tested, **0 orders** |
 | IBKR adapter + transport + mock | Phase 15 | complete, never connected |
 | governance, `trade_outcomes` | Phase 16 | tables absent from production |
