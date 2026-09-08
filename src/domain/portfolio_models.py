@@ -125,13 +125,21 @@ class PositionSource(str, Enum):
     Where a position came from.
 
     This exists so a simulated holding can never be silently presented
-    as a real one. There is deliberately no BROKER member: this phase
-    cannot produce broker-sourced positions, and an enum value the
-    system cannot generate is a promise it cannot keep.
+    as a real one.
+
+    BROKER was deliberately absent through Phase 24: the note here read
+    that the system could not produce broker-sourced positions, and an
+    enum value nothing can generate is a promise that cannot be kept.
+    Phase 25 can generate them — `src/trading/targets.py` builds
+    positions from reconciled IBKR paper snapshots — so the member now
+    exists and is used only for holdings a broker reported and
+    reconciliation agreed with. A position the gateway returned but
+    reconciliation could not confirm is NOT written with this source.
     """
     DECLARED = "declared"        # entered by hand / config
     PAPER = "paper"              # produced by a future paper-trading layer
     SIMULATED = "simulated"      # produced by a backtest or replay
+    BROKER = "broker"            # reported by a broker and reconciled
 
 
 class ExposureDimension(str, Enum):

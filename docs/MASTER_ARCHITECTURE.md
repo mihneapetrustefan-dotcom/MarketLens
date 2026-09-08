@@ -45,7 +45,7 @@ Where the two disagreed, this document follows the code.
  │        ├──────────────► PaperSession → PaperExecutor  (Phase 13)    │
  │        │                                                            │
  │        └──► intake.from_decision()  ◄── ADDED PHASE 17              │
- │                    │                                                │
+ │                    │        (ZERO CALLERS UNTIL PHASE 25)           │
  │              IntentRequest                                          │
  │                    │                                                │
  │              ExecutionService  (Caller permissions)                 │
@@ -58,12 +58,38 @@ Where the two disagreed, this document follows the code.
  │                    └─ BrokerGateway ──► IBKRGateway ──► PAPER ONLY  │
  │                                                                     │
  └─────────────────────────────────────────────────────────────────────┘
+
+ ┌─ PHASE 25 ─ the operating loop ─ src/trading/loop.py ──────────────┐
+ │                                                                    │
+ │  TradingModeStore   durable mode + kill switch, fails closed       │
+ │        │                                                           │
+ │  run_cycle(now)  ── anchored to a quantized clock (idempotency)    │
+ │        │                                                           │
+ │  OBSERVE: account ─ poll_broker ─ fills ─ positions ─ reconcile    │
+ │           ─ P&L (broker vs local, labelled) ─ trade outcomes       │
+ │        │                                                           │
+ │  DECIDE:  market data ─ signals ─ EligibilityGate (a verdict for   │
+ │           every signal) ─ PortfolioService.evaluate(positions=     │
+ │           reconciled broker book) ─ targets vs actuals ─ deltas    │
+ │           ─ intake.from_decision ─ ExecutionService.submit         │
+ │        │                                                           │
+ │  PERSIST: order book, TradeLineage, paper validation, audit        │
+ │                                                                    │
+ └────────────────────────────────────────────────────────────────────┘
 ```
 
-**The joint marked `▲` is the whole story.** System A runs three times
-a day and produces everything the dashboard shows. System B is the
-architecture the project is heading toward and runs when a human clicks
-a button.
+**The joint marked `▲` was the whole story until Phase 25.** System A
+runs three times a day and produces everything the dashboard shows.
+System B was the architecture the project was heading toward, and it
+ran when a human clicked a button.
+
+Phase 25 closed it. The loop calls `intake.from_decision` — written in
+Phase 17 and, until then, called by nothing — and drives the existing
+orchestrator rather than adding a lifecycle of its own. It does not
+place an order on the production record today, and the reason is
+recorded rather than worked around: the Phase 11 constraint
+`min_signal_confidence` is 0.40 and every signal the current model
+produces carries 0.30.
 
 ## 2. Dependency direction
 
@@ -148,6 +174,8 @@ design decision in the repository after the point-in-time barrier.
 | `news_articles` schema | **REFACTOR** | correct design, no producer (TD-02) |
 | Legacy Phase 1–9 layer | **KEEP** | produces all live data; do not touch until B replaces it |
 | Dashboard | **KEEP** | truthful — reports absence as absence |
+| Trading loop (Phase 25) | **KEEP** | the cycle; owns order, no risk engine, no lifecycle |
+| Durable trading mode / kill switch | **ADD** ✔ | done — `execution_controls` had no writer for two phases |
 | MT5 artifacts | **REMOVE** ✔ | done in Phase 16; only negative statements remain |
 
 Nothing is classified **REWRITE**. No subsystem was found broken enough

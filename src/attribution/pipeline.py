@@ -156,6 +156,128 @@ def load_subject_observations(conn: sqlite3.Connection) -> Dict[Tuple[str, str],
     return mapping
 
 
+def load_execution_evidence(conn: sqlite3.Connection
+                            ) -> Dict[str, Dict[str, Any]]:
+    """
+    Per-signal execution evidence, for the four detectors that could
+    never fire (Phase 25).
+
+    THE BUG THIS FIXES
+    ----------------------
+    `run()` passed `position=None, risk_decision=None, fill=None,
+    portfolio=None` as literals, with a comment saying they were absent
+    by construction. That was true when it was written -- no order had
+    ever been placed -- and it stopped being true the moment Phase 25's
+    loop produced its first fill. The literals would have kept the
+    sizing, risk, execution and portfolio detectors reporting "no fill
+    exists" forever, over a database full of fills.
+
+    Keyed by `signal_id`, which is the join Phase 25 preserves end to
+    end: signal -> decision -> intent -> order -> fill. An outcome
+    whose subject is a signal therefore finds its own trade, and one
+    that never traded finds nothing and the detectors correctly report
+    the input as missing.
+    """
+    if not _table_exists(conn, "trade_outcomes"):
+        return {}
+    evidence: Dict[str, Dict[str, Any]] = {}
+    try:
+        rows = conn.execute("""
+            SELECT signal_id, decision_price, fill_price, quantity,
+                   entry_price, slippage_bps, commission, instrument_id,
+                   order_id, outcome_id
+              FROM trade_outcomes
+             WHERE signal_id IS NOT NULL AND signal_id != ''
+             ORDER BY entry_at
+        """)
+    except sqlite3.OperationalError:
+        return {}
+    for row in rows:
+        # A signal that traded more than once keeps its FIRST trade.
+        # The outcome being attributed is about the signal's claim, and
+        # the trade that acted on it first is the one that tested it.
+        evidence.setdefault(str(row[0]), {
+            "decision_price": row[1], "fill_price": row[2],
+            "quantity": row[3], "entry_price": row[4],
+            "slippage_bps": row[5], "commission": row[6],
+            "instrument_id": row[7], "order_id": row[8],
+            "outcome_id": row[9]})
+    return evidence
+
+
+def load_risk_decisions(conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
+    """
+    The risk verdict behind each signal's trade, by signal id.
+
+    Joined through `trade_outcomes` rather than read from
+    `risk_decisions` directly: a decision that never produced a trade
+    has no bearing on a trade outcome, and including it would let the
+    risk detector fire on a decision that blocked something else.
+    """
+    if not (_table_exists(conn, "trade_outcomes")
+            and _table_exists(conn, "risk_decisions")):
+        return {}
+    try:
+        rows = conn.execute("""
+            SELECT o.signal_id, d.state, d.summary, d.decision_id,
+                   (SELECT GROUP_CONCAT(v.constraint_id)
+                      FROM risk_violations v
+                     WHERE v.decision_id = d.decision_id
+                       AND v.remediated = 0)
+              FROM trade_outcomes o
+              JOIN risk_decisions d ON d.decision_id = o.decision_id
+             WHERE o.signal_id IS NOT NULL AND o.signal_id != ''
+        """)
+    except sqlite3.OperationalError:
+        return {}
+    # The keys are the ones `detect_risk_error` reads: `is_approved` and
+    # `violated_limits`. Named to that detector's contract rather than
+    # to the column names, because the detector is the consumer and a
+    # mismatch here would silently produce "the risk decision matched
+    # its recorded policy" on every row -- a clean bill of health from
+    # a check that read nothing.
+    return {str(r[0]): {
+        "decision_id": r[3], "state": r[1], "summary": r[2],
+        "is_approved": str(r[1]) in ("approved", "reduced"),
+        "violated_limits": [v for v in str(r[4] or "").split(",") if v],
+    } for r in rows}
+
+
+def load_positions(conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
+    """
+    The position each signal's trade established, with its risk budget.
+
+    `risk_budget` comes from the account equity recorded on the cycle
+    that placed the trade. Without a budget the sizing detector still
+    reports the input as missing rather than dividing by a number
+    nobody chose.
+    """
+    if not (_table_exists(conn, "trade_outcomes")
+            and _table_exists(conn, "loop_account_states")):
+        return {}
+    try:
+        equity_row = conn.execute(
+            "SELECT equity FROM loop_account_states "
+            "WHERE equity IS NOT NULL ORDER BY observed_at DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return {}
+    budget = float(equity_row[0]) if equity_row and equity_row[0] else None
+    if not budget:
+        return {}
+    try:
+        rows = conn.execute("""
+            SELECT signal_id, quantity, entry_price, instrument_id
+              FROM trade_outcomes
+             WHERE signal_id IS NOT NULL AND signal_id != ''
+        """)
+    except sqlite3.OperationalError:
+        return {}
+    return {str(r[0]): {"quantity": r[1], "risk_budget": budget,
+                        "entry_price": r[2], "instrument_id": r[3]}
+            for r in rows}
+
+
 def load_cohorts(conn: sqlite3.Connection, *,
                  outcome_method_version: str = OUTCOME_METHOD_VERSION
                  ) -> Dict[Tuple[str, str, str, str], Dict[str, Any]]:
@@ -321,6 +443,9 @@ def run(conn: sqlite3.Connection, *,
     observations = load_observations(conn)
     subject_to_observation = load_subject_observations(conn)
     cohorts = load_cohorts(conn, outcome_method_version=outcome_method_version)
+    fills = load_execution_evidence(conn)
+    risk_decisions = load_risk_decisions(conn)
+    positions = load_positions(conn)
     already = set() if recompute else existing_identities(conn, method_version)
 
     # Siblings, so the horizon detector can see the same subject at
@@ -359,10 +484,21 @@ def run(conn: sqlite3.Connection, *,
             outcome, cohort=overall_cohort, method_version=method_version,
             siblings=siblings, signal=signal, observation=observation,
             regime_cohort=regime_cohort,
-            # Absent by construction in this database. Passed explicitly
-            # so the detectors report WHICH input is missing rather than
-            # silently not running.
-            position=None, risk_decision=None, fill=None, portfolio=None)
+            # Loaded, not hard-coded. These four were literal `None`
+            # until Phase 25, which was correct while no order had ever
+            # been placed and would have gone on reporting "no fill
+            # exists" over a database full of fills. A signal that
+            # never traded still yields None here, and the detector
+            # still names the missing input -- which is the behaviour
+            # the literals were standing in for.
+            position=positions.get(outcome["subject_id"]),
+            risk_decision=risk_decisions.get(outcome["subject_id"]),
+            fill=fills.get(outcome["subject_id"]),
+            # Portfolio-level concentration is not measured per trade
+            # yet: §17's detector needs a concentration figure against a
+            # limit, and Phase 25 records exposure without a per-cycle
+            # concentration measure. Left None so the detector says so.
+            portfolio=None)
 
         for result in results:
             report.note_layer(result)

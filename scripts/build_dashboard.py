@@ -28,6 +28,14 @@ import sqlite3
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# BOTH, and the repo root matters. `src/` alone lets `from dashboard
+# import ...` work but breaks every `from src.x import y` a collector
+# does. The portfolio collector has carried an `except ImportError`
+# fallback for exactly this since Phase 11 -- latent so far, because it
+# returns early while `portfolios` is empty, which it is. Phase 25's
+# collector needs its import unconditionally, so the cause is fixed
+# here rather than a third guard added.
+sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 from dashboard import DashboardGenerator  # noqa: E402

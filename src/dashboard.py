@@ -2209,6 +2209,197 @@ class DashboardGenerator:
         except (ValueError, TypeError):
             return {}
 
+    def _collect_trading_loop(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        Phase 25: the paper-trading operating loop.
+
+        THE ONE RULE THIS PAGE FOLLOWS
+        ----------------------------------
+        Spec 30: do not fabricate numbers. Every figure here is a row
+        somebody wrote, and where a row is absent the page says absent
+        rather than showing a zero. In particular:
+
+          * `positions` are ONLY those the broker reported and
+            reconciliation agreed with -- filtered on origin inside the
+            query, not by whoever reads it (16);
+          * account figures carry the SOURCE that produced them (17);
+          * every signal the loop saw has a verdict, including the ones
+            that did not trade, because a page that shows only the
+            trades cannot explain the ones that did not happen (14).
+        """
+        if not _table_exists(conn, "trading_cycles"):
+            return {"available": False, "is_paper": True,
+                    "mode": "off", "kill_switch": False,
+                    "reason": "Faza 25 nu a rulat inca pe aceasta baza de date"}
+
+        # Resolved by the module that owns the rule, never re-derived
+        # here. `TradingModeStore.resolve` applies all of it: a stored
+        # "live" resolves to OFF with its own reason, a misspelling
+        # resolves to OFF with a different one, and an active kill
+        # switch overrides a permitted mode. A second implementation on
+        # this page would eventually disagree with the one the loop
+        # obeys, and the page would then show PAPER while the loop
+        # refused to trade.
+        from src.trading.mode import TradingModeStore
+
+        store = TradingModeStore(conn)
+        resolution = store.resolve(datetime.now(timezone.utc))
+        raw_state = store.state()
+        mode = {"mode": resolution.mode.value,
+                "reason": resolution.reason,
+                "stored_raw": raw_state.get("mode"),
+                "kill_switch": bool(raw_state.get("kill_switch")),
+                "kill_reason": raw_state.get("kill_reason") or "",
+                "actor": raw_state.get("actor") or "",
+                "updated_at": raw_state.get("updated_at")}
+
+        cycles = [{
+            "cycle_id": r[0], "session_id": r[1], "anchor": r[2],
+            "status": r[3], "mode": r[4], "health": r[5],
+            "signals_seen": r[6], "signals_eligible": r[7],
+            "targets": r[8], "intents": r[9], "orders": r[10],
+            "rejected": r[11], "fills": r[12], "positions": r[13],
+            "discrepancies": r[14], "outcomes": r[15],
+            "blocks": _safe_json(r[16], []), "finished_at": r[17],
+        } for r in _rows(conn, """
+            SELECT cycle_id, session_id, anchor, status, mode, health,
+                   signals_seen, signals_eligible, targets_set,
+                   intents_created, orders_submitted, orders_rejected,
+                   fills_recorded, positions_reconciled, discrepancies,
+                   outcomes_recorded, blocks_json, finished_at
+              FROM trading_cycles ORDER BY anchor DESC LIMIT 40
+        """)]
+
+        sessions = [{
+            "session_id": r[0], "name": r[1], "mode": r[2], "status": r[3],
+            "broker_id": r[4], "account_id": r[5], "challenger_id": r[6],
+            "experimental": bool(r[7]), "fingerprint": r[8],
+            "started_at": r[9], "ended_at": r[10],
+        } for r in _rows(conn, """
+            SELECT session_id, name, mode, status, broker_id, account_id,
+                   challenger_id, experimental, configuration_fingerprint,
+                   started_at, ended_at
+              FROM paper_loop_sessions ORDER BY started_at DESC LIMIT 10
+        """)]
+
+        account_rows = _rows(conn, """
+            SELECT broker_id, account_id, source, base_currency, cash, equity,
+                   buying_power, realized_pnl, unrealized_pnl, open_positions,
+                   open_orders, connection_state, observed_at, detail
+              FROM loop_account_states ORDER BY observed_at DESC LIMIT 1
+        """)
+        account = None
+        if account_rows:
+            r = account_rows[0]
+            account = {"broker_id": r[0], "account_id": r[1], "source": r[2],
+                       "currency": r[3], "cash": r[4], "equity": r[5],
+                       "buying_power": r[6], "realized_pnl": r[7],
+                       "unrealized_pnl": r[8], "open_positions": r[9],
+                       "open_orders": r[10], "connection": r[11],
+                       "observed_at": r[12], "detail": r[13]}
+
+        # ONLY reconciled broker positions. The filter is in the SQL so
+        # a reader cannot forget it (16).
+        positions = [{
+            "instrument_id": r[0], "quantity": r[1], "average_price": r[2],
+            "market_price": r[3], "unrealized_pnl": r[4], "observed_at": r[5],
+        } for r in _rows(conn, """
+            SELECT p.instrument_id, p.quantity, p.average_price,
+                   p.market_price, p.unrealized_pnl, p.observed_at
+              FROM position_actuals p
+              JOIN (SELECT instrument_id, MAX(observed_at) AS newest
+                      FROM position_actuals WHERE origin = 'broker_reconciled'
+                     GROUP BY instrument_id) latest
+                ON p.instrument_id = latest.instrument_id
+               AND p.observed_at = latest.newest
+             WHERE p.origin = 'broker_reconciled' AND p.quantity != 0
+             ORDER BY p.instrument_id
+        """)]
+
+        # Target versus actual, for the same instruments, kept apart.
+        deltas = [{
+            "instrument_id": r[0], "target": r[1], "actual": r[2],
+            "pending": r[3], "outstanding": r[4], "action": r[5],
+        } for r in _rows(conn, """
+            SELECT d.instrument_id, d.target_quantity, d.actual_quantity,
+                   d.pending_quantity, d.outstanding, d.action
+              FROM position_deltas d
+             WHERE d.cycle_id = (SELECT cycle_id FROM trading_cycles
+                                  ORDER BY anchor DESC LIMIT 1)
+             ORDER BY d.instrument_id
+        """)]
+
+        eligibility = [{"code": r[0], "count": r[1], "example": r[2]}
+                       for r in _rows(conn, """
+            SELECT code, COUNT(*) n, MAX(detail) FROM signal_eligibility
+             GROUP BY code ORDER BY n DESC
+        """)]
+
+        orders = [{
+            "order_id": r[0], "instrument_id": r[1], "side": r[2],
+            "quantity": r[3], "filled": r[4], "state": r[5],
+            "signal_id": r[6], "environment": r[7], "at": r[8],
+            "fill_price": r[9],
+        } for r in _rows(conn, """
+            SELECT order_id, instrument_id, side, quantity, filled_quantity,
+                   state, signal_id, environment, intent_at, average_fill_price
+              FROM execution_orders ORDER BY intent_at DESC LIMIT 25
+        """)]
+
+        lineage = [{
+            "instrument_id": r[0], "signal_id": r[1], "decision_id": r[2],
+            "order_id": r[3], "fill_id": r[4], "outcome_id": r[5],
+            "complete": bool(r[6]), "broken": bool(r[7]),
+        } for r in _rows(conn, """
+            SELECT instrument_id, signal_id, decision_id, order_id, fill_id,
+                   outcome_id, complete, broken
+              FROM trade_lineage ORDER BY recorded_at DESC LIMIT 25
+        """)]
+
+        validations = [{
+            "validation_id": r[0], "strategy_id": r[1], "version": r[2],
+            "challenger_id": r[3], "state": r[4], "orders": r[5],
+            "fills": r[6], "trades": r[7], "realized_pnl": r[8],
+            "conclusive": bool(r[9]), "unmeasured": _safe_json(r[10], []),
+        } for r in _rows(conn, """
+            SELECT validation_id, strategy_id, strategy_version, challenger_id,
+                   state, orders, fills, completed_trades, realized_pnl,
+                   conclusive, unmeasured_json
+              FROM paper_validations ORDER BY started_at DESC LIMIT 10
+        """)]
+
+        return {
+            # A table that exists but holds no cycle is NOT availability.
+            # The convention since Phase 19: absence is reported as
+            # absence, and an empty page that looks populated is worse
+            # than one that says nothing has run.
+            "available": bool(cycles), "is_paper": True,
+            "method_version": _scalar(
+                conn, "SELECT method_version FROM trading_cycles "
+                      "ORDER BY anchor DESC LIMIT 1", default="") or "",
+            "mode": mode["mode"], "mode_detail": mode,
+            "kill_switch": mode["kill_switch"],
+            "sessions": sessions, "cycles": cycles,
+            "total_cycles": _scalar(
+                conn, "SELECT COUNT(*) FROM trading_cycles", default=0) or 0,
+            "blocked_cycles": _scalar(
+                conn, "SELECT COUNT(*) FROM trading_cycles "
+                      "WHERE status = 'blocked'", default=0) or 0,
+            "account": account, "positions": positions, "deltas": deltas,
+            "eligibility": eligibility, "orders": orders, "lineage": lineage,
+            "validations": validations,
+            "signals_seen": _scalar(
+                conn, "SELECT COUNT(*) FROM signal_eligibility",
+                default=0) or 0,
+            "eligible": _scalar(
+                conn, "SELECT COUNT(*) FROM signal_eligibility "
+                      "WHERE code = 'eligible'", default=0) or 0,
+            "fills": _scalar(
+                conn, "SELECT COUNT(*) FROM execution_fills", default=0) or 0,
+            "trade_outcomes": _scalar(
+                conn, "SELECT COUNT(*) FROM trade_outcomes", default=0) or 0,
+        }
+
     def _collect_constraints(self, conn: sqlite3.Connection) -> Dict[str, Any]:
         """The active risk limits, so the Risk page can show what is being enforced."""
         if not _table_exists(conn, "risk_constraints"):
@@ -2374,6 +2565,7 @@ class DashboardGenerator:
         paper = self._collect_paper(conn)
         cached_history, cached_prices = self._collect_price_history(conn)
         execution = self._collect_execution(conn)
+        trading_loop = self._collect_trading_loop(conn)
         broker_detail = self._collect_broker_detail(conn)
         operations = self._collect_operations(conn)
 
@@ -2428,6 +2620,7 @@ class DashboardGenerator:
             "backtests": backtests,
             "paper": paper,
             "execution": execution,
+            "tradingloop": trading_loop,
             "broker_detail": broker_detail,
             "operations": operations,
             "rec_index": rec_index,
@@ -3489,7 +3682,8 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "risk", label: "Risc", tag: RISK_TAG },
       { id: "backtests", label: "Backtesting", tag: BT_RUNS.length ? String(BT_RUNS.length) : "0" },
       { id: "paper", label: "Paper trading", tag: PP_SESSIONS.length ? String(PP_SESSIONS.length) : "0" },
-      { id: "execution", label: "Executie", tag: XE_BROKERS.length ? String(XE_BROKERS.length) : "0" }
+      { id: "execution", label: "Executie", tag: XE_BROKERS.length ? String(XE_BROKERS.length) : "0" },
+      { id: "tradingloop", label: "Bucla de tranzactionare", tag: D.tradingloop.available ? fmtNum(D.tradingloop.total_cycles) : "0" }
     ]},
     { label: "Performanta", items: [
       { id: "recommendations", label: "Recomandari (sentiment)", tag: D.legacy.available ? fmtNum(D.legacy.checked) : "0" },
@@ -5033,6 +5227,175 @@ table.data tr.sel { background:var(--accent-bg); }
   function chList(raw) { try { var o = JSON.parse(raw); return (o && o.length) ? o : []; } catch (e) { return []; } }
   function chObj(raw) { try { return JSON.parse(raw) || {}; } catch (e) { return {}; } }
 
+  function tlPill(text, colour) {
+    return '<span class="pill" style="border:1px solid ' + colour + ';color:' + colour + ';font-size:9px;">' + esc(text) + '</span>';
+  }
+
+  var TL_HEALTH = { healthy: "#00795a", degraded: "#ae6c00", blocked: "var(--accent-dark)" };
+  var TL_STATUS = { completed: "#00795a", blocked: "#ae6c00", failed: "var(--accent-dark)", abandoned: "var(--muted)", claimed: "var(--muted)" };
+
+  function viewTradingLoop() {
+    if (!D.tradingloop.available) {
+      return pageHead("Portofoliu · bucla de tranzactionare", "Bucla de tranzactionare", null) +
+        blk("Fara date", null,
+          '<div class="empty">' + esc(D.tradingloop.reason || "Faza 25 nu a rulat inca.") +
+          ' Ruleaza <span class="mono">scripts/run_trading_loop.py --mock --cycles 1</span>.</div>');
+    }
+    var T = D.tradingloop;
+
+    var html = pageHead("Portofoliu · semnal → portofoliu → risc → ordin → IBKR PAPER → pozitie → rezultat",
+      "Bucla de tranzactionare",
+      [["Cicluri", fmtNum(T.total_cycles)], ["Mod", String(T.mode).toUpperCase()]]);
+
+    // ---- the permanent label -----------------------------------
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid ' +
+      (T.mode === "paper" ? "#00795a" : "var(--accent-dark)") + ';font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Totul de pe aceasta pagina este PAPER.</strong> Tranzactionarea reala este blocata: nu exista niciun mod, ' +
+      'nicio configuratie si niciun adaptor care sa o poata activa, iar valoarea <span class="mono">live</span> ' +
+      'este refuzata atat la scriere cat si la citire. ' +
+      '<strong>Mod curent: ' + esc(String(T.mode).toUpperCase()) + '</strong>' +
+      (T.mode_detail && T.mode_detail.reason ? ' — ' + esc(T.mode_detail.reason) : '') + '. ' +
+      (T.kill_switch ? '<strong style="color:var(--accent-dark);">Intrerupatorul de urgenta este ACTIV</strong>' +
+        (T.mode_detail.kill_reason ? ' — ' + esc(T.mode_detail.kill_reason) : '') + '. ' : '') +
+      'Versiune metodologie <span class="mono">' + esc(T.method_version) + '</span>.' +
+      '</div></section>';
+
+    // ---- conversion --------------------------------------------
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(6,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(T.signals_seen) + '</div><div class="l">semnale vazute</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(T.eligible) + '</div><div class="l">eligibile</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(T.orders.length) + '</div><div class="l">ordine</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(T.fills) + '</div><div class="l">executii</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(T.trade_outcomes) + '</div><div class="l">rezultate</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:' + (T.blocked_cycles ? "#ae6c00" : "var(--muted)") + ';">' +
+        fmtNum(T.blocked_cycles) + '</div><div class="l">cicluri blocate</div></div>' +
+      '</div></section>';
+
+    // ---- account, with its source ------------------------------
+    if (T.account) {
+      var A = T.account;
+      html += blk("Cont la broker", "fiecare cifra poarta sursa care a produs-o — nimic nu este estimat fara eticheta",
+        '<table class="data"><tbody>' +
+        '<tr><td>Broker / cont</td><td class="mono">' + esc(A.broker_id) + ' / ' + esc(A.account_id) + '</td></tr>' +
+        '<tr><td>Sursa</td><td>' + tlPill(A.source, A.source === "broker" ? "#00795a" : "var(--accent-dark)") + '</td></tr>' +
+        '<tr><td>Capital (equity)</td><td class="r mono">' + (A.equity === null ? "—" : fmtNum(A.equity)) + ' ' + esc(A.currency) + '</td></tr>' +
+        '<tr><td>Numerar</td><td class="r mono">' + (A.cash === null ? "—" : fmtNum(A.cash)) + '</td></tr>' +
+        '<tr><td>Putere de cumparare</td><td class="r mono">' + (A.buying_power === null ? "—" : fmtNum(A.buying_power)) + '</td></tr>' +
+        '<tr><td>P&amp;L nerealizat (raportat de broker)</td><td class="r mono">' + (A.unrealized_pnl === null ? "—" : fmtNum(A.unrealized_pnl)) + '</td></tr>' +
+        '<tr><td>Conexiune</td><td>' + esc(A.connection) + '</td></tr>' +
+        '<tr><td>Observat la</td><td class="mono" style="font-size:10px;">' + esc(A.observed_at || "—") + '</td></tr>' +
+        '</tbody></table>');
+    } else {
+      html += blk("Cont la broker", null, '<div class="empty">Nicio stare de cont nu a fost inregistrata.</div>');
+    }
+
+    // ---- positions: broker-reconciled only ---------------------
+    var posRows = T.positions.map(function (p) {
+      return '<tr><td class="mono">' + esc(p.instrument_id) + '</td>' +
+        '<td class="r">' + fmtNum(p.quantity) + '</td>' +
+        '<td class="r">' + (p.average_price === null ? "—" : fmtNum(p.average_price)) + '</td>' +
+        '<td class="r">' + (p.market_price === null ? "—" : fmtNum(p.market_price)) + '</td>' +
+        '<td class="r">' + (p.unrealized_pnl === null ? "—" : fmtNum(p.unrealized_pnl)) + '</td></tr>';
+    }).join("");
+    html += blk("Pozitii detinute", "exclusiv pozitii raportate de broker si confirmate de reconciliere — nu intentii",
+      '<table class="data"><thead><tr><th>Instrument</th><th class="r">Cantitate</th><th class="r">Pret mediu</th><th class="r">Pret piata</th><th class="r">P&amp;L nerealizat</th></tr></thead><tbody>' +
+      (posRows || '<tr><td colspan="5" class="empty">Nicio pozitie deschisa.</td></tr>') + '</tbody></table>');
+
+    // ---- target vs actual --------------------------------------
+    var dRows = T.deltas.map(function (d) {
+      return '<tr><td class="mono">' + esc(d.instrument_id) + '</td>' +
+        '<td class="r">' + (d.target === null ? "—" : fmtNum(d.target)) + '</td>' +
+        '<td class="r">' + fmtNum(d.actual) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + fmtNum(d.pending) + '</td>' +
+        '<td class="r" style="font-weight:700;">' + (d.outstanding === null ? "—" : fmtNum(d.outstanding)) + '</td>' +
+        '<td>' + esc(d.action) + '</td></tr>';
+    }).join("");
+    html += blk("Tinta fata de realitate", "cele doua nu se contopesc niciodata: tinta este o intentie, realitatea este ce spune brokerul",
+      '<table class="data"><thead><tr><th>Instrument</th><th class="r">Tinta</th><th class="r">Detinut</th><th class="r">In curs</th><th class="r">Ramas de facut</th><th>Actiune</th></tr></thead><tbody>' +
+      (dRows || '<tr><td colspan="6" class="empty">Niciun delta in ultimul ciclu.</td></tr>') + '</tbody></table>');
+
+    // ---- why signals did not trade -----------------------------
+    var eRows = T.eligibility.map(function (e) {
+      var ok = e.code === "eligible";
+      return '<tr><td>' + tlPill(e.code, ok ? "#00795a" : "var(--muted)") + '</td>' +
+        '<td class="r">' + fmtNum(e.count) + '</td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(String(e.example || "").slice(0, 110)) + '</td></tr>';
+    }).join("");
+    html += blk("De ce semnalele nu au tranzactionat", "fiecare semnal pe care bucla l-a vazut primeste un verdict, inclusiv cele care au trecut",
+      '<table class="data"><thead><tr><th>Verdict</th><th class="r">Semnale</th><th>Exemplu</th></tr></thead><tbody>' +
+      (eRows || '<tr><td colspan="3" class="empty">Niciun semnal evaluat.</td></tr>') + '</tbody></table>');
+
+    // ---- orders -------------------------------------------------
+    var oRows = T.orders.map(function (o) {
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(String(o.order_id).slice(0, 18)) + '</td>' +
+        '<td class="mono">' + esc(o.instrument_id) + '</td>' +
+        '<td>' + esc(o.side) + '</td>' +
+        '<td class="r">' + fmtNum(o.quantity) + '</td>' +
+        '<td class="r">' + fmtNum(o.filled) + '</td>' +
+        '<td>' + esc(o.state) + '</td>' +
+        '<td class="r">' + (o.fill_price === null ? "—" : fmtNum(o.fill_price)) + '</td>' +
+        '<td>' + tlPill(o.environment, o.environment === "paper" ? "#00795a" : "var(--accent-dark)") + '</td></tr>';
+    }).join("");
+    html += blk("Ordine", "ciclul de viata complet, asa cum l-a inregistrat Faza 14",
+      '<table class="data"><thead><tr><th>Ordin</th><th>Instrument</th><th>Sens</th><th class="r">Cantitate</th><th class="r">Executat</th><th>Stare</th><th class="r">Pret</th><th>Mediu</th></tr></thead><tbody>' +
+      (oRows || '<tr><td colspan="8" class="empty">Niciun ordin.</td></tr>') + '</tbody></table>');
+
+    // ---- lineage ------------------------------------------------
+    var lRows = T.lineage.map(function (l) {
+      return '<tr><td class="mono">' + esc(l.instrument_id) + '</td>' +
+        '<td class="mono" style="font-size:10px;">' + esc(l.signal_id || "—") + '</td>' +
+        '<td class="mono" style="font-size:10px;">' + esc(l.decision_id || "—") + '</td>' +
+        '<td class="mono" style="font-size:10px;">' + esc(String(l.order_id || "—").slice(0, 16)) + '</td>' +
+        '<td class="mono" style="font-size:10px;">' + esc(l.fill_id || "—") + '</td>' +
+        '<td class="mono" style="font-size:10px;">' + esc(l.outcome_id || "—") + '</td>' +
+        '<td>' + (l.broken ? tlPill("rupt", "var(--accent-dark)") : (l.complete ? tlPill("complet", "#00795a") : tlPill("in curs", "var(--muted)"))) + '</td></tr>';
+    }).join("");
+    html += blk("Lantul de provenienta", "semnal → decizie → ordin → executie → pozitie → rezultat; un lant incomplet nu este acelasi lucru cu unul rupt",
+      '<table class="data"><thead><tr><th>Instrument</th><th>Semnal</th><th>Decizie de risc</th><th>Ordin</th><th>Executie</th><th>Rezultat</th><th>Stare</th></tr></thead><tbody>' +
+      (lRows || '<tr><td colspan="7" class="empty">Niciun lant inregistrat.</td></tr>') + '</tbody></table>');
+
+    // ---- cycles -------------------------------------------------
+    var cRows = T.cycles.map(function (c) {
+      var reasons = (c.blocks || []).map(function (b) { return b.reason; }).join(", ");
+      return '<tr><td class="mono" style="font-size:10px;">' + esc(String(c.anchor).slice(0, 16)) + '</td>' +
+        '<td>' + tlPill(c.status, TL_STATUS[c.status] || "var(--muted)") + '</td>' +
+        '<td>' + tlPill(c.health, TL_HEALTH[c.health] || "var(--muted)") + '</td>' +
+        '<td class="r">' + fmtNum(c.signals_seen) + " / " + fmtNum(c.signals_eligible) + '</td>' +
+        '<td class="r">' + fmtNum(c.orders) + '</td>' +
+        '<td class="r">' + fmtNum(c.fills) + '</td>' +
+        '<td class="r">' + fmtNum(c.positions) + '</td>' +
+        '<td class="r" style="color:' + (c.discrepancies ? "var(--accent-dark)" : "var(--muted)") + ';">' + fmtNum(c.discrepancies) + '</td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(reasons) + '</td></tr>';
+    }).join("");
+    html += blk("Cicluri", "un ciclu blocat este sistemul care functioneaza; unul esuat este sistemul care nu functioneaza",
+      '<table class="data"><thead><tr><th>Ancora</th><th>Stare</th><th>Sanatate</th><th class="r">Semnale</th><th class="r">Ordine</th><th class="r">Executii</th><th class="r">Pozitii</th><th class="r">Discrepante</th><th>Blocaje</th></tr></thead><tbody>' +
+      (cRows || '<tr><td colspan="9" class="empty">Niciun ciclu.</td></tr>') + '</tbody></table>');
+
+    // ---- validations --------------------------------------------
+    if (T.validations.length) {
+      var vRows = T.validations.map(function (v) {
+        return '<tr><td class="mono" style="font-size:10px;">' + esc(v.strategy_id) + '@' + esc(v.version) + '</td>' +
+          '<td>' + esc(v.state) + '</td>' +
+          '<td class="r">' + fmtNum(v.orders) + '</td>' +
+          '<td class="r">' + fmtNum(v.trades) + '</td>' +
+          '<td class="r">' + (v.realized_pnl === null ? "—" : fmtNum(v.realized_pnl)) + '</td>' +
+          '<td>' + (v.conclusive ? tlPill("concludent", "#00795a") : tlPill("neconcludent", "var(--muted)")) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc((v.unmeasured || []).join(", ")) + '</td></tr>';
+      }).join("");
+      html += blk("Validari in paper", "performanta in paper este dovada, nu demonstratie — o dimensiune nemasurata nu este o dimensiune trecuta",
+        '<table class="data"><thead><tr><th>Strategie</th><th>Stare</th><th class="r">Ordine</th><th class="r">Tranzactii inchise</th><th class="r">P&amp;L realizat</th><th>Concluzie</th><th>Nemasurat</th></tr></thead><tbody>' +
+        vRows + '</tbody></table>');
+    }
+
+    html += '<section class="blk"><div class="blk-body" style="font-size:11px;color:var(--muted);line-height:1.6;">' +
+      'Bucla se avanseaza cu <span class="mono">scripts/run_trading_loop.py --cycles N</span>. ' +
+      'Nu exista niciun buton aici care sa plaseze un ordin: pagina este un cititor, iar executia trece prin ' +
+      'poarta de risc a Fazei 11, validatorul Fazei 14 si adaptorul IBKR al Fazei 15, in aceasta ordine.' +
+      '</div></section>';
+
+    return html;
+  }
+
   function viewChallengers() {
     if (!D.challengers.available) {
       return pageHead("Cercetare · challengeri", "Challengeri", null) +
@@ -6233,6 +6596,7 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "experiments") main.innerHTML = viewExperiments();
     else if (v === "researchlab") main.innerHTML = viewResearchLab();
     else if (v === "challengers") main.innerHTML = viewChallengers();
+    else if (v === "tradingloop") main.innerHTML = viewTradingLoop();
     else if (v === "challenger") main.innerHTML = viewChallenger(state.param);
     else if (v === "conclusion") main.innerHTML = viewConclusion(state.param);
     else if (v === "experiment") main.innerHTML = viewExperiment(state.param);

@@ -1,0 +1,171 @@
+name: Run Trading Loop (Phase 25, IBKR PAPER)
+
+# Avanseaza bucla de tranzactionare pe hartie. Fiecare ciclu:
+#   citeste modul durabil si intrerupatorul de urgenta
+#   -> citeste contul si pozitiile de la broker
+#   -> aduna executiile, reconciliaza, calculeaza P&L si rezultate
+#   -> evalueaza eligibilitatea fiecarui semnal
+#   -> ruleaza motorul de risc REAL al Fazei 11
+#   -> trece prin intake-ul Fazei 17 si orchestratorul Fazei 14
+#   -> trimite la IBKR PAPER
+#
+# ACEST WORKFLOW NU POATE TRANZACTIONA CU BANI REALI.
+# `IBKR_ENVIRONMENT` poate fi doar `paper`, configuratia refuza altceva
+# la constructie, stratul de siguranta al Fazei 14 refuza un mediu live
+# inainte de orice altceva, iar modul durabil nu are o valoare `live`
+# care sa se rezolve in permisiune. Patru refuzuri independente.
+#
+# DE CE `--mock` E IMPLICIT: runner-ul GitHub nu are un Client Portal
+# Gateway si nu poate avea unul — sesiunea IBKR se deschide de un om
+# intr-un browser. Fara `--mock` bucla ar raporta corect "neconectat" si
+# nu ar face nimic. Rularea impotriva unui cont real de paper se face
+# local, cu gateway-ul pornit; vezi docs/PHASE_15_IBKR_RUNBOOK.md.
+#
+# DE CE NU PORNESTE PE CRON DIN OFICIU: o bucla programata trebuie sa
+# scrie starea inapoi in release la fiecare rulare, altfel fiecare
+# executie porneste de la snapshot-ul descarcat si isi pierde propria
+# munca. Blocul `schedule` de mai jos e comentat deliberat: pornirea
+# unui cont de paper care se auto-avanseaza si isi publica starea
+# ramane o decizie explicita, nu efectul secundar al unui merge.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cycles:
+        description: 'Cate cicluri se avanseaza'
+        required: false
+        default: '1'
+        type: string
+      session:
+        description: 'Id de sesiune (acelasi id continua sesiunea)'
+        required: false
+        default: 'sess-paper-loop-1'
+        type: string
+      cycle_seconds:
+        description: 'Lungimea unui ciclu, in secunde (ancora de idempotenta)'
+        required: false
+        default: '900'
+        type: string
+      allow_paper_orders:
+        description: 'Permite trimiterea ordinelor (tot PAPER)'
+        required: false
+        default: false
+        type: boolean
+      experimental:
+        description: 'Accepta semnale de la modele nepromovate (rularea e etichetata experimentala)'
+        required: false
+        default: false
+        type: boolean
+      max_signal_age_hours:
+        description: 'Cat de veche poate fi informatia din spatele unui semnal (gol = 48h)'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Doar valideaza, nu trimite nimic'
+        required: false
+        default: true
+        type: boolean
+      persist:
+        description: 'Scrie baza actualizata inapoi in release (necesar pentru continuitate)'
+        required: false
+        default: false
+        type: boolean
+
+  # Pentru o bucla care merge singura, decomenteaza blocul de mai jos SI
+  # lasa `persist` pe true. Fara persistenta, fiecare rulare programata
+  # reia de la zero si nu inseamna nimic.
+  #
+  # schedule:
+  #   - cron: '*/15 13-20 * * 1-5'   # in timpul sesiunii US, zilele lucratoare
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketlens-data-write
+  cancel-in-progress: false
+
+jobs:
+  trading-loop:
+    runs-on: ubuntu-latest
+    env:
+      # Singura valoare pe care configuratia o accepta. Orice altceva e
+      # refuzat la constructie, nu la venue.
+      IBKR_ENVIRONMENT: paper
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download database from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          success=0
+          for i in 1 2 3 4 5; do
+            if gh release download db-latest --repo ${{ github.repository }} --pattern 'marketlens.db' --dir data/ --clobber; then
+              success=1
+              break
+            fi
+            echo "Descarcare esuata (posibil upload concurent) — reincerc in 15s ($i/5)..."
+            sleep 15
+          done
+          if [ "$success" != "1" ]; then
+            echo "EROARE: nu am putut descarca baza dupa 5 incercari."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Advance the trading loop
+        run: |
+          ARGS="--mock --cycles ${{ inputs.cycles }}"
+          ARGS="$ARGS --session '${{ inputs.session }}'"
+          ARGS="$ARGS --cycle-seconds ${{ inputs.cycle_seconds }}"
+          ARGS="$ARGS --actor 'github-actions'"
+          ARGS="$ARGS --worker 'gha-${{ github.run_id }}'"
+          if [ "${{ inputs.allow_paper_orders }}" = "true" ]; then
+            ARGS="$ARGS --allow-paper-orders"
+          fi
+          if [ "${{ inputs.experimental }}" = "true" ]; then
+            ARGS="$ARGS --experimental"
+          fi
+          if [ -n "${{ inputs.max_signal_age_hours }}" ]; then
+            ARGS="$ARGS --max-signal-age-hours ${{ inputs.max_signal_age_hours }}"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          else
+            ARGS="$ARGS --no-dry-run"
+          fi
+          ARGS="$ARGS --verbose"
+          eval python scripts/run_trading_loop.py $ARGS
+
+      - name: Integrity check
+        run: python scripts/run_trading_loop.py --integrity
+
+      - name: Live-safety audit
+        run: python scripts/audit_live_safety.py --untracked
+
+      # O bucla nu poate fi re-rulata: ancora a trecut deja. De aceea
+      # persistenta e ce face diferenta intre un cont care continua si
+      # unul care o ia de la capat la fiecare invocare.
+      - name: Upload updated database to release
+        if: ${{ inputs.persist == true && inputs.dry_run == false }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+
+      - name: Say what was NOT written
+        if: ${{ inputs.persist != true || inputs.dry_run == true }}
+        run: |
+          echo "Baza NU a fost publicata inapoi in release."
+          echo "Bucla a avansat doar in runner-ul acesta, iar starea se pierde"
+          echo "la finalul job-ului. Pentru continuitate: persist=true si dry_run=false."

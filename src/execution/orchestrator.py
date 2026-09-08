@@ -60,7 +60,7 @@ from src.domain.broker_models import (
     MarketStatus, PositionSnapshot, ReconciliationRecord, ValidationResult,
     explain,
 )
-from src.execution.events import EventProcessor, ProcessingReport
+from src.execution.events import EventProcessor, ProcessingReport, pair_fills
 from src.execution.gateway import BrokerGateway, SubmissionAck
 from src.execution.instruments import InstrumentRegistry
 from src.execution.policy import (
@@ -69,7 +69,7 @@ from src.execution.policy import (
 )
 from src.execution.reconciliation import BrokerReconciler, UnknownResolution
 from src.execution.safety import ExecutionSafety
-from src.execution.states import OrderStateMachine
+from src.execution.states import OrderStateMachine, apply_fill_to_order
 from src.execution.validation import PreTradeValidator, ValidationRequest
 
 
@@ -631,6 +631,57 @@ class ExecutionOrchestrator:
         report = self.events.process(events, self.orders, fills_by_event)
         self.fills.extend(report.fills)
         return report
+
+    def poll_broker(self, broker_id: str, now: datetime,
+                    days: int = 1) -> ProcessingReport:
+        """
+        One complete observation of a venue: executions, then events, paired.
+
+        `drain_events` polls status only, and its `fills_by_event`
+        argument had no producer — so an ORDER_FILLED event always
+        arrived without its execution, the processor rightly refused to
+        believe a filled status the fills did not support, and the
+        order went to RECONCILIATION_REQUIRED. That is the correct
+        behaviour for an unexplained status and the wrong outcome for a
+        normal fill, and the difference is entirely in the ORDER of the
+        two gateway calls.
+
+        Collect first, then poll, then pair. `drain_events` is left
+        exactly as it was for callers that only want status.
+        """
+        entry = self.registry.get(broker_id)
+        if entry is None:
+            return ProcessingReport()
+
+        collected = entry.gateway.collect_fills(self.orders, days)
+        events = entry.gateway.poll_events(now)
+        self.event_log.extend(events)
+
+        paired = pair_fills(events, collected)
+        report = self.events.process(events, self.orders, paired)
+        self.fills.extend(report.fills)
+
+        # A fill the venue reported with no event to carry it still has
+        # to reach the book. Routed through the same duplicate guard, so
+        # a fill that WAS paired cannot be counted twice.
+        report.fills.extend(
+            fill for fill in collected
+            if fill not in report.fills
+            and self._record_unpaired(fill, now))
+        return report
+
+    def _record_unpaired(self, fill: ExecutionFill, now: datetime) -> bool:
+        """Apply a fill that arrived without an event. Returns whether it counted."""
+        key = fill.idempotency_key or fill.execution_id or fill.fill_id
+        if key in self.events.seen_fill_keys:
+            return False
+        order = self.orders.get(fill.order_id)
+        if order is None:
+            return False
+        apply_fill_to_order(order, fill, self.machine, at=now)
+        self.events.seed(fill_keys=[key])
+        self.fills.append(fill)
+        return True
 
     def record_fills(self, fills: Sequence[ExecutionFill]) -> int:
         """

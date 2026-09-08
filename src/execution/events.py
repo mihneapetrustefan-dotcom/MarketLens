@@ -46,7 +46,7 @@ correction to apply here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from src.domain.broker_models import (
@@ -268,3 +268,50 @@ class EventProcessor:
 
         return EventOutcome(event, True, "", new_state=order.state,
                             fill_applied=applied_fill)
+
+
+#: Event types that a broker delivers WITH an execution behind them.
+#: Named rather than inlined so a new fill-bearing event type is one
+#: edit and not a search through pairing code.
+FILL_BEARING = (ExecutionEventType.ORDER_FILLED,
+                ExecutionEventType.ORDER_PARTIALLY_FILLED)
+
+
+def pair_fills(events: Sequence[ExecutionEvent],
+               fills: Sequence[ExecutionFill]
+               ) -> Dict[str, ExecutionFill]:
+    """
+    Match collected fills to the events that announced them.
+
+    WHY THIS WAS MISSING UNTIL PHASE 25
+    ---------------------------------------
+    `EventProcessor.process` has always accepted `fills_by_event`, and
+    nothing could build one. A gateway reports order STATUS through
+    `poll_events` and EXECUTIONS through `collect_fills`, and pairing
+    the two needs both halves at once — which no component held. So
+    every real poll delivered an ORDER_FILLED event with no fill
+    attached, the processor correctly refused to believe a filled
+    status the fills did not support, and the order landed in
+    RECONCILIATION_REQUIRED. Phase 25's loop hit exactly that on its
+    second cycle.
+
+    The pairing is per order and in arrival order: an order that filled
+    as two partials gets its two fills matched to its two events. A
+    fill with no event is left unpaired for the caller to record
+    directly, and an event with no fill stays unpaired — which is the
+    genuine "the broker says filled and we have no execution" case that
+    reconciliation should still see.
+    """
+    queues: Dict[str, List[ExecutionFill]] = {}
+    for fill in sorted(fills, key=lambda f: (f.filled_at or datetime.min.replace(
+            tzinfo=timezone.utc), f.fill_id)):
+        queues.setdefault(fill.order_id, []).append(fill)
+
+    paired: Dict[str, ExecutionFill] = {}
+    for event in events:
+        if event.event_type not in FILL_BEARING or not event.order_id:
+            continue
+        queue = queues.get(event.order_id)
+        if queue:
+            paired[event.event_id] = queue.pop(0)
+    return paired

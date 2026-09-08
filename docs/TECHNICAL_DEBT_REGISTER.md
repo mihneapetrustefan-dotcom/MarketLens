@@ -30,6 +30,15 @@ now a fact about a `RiskDecision` object. No override parameter exists,
 and a test asserts that absence. 20 tests, including one that drives a
 real IBKR paper order from an approved decision end to end.
 
+**Phase 25 addendum — the fix had no caller for eight phases.** The
+module was correct and nothing in `src/` or `scripts/` called
+`from_decision`; both CLIs mentioned it in a help string and went on
+building their requests by hand. The debt was recorded as FIXED and the
+production path was unchanged, because a joint nobody walks is a joint
+nobody notices. `src/trading/loop.py` is its first caller. The lesson
+is narrower than "test more": a repair to a *connection* is not
+demonstrated by tests of the connector, only by something crossing it.
+
 ---
 
 ## HIGH
@@ -111,7 +120,7 @@ authoritative.
 **Recommended:** declare `signals` canonical. Keep `recommendations`
 for its history. Label them distinctly in the UI.
 
-### TD-04 — Two order lifecycles · **ACCEPTED**
+### TD-04 — Two order lifecycles · **STILL ACCEPTED, RE-SCOPED (Phase 25)**
 
 **Component:** `src/paper/executor.py` vs `src/execution/orchestrator.py`
 
@@ -129,6 +138,30 @@ was fixed, and idempotency handling differs between them.
 well-tested subsystems, and the spec (§1, §59) prefers incremental
 refactoring over rewriting working systems. Revisit when paper trading
 actually produces orders.
+
+**Phase 25 revisit — paper trading now produces orders, and this debt
+did NOT grow.** The obvious way to satisfy Phase 25 would have been to
+extend `PaperExecutor` with a broker; that is exactly the "parallel
+paper-only shortcut" §2 forbids, and it would have made the second
+lifecycle the one that trades. `src/trading/loop.py` goes the other
+way: it drives the Phase 14 orchestrator, so the broker-backed path has
+**no** order lifecycle of its own.
+
+What remains is Phase 13's SIMULATED path, and its role is now clear
+rather than ambiguous:
+
+| Path | Fills come from | Reaches a broker |
+|---|---|---|
+| Phase 12 backtest | historical bars | no |
+| Phase 13 paper session | cached bars | no |
+| **Phase 25 trading loop** | **IBKR paper executions** | **yes** |
+
+Three consumers of the same risk engine, at three different fidelities.
+The remaining duplication is between the first two, which are both
+simulations and neither of which can trade. **Recommended:** when
+Phase 13's session is next touched, port it onto the Phase 25 loop with
+a simulating gateway rather than a second executor. Not urgent, and not
+worth a rewrite on its own.
 
 ### TD-05 — The Phase 4–12 pipeline is manual · **FIXED**
 
