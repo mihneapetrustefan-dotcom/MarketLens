@@ -1074,6 +1074,120 @@ class DashboardGenerator:
             "queue_states": queue_states,
         }
 
+    def _collect_challengers(self, conn: sqlite3.Connection) -> Dict[str, Any]:
+        """
+        The Challenger Lab (Phase 24, §62, §63, §64).
+
+        Guarded like every collector since Phase 19: the tables exist
+        only once `scripts/run_challenger.py` has run.
+
+        THE PAGE MUST NOT BE ABLE TO SHOW ONLY THE WINNERS.
+        `rejected` and `not_superior` are collected beside `superior`,
+        and the listing includes every status. A challenger record
+        filtered to its winners is not a record -- and on a comparison
+        page that failure mode is worse than elsewhere, because the
+        whole point is the fairness of the comparison.
+
+        There is no overall score anywhere in this payload. The
+        scorecard travels as six named dimensions (§37); collapsing it
+        into one number is exactly what a sortable column would invite.
+        """
+        if not _table_exists(conn, "challengers"):
+            return {"available": False}
+
+        version = _scalar(conn, """
+            SELECT method_version FROM challengers
+            ORDER BY created_at DESC, method_version DESC LIMIT 1
+        """, default="")
+        if not version:
+            return {"available": False}
+        v = (version,)
+
+        by_status = _rows(conn, """
+            SELECT status, COUNT(*) FROM (
+                SELECT c.challenger_id, c.status FROM challengers c
+                WHERE c.method_version = ?
+                  AND c.version = (SELECT MAX(x.version) FROM challengers x
+                                   WHERE x.challenger_id = c.challenger_id)
+            ) GROUP BY status ORDER BY 2 DESC
+        """, v)
+        status_map = dict(by_status)
+        total = sum(row[1] for row in by_status) or 0
+
+        by_decision = _rows(conn, """
+            SELECT decision, COUNT(*) FROM challenger_results
+            WHERE method_version = ? GROUP BY 1 ORDER BY 2 DESC
+        """, v) if _table_exists(conn, "challenger_results") else []
+        decided = sum(row[1] for row in by_decision) or 0
+        superior = dict(by_decision).get("superior", 0)
+
+        listing = _rows(conn, """
+            SELECT c.challenger_id, c.version, c.name, c.status,
+                   c.baseline_name, c.baseline_version, c.change_summary,
+                   c.candidate_id, c.hypothesis_id, c.experiment_id,
+                   c.conclusion_id, c.family_id, c.experimental_basis,
+                   c.dataset_cutoff, c.created_at,
+                   r.decision, r.effect, r.effect_in_sample, r.effect_low,
+                   r.effect_high, r.complexity_ratio, r.robust_slices,
+                   r.robust_favourable, r.walk_forward_folds,
+                   r.walk_forward_favourable, r.scorecard_json,
+                   r.slices_json, r.reasons_json, r.limitations_json,
+                   r.warnings_json, r.family_challenger_count,
+                   r.window_reuse_count, r.baseline_oos_json,
+                   r.challenger_oos_json, r.sensitivity_json, r.run_id
+            FROM challengers c
+            LEFT JOIN challenger_results r
+                   ON r.challenger_id = c.challenger_id
+                  AND r.challenger_version = c.version
+            WHERE c.method_version = ?
+              AND c.version = (SELECT MAX(x.version) FROM challengers x
+                               WHERE x.challenger_id = c.challenger_id)
+            ORDER BY c.created_at DESC LIMIT 60
+        """, v)
+
+        reviews = _rows(conn, """
+            SELECT challenger_id, challenger_version, outcome, reviewer,
+                   reason, reviewed_at
+            FROM challenger_reviews ORDER BY reviewed_at DESC LIMIT 40
+        """) if _table_exists(conn, "challenger_reviews") else []
+
+        queue_states = _rows(conn, """
+            SELECT state, COUNT(*) FROM challenger_queue GROUP BY 1
+        """) if _table_exists(conn, "challenger_queue") else []
+
+        candidates = _rows(conn, """
+            SELECT n.candidate_id, n.name, n.status, n.effect,
+                   (SELECT COUNT(*) FROM challengers c
+                     WHERE c.candidate_id = n.candidate_id)
+            FROM autoresearch_candidates n ORDER BY n.created_at DESC LIMIT 20
+        """) if _table_exists(conn, "autoresearch_candidates") else []
+
+        runs_total = _scalar(conn, "SELECT COUNT(*) FROM challenger_runs",
+                             default=0) if _table_exists(conn, "challenger_runs") else 0
+        cache_hits = _scalar(conn,
+                             "SELECT COUNT(*) FROM challenger_runs WHERE cache_hit=1",
+                             default=0) if _table_exists(conn, "challenger_runs") else 0
+
+        return {
+            "available": True,
+            "method_version": version,
+            "total": total,
+            "by_status": by_status,
+            "paper_candidates": status_map.get("paper_candidate", 0),
+            "rejected": status_map.get("rejected", 0),
+            "requires_review": status_map.get("requires_review", 0),
+            "by_decision": by_decision,
+            "decided": decided,
+            "superior": superior,
+            "not_superior": decided - superior,
+            "listing": listing,
+            "reviews": reviews,
+            "queue_states": queue_states,
+            "candidates": candidates,
+            "runs_total": runs_total,
+            "cache_hits": cache_hits,
+        }
+
     def _collect_legacy(self, conn: sqlite3.Connection, watchlist: Optional[List[str]]) -> Dict[str, Any]:
         if not _table_exists(conn, "recommendations"):
             return {"available": False}
@@ -2251,6 +2365,7 @@ class DashboardGenerator:
         memory = self._collect_memory(conn)
         experiments = self._collect_experiments(conn)
         research_lab = self._collect_research_lab(conn)
+        challengers = self._collect_challengers(conn)
         legacy = self._collect_legacy(conn, watchlist)
         rec_index = self._collect_rec_index(conn)
         portfolio = self._collect_portfolio(conn)
@@ -2306,6 +2421,7 @@ class DashboardGenerator:
             "memory": memory,
             "experiments": experiments,
             "researchlab": research_lab,
+            "challengers": challengers,
             "legacy": legacy,
             "portfolio": portfolio,
             "constraints": constraints,
@@ -3382,7 +3498,8 @@ table.data tr.sel { background:var(--accent-bg); }
       { id: "experiments", label: "Experimente", tag: D.experiments.available ? fmtNum(D.experiments.total) : "0" },
       { id: "attribution", label: "Diagnostic erori", tag: D.attribution.available ? fmtNum(D.attribution.total) : "0" },
       { id: "memory", label: "Memorie", tag: D.memory.available ? fmtNum(D.memory.total) : "0" },
-      { id: "researchlab", label: "Cercetare autonoma", tag: D.researchlab.available ? fmtNum(D.researchlab.conclusions_total) : "0" }
+      { id: "researchlab", label: "Cercetare autonoma", tag: D.researchlab.available ? fmtNum(D.researchlab.conclusions_total) : "0" },
+      { id: "challengers", label: "Challengeri", tag: D.challengers.available ? fmtNum(D.challengers.total) : "0" }
     ]}
   ];
 
@@ -4865,6 +4982,247 @@ table.data tr.sel { background:var(--accent-bg); }
     return html;
   }
 
+
+  // ==================================================================
+  // Phase 24 - Challenger Lab (62, 63, 64, 65)
+  //
+  // Read-only. The page shows every challenger including the rejected
+  // ones, and the scorecard is shown as six named dimensions with NO
+  // overall column - a sortable score is what turns a comparison into
+  // a leaderboard, and the top of a leaderboard is where noise sits.
+  // ==================================================================
+  var CHDEC_LABEL = {
+    superior:          ["Superior", "#00795a", "a batut referinta pe fiecare dimensiune fixata inainte"],
+    inferior:          ["Inferior", "#ae1800", "ramane in urma referintei in afara esantionului"],
+    inconclusive:      ["Neconcludent", "#8a8a8a", "dovezile nu separa challengerul de referinta"],
+    context_dependent: ["Depinde de context", "#ae6c00", "castiga in unele contexte si pierde in altele; nu se face media"],
+    requires_review:   ["Necesita revizuire", "#ae6c00", "un compromis pe care il cantareste un om, nu sistemul"]
+  };
+  var CHST_LABEL = {
+    proposed:        ["Propus", "#8a8a8a"],
+    validating:      ["In validare", "#ae6c00"],
+    testing:         ["In testare", "#ae6c00"],
+    promising:       ["Promitator", "#00795a"],
+    paper_candidate: ["Candidat paper", "#00795a"],
+    requires_review: ["Necesita revizuire", "#ae6c00"],
+    rejected:        ["Respins", "#ae1800"],
+    retired:         ["Retras", "#8a8a8a"]
+  };
+  var CHDIM_LABEL = {
+    performance: "performanta", risk: "risc", robustness: "robustete",
+    stability: "stabilitate", complexity: "complexitate", evidence: "dovezi"
+  };
+  var CHVERDICT_LABEL = {
+    better:  ["mai bun", "#00795a"], similar: ["comparabil", "#8a8a8a"],
+    worse:   ["mai slab", "#ae1800"], unknown: ["nemasurat", "#ae6c00"]
+  };
+
+  function chPill(map, key) {
+    var e = map[String(key || "").toLowerCase()];
+    if (!e) return esc(String(key || ""));
+    return '<span class="pill" title="' + esc(e[2] || "") + '" style="border:1px solid ' + e[1] + ';color:' + e[1] + ';font-size:9px;">' + e[0] + '</span>';
+  }
+  function chSgn(v, d) {
+    return (v === null || v === undefined) ? "—" : (v >= 0 ? "+" : "") + (100 * v).toFixed(d === undefined ? 2 : d) + "%";
+  }
+  function chNum(v) {
+    if (v === null || v === undefined) return "—";
+    if (typeof v !== "number") return esc(String(v));
+    return Math.abs(v) >= 1 ? fmtNum(Math.round(v * 100) / 100) : (v >= 0 ? "+" : "") + v.toFixed(4);
+  }
+  function chList(raw) { try { var o = JSON.parse(raw); return (o && o.length) ? o : []; } catch (e) { return []; } }
+  function chObj(raw) { try { return JSON.parse(raw) || {}; } catch (e) { return {}; } }
+
+  function viewChallengers() {
+    if (!D.challengers.available) {
+      return pageHead("Cercetare · challengeri", "Challengeri", null) +
+        blk("Fara date", null, '<div class="empty">Faza 24 nu a rulat inca pe aceasta baza de date. Ruleaza <span class="mono">scripts/run_challenger.py --candidates</span>.</div>');
+    }
+    var C = D.challengers;
+
+    var html = pageHead("Cercetare · este schimbarea chiar mai buna decat referinta?", "Challengeri",
+      [["Definiti", fmtNum(C.total)], ["Evaluati", fmtNum(C.decided)]]);
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;">' +
+      '<strong>Ce este un challenger.</strong> Un <em>candidat</em> din Faza 23 este o idee promitatoare masurata o singura data. Un <em>challenger</em> este aceeasi idee, ' +
+      'versionata independent si pusa intr-o comparatie mai dura fata de o referinta <strong>numita si versionata</strong>: walk-forward, felii de timp, de instrument si de orizont, ' +
+      'sensibilitate in jurul parametrului, complexitate si semnificatie economica. ' +
+      '<strong>Nu exista un scor general.</strong> Fisa are sase dimensiuni separate, fiindca un singur numar ar fi sortat — iar varful unei liste de o suta este exact locul unde se aduna zgomotul. ' +
+      '<strong>SUPERIOR nu inseamna aprobare pentru productie.</strong> Cel mai departe ajunge acest sistem este <em>candidat paper</em>, o eticheta pe care o pune un om si care nu executa nimic. ' +
+      'Versiune metodologie <span class="mono">' + esc(C.method_version) + '</span>.' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(6,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(C.total) + '</div><div class="l">challengeri</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + fmtNum(C.decided) + '</div><div class="l">evaluati</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:#00795a;">' + fmtNum(C.superior) + '</div><div class="l">superiori</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:var(--muted);">' + fmtNum(C.not_superior) + '</div><div class="l">nu superiori</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:var(--accent-dark);">' + fmtNum(C.rejected) + '</div><div class="l">respinsi</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:#00795a;">' + fmtNum(C.paper_candidates) + '</div><div class="l">candidati paper</div></div>' +
+      '</div></section>';
+
+    // ---- candidates waiting -------------------------------------
+    if (C.candidates.length) {
+      var candRows = C.candidates.map(function (r) {
+        return '<tr><td class="mono" style="font-size:10px;">' + esc(r[0]) + '</td>' +
+          '<td style="font-size:10px;">' + esc(String(r[1]).slice(0, 72)) + '</td>' +
+          '<td>' + esc(r[2]) + '</td>' +
+          '<td class="r">' + chSgn(r[3]) + '</td>' +
+          '<td class="r">' + (r[4] ? fmtNum(r[4]) + ' challenger(i)' : '<span style="color:var(--muted);">niciunul</span>') + '</td></tr>';
+      }).join("");
+      html += blk("Candidati din cercetare", "nu fiecare candidat devine challenger — construirea unuia costa felii, folduri si un sweep",
+        '<table class="data"><thead><tr><th>Candidat</th><th>Nume</th><th>Stare</th><th class="r">Efect</th><th class="r">Challengeri</th></tr></thead><tbody>' + candRows + '</tbody></table>');
+    }
+
+    // ---- the challengers ----------------------------------------
+    var rows = C.listing.map(function (r) {
+      var gap = (r[16] !== null && r[17] !== null) ? (r[17] - r[16]) : null;
+      return '<tr class="rowlink" onclick="MLGo(\'challenger\',\'' + esc(r[0]) + '\')">' +
+        '<td style="font-size:10px;">' + esc(String(r[2]).slice(0, 54)) + (r[12] ? ' <span class="pill" style="border:1px solid #ae6c00;color:#ae6c00;font-size:8px;">experimental</span>' : '') + '</td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(r[4]) + '</td>' +
+        '<td>' + chPill(CHST_LABEL, r[3]) + '</td>' +
+        '<td>' + (r[15] ? chPill(CHDEC_LABEL, r[15]) : '<span class="pill" style="border:1px solid var(--line);color:var(--muted);font-size:9px;">neevaluat</span>') + '</td>' +
+        '<td class="r" style="font-weight:700;">' + chSgn(r[16]) + '</td>' +
+        '<td class="r" style="color:var(--muted);">' + chSgn(r[17]) + '</td>' +
+        '<td class="r" style="color:' + (gap !== null && gap > 0.02 ? "var(--accent-dark)" : "var(--muted)") + ';">' + chSgn(gap) + '</td>' +
+        '<td class="r" style="font-size:10px;color:var(--muted);">' + (r[18] === null ? "—" : "[" + chSgn(r[18], 1) + ", " + chSgn(r[19], 1) + "]") + '</td>' +
+        '<td class="r">' + (r[21] ? fmtNum(r[22]) + "/" + fmtNum(r[21]) : "—") + '</td>' +
+        '<td class="r">' + (r[23] ? fmtNum(r[24]) + "/" + fmtNum(r[23]) : '<span style="color:var(--accent-dark);">0</span>') + '</td></tr>';
+    }).join("");
+    html += blk("Challengeri", "efectul principal este cel din afara esantionului; respinsii raman in lista",
+      '<table class="data"><thead><tr><th>Challenger</th><th>Referinta</th><th>Stare</th><th>Verdict</th>' +
+      '<th class="r">Efect (OOS)</th><th class="r">In esantion</th><th class="r">Diferenta</th><th class="r">Interval</th>' +
+      '<th class="r">Felii</th><th class="r">Walk-fwd</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="10" class="empty">Niciun challenger inca.</td></tr>') + '</tbody></table>');
+
+    // ---- reviews ------------------------------------------------
+    if (C.reviews.length) {
+      var revRows = C.reviews.map(function (r) {
+        return '<tr><td class="mono" style="font-size:10px;">' + esc(String(r[0]).slice(0, 24)) + '</td>' +
+          '<td>' + esc(r[2]) + '</td><td>' + esc(r[3]) + '</td>' +
+          '<td style="font-size:10px;color:var(--muted);">' + esc(String(r[4]).slice(0, 130)) + '</td>' +
+          '<td class="mono" style="font-size:10px;">' + esc(String(r[5]).slice(0, 19)) + '</td></tr>';
+      }).join("");
+      html += blk("Revizuiri umane", "singura iesire din sistem — o aprobare pe care nu a semnat-o nimeni nu este o aprobare",
+        '<table class="data"><thead><tr><th>Challenger</th><th>Rezultat</th><th>Revizor</th><th>Motiv</th><th>Cand</th></tr></thead><tbody>' + revRows + '</tbody></table>');
+    } else {
+      html += blk("Revizuiri umane", null, '<div class="empty">Niciun challenger nu a fost revizuit de un om.</div>');
+    }
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--accent-dark);font-size:11px;line-height:1.6;">' +
+      '<strong>Rezultat de cercetare ≠ aprobare pentru productie.</strong> Nimic din aceasta pagina nu poate schimba un model, o strategie, un prag, o limita de risc sau capitalul. ' +
+      'Promovarea unui model ramane decizia umana din Faza 18.' +
+      '</div></section>';
+
+    return html;
+  }
+
+  function viewChallenger(id) {
+    var C = D.challengers;
+    var r = null;
+    if (C.available) {
+      for (var i = 0; i < C.listing.length; i++) { if (C.listing[i][0] === id) { r = C.listing[i]; break; } }
+    }
+    if (!r) {
+      return pageHead("Cercetare · challenger", "Challenger", null) +
+        blk("Negasit", null, '<div class="empty">Nu exista niciun challenger cu identificatorul <span class="mono">' + esc(String(id || "")) + '</span>.</div>');
+    }
+
+    var gap = (r[16] !== null && r[17] !== null) ? (r[17] - r[16]) : null;
+    var base = chObj(r[32]), chal = chObj(r[33]);
+    var html = '<div class="blk-body" style="border-bottom:1px solid var(--line);padding:14px 24px;">' +
+      '<button class="backbtn" onclick="MLGo(\'challengers\')">← inapoi la Challengeri</button></div>';
+    html += pageHead("Cercetare · challenger v" + r[1], String(r[2]).slice(0, 90),
+      [["Stare", esc((CHST_LABEL[r[3]] || [r[3]])[0])]]);
+
+    // ---- lineage ------------------------------------------------
+    html += '<section class="blk"><div class="blk-body" style="font-size:11px;line-height:1.7;">' +
+      '<div style="margin-bottom:8px;"><strong>Ce s-a schimbat.</strong> ' + esc(r[6]) + '</div>' +
+      '<div style="margin-bottom:8px;"><strong>Referinta.</strong> ' + esc(r[4]) + ' <span class="mono" style="color:var(--muted);">' + esc(r[5]) + '</span> — versionata, ca sa nu se poata muta sub comparatie.</div>' +
+      '<div style="color:var(--muted);"><strong>Provenienta.</strong> candidat <span class="mono">' + esc(r[7]) + '</span> · concluzie <span class="mono">' + esc(r[10]) + '</span> · ipoteza <span class="mono">' + esc(r[8]) + '</span> · experiment <span class="mono">' + esc(r[9]) + '</span></div>' +
+      (r[12] ? '<div style="margin-top:8px;color:var(--accent-dark);"><strong>Baza experimentala:</strong> niciun model nu a fost promovat, deci referinta este o regula de semnal, nu un model validat de productie.</div>' : '') +
+      '</div></section>';
+
+    if (!r[15]) {
+      html += blk("Neevaluat", null, '<div class="empty" style="text-align:left;line-height:1.6;">Acest challenger nu a fost inca evaluat.' +
+        '<div class="mono" style="font-size:10px;background:var(--paper2);border:1px solid var(--line);padding:6px 8px;margin-top:6px;overflow-x:auto;white-space:nowrap;">PYTHONPATH=src python scripts/run_challenger.py --queue-run ' + esc(id) + ' --apply &amp;&amp; python scripts/run_challenger.py --work --apply</div></div>');
+      return html;
+    }
+
+    html += '<section class="blk"><div class="statgrid" style="grid-template-columns:repeat(4,1fr);">' +
+      '<div class="cell"><div class="n" style="font-size:24px;">' + chSgn(r[16]) + '</div><div class="l">efect in afara esantionului</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:var(--muted);">' + chSgn(r[17]) + '</div><div class="l">efect in esantion</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:24px;color:' + (gap !== null && gap > 0.02 ? "var(--accent-dark)" : "var(--ink)") + ';">' + chSgn(gap) + '</div><div class="l">diferenta</div></div>' +
+      '<div class="cell"><div class="n" style="font-size:14px;padding-top:9px;">' + chPill(CHDEC_LABEL, r[15]) + '</div><div class="l">verdict</div></div>' +
+      '</div></section>';
+
+    // ---- side by side -------------------------------------------
+    var metrics = [["acuratete directionala", "directional_accuracy"], ["randament mediu", "mean_return"],
+                   ["randament median", "median_return"], ["volatilitate", "stdev_return"],
+                   ["MFE mediu", "mean_mfe"], ["MAE mediu", "mean_mae"],
+                   ["esantion", "sample_size"], ["instrumente", "instrument_count"]];
+    var sbsRows = metrics.map(function (m) {
+      var b = base[m[1]], c2 = chal[m[1]];
+      if (b === undefined && c2 === undefined) return "";
+      var diff = (typeof b === "number" && typeof c2 === "number") ? c2 - b : null;
+      return '<tr><td>' + m[0] + '</td><td class="r">' + chNum(b) + '</td><td class="r">' + chNum(c2) + '</td>' +
+        '<td class="r" style="font-weight:700;color:' + (diff !== null && diff < 0 ? "var(--accent-dark)" : "var(--ink)") + ';">' + chNum(diff) + '</td></tr>';
+    }).join("");
+    sbsRows += '<tr><td>complexitate</td><td class="r">' + fmtNum(1) + '</td><td class="r">' + chNum(r[20]) + 'x</td><td class="r"></td></tr>';
+    html += blk("Referinta vs challenger", "asezate una langa alta, nu clasate",
+      '<table class="data"><thead><tr><th>Metrica</th><th class="r">Referinta</th><th class="r">Challenger</th><th class="r">Diferenta</th></tr></thead><tbody>' + sbsRows + '</tbody></table>');
+
+    // ---- scorecard ----------------------------------------------
+    var card = chObj(r[25]);
+    var cardRows = Object.keys(card).map(function (k) {
+      var d = card[k], vl = CHVERDICT_LABEL[d.verdict] || [d.verdict, "#8a8a8a"];
+      return '<tr><td style="font-weight:700;">' + esc(CHDIM_LABEL[k] || k) + '</td>' +
+        '<td><span class="pill" style="border:1px solid ' + vl[1] + ';color:' + vl[1] + ';font-size:9px;">' + vl[0] + '</span></td>' +
+        '<td style="font-size:10px;color:var(--muted);">' + esc(String(d.detail).slice(0, 150)) + '</td></tr>';
+    }).join("");
+    html += blk("Fisa de evaluare", "sase dimensiuni, fara total — un scor unic ar fi sortat, iar varful listei este locul unde se aduna zgomotul",
+      '<table class="data"><thead><tr><th>Dimensiune</th><th>Verdict</th><th>De ce</th></tr></thead><tbody>' + cardRows + '</tbody></table>');
+
+    // ---- contexts -----------------------------------------------
+    var slices = chList(r[26]);
+    if (slices.length) {
+      var slRows = slices.map(function (s) {
+        return '<tr><td style="font-size:10px;color:var(--muted);">' + esc(s.kind) + '</td>' +
+          '<td class="mono" style="font-size:10px;">' + esc(String(s.label).slice(0, 30)) + '</td>' +
+          '<td class="r">' + chNum(s.baseline_metric) + '</td><td class="r">' + chNum(s.challenger_metric) + '</td>' +
+          '<td class="r" style="font-weight:700;color:' + (s.effect !== null && s.effect < 0 ? "var(--accent-dark)" : "#00795a") + ';">' + chSgn(s.effect) + '</td>' +
+          '<td class="r">' + fmtNum(s.sample_size) + '</td></tr>';
+      }).join("");
+      html += blk("Contexte", "pastrate separat, niciodata mediate — un challenger care castiga intr-un context si pierde in altul a spus ceva, iar media ar distruge tocmai asta",
+        '<table class="data"><thead><tr><th>Tip</th><th>Context</th><th class="r">Referinta</th><th class="r">Challenger</th><th class="r">Efect</th><th class="r">N</th></tr></thead><tbody>' + slRows + '</tbody></table>');
+    }
+
+    var sens = chObj(r[34]);
+    if (sens.shape) {
+      html += blk("Sensibilitate", "un platou este forma pe care o face un efect real; un varf singular este forma pe care o face supra-potrivirea",
+        '<div class="blk-body" style="font-size:11px;line-height:1.6;"><strong>' + esc(sens.shape) + '</strong> — ' + esc(sens.note || "") + '</div>');
+    }
+
+    var reasons = chList(r[27]).map(function (x) { return '<li style="margin-bottom:4px;">' + esc(String(x)) + '</li>'; }).join("");
+    html += blk("Motivele verdictului", "fiecare verificare este consemnata, inclusiv cele trecute",
+      '<div class="blk-body"><ul style="font-size:11px;line-height:1.6;margin:0;padding-left:18px;">' + (reasons || '<li>—</li>') + '</ul></div>');
+
+    var lims = chList(r[28]).map(function (x) { return '<li style="margin-bottom:4px;">' + esc(String(x)) + '</li>'; }).join("");
+    if (lims) {
+      html += blk("Limite", "raportate impreuna cu rezultatul",
+        '<div class="blk-body"><ul style="font-size:11px;line-height:1.6;margin:0;padding-left:18px;color:var(--muted);">' + lims + '</ul></div>');
+    }
+
+    html += '<section class="blk"><div class="blk-body" style="border-left:3px solid var(--accent-dark);font-size:11px;line-height:1.6;">' +
+      '<strong>Acesta este un rezultat de cercetare, nu o aprobare de productie.</strong> ' + fmtNum(r[30]) + ' challenger(i) in aceasta familie · fereastra a fost folosita de ' + fmtNum(r[31]) + ' ori. ' +
+      'Nimic din ce se vede aici nu poate schimba un model, o strategie, un prag, o limita de risc sau capitalul.' +
+      '</div></section>';
+
+    html += '<section class="blk"><div class="blk-body" style="font-size:10px;color:var(--muted);">' +
+      'taietura date ' + esc(String(r[13])) + ' · creat ' + esc(String(r[14])) + ' · rulare <span class="mono">' + esc(String(r[35] || "")) + '</span></div></section>';
+    return html;
+  }
+
   function viewModels() {
     if (!D.models.available) {
       return pageHead("Performanta · modele", "Modele", null) + blk("Fara date", null, '<div class="empty">Faza 9 nu a rulat inca pe aceasta baza de date.</div>');
@@ -5874,6 +6232,8 @@ table.data tr.sel { background:var(--accent-bg); }
     else if (v === "memory") main.innerHTML = viewMemory();
     else if (v === "experiments") main.innerHTML = viewExperiments();
     else if (v === "researchlab") main.innerHTML = viewResearchLab();
+    else if (v === "challengers") main.innerHTML = viewChallengers();
+    else if (v === "challenger") main.innerHTML = viewChallenger(state.param);
     else if (v === "conclusion") main.innerHTML = viewConclusion(state.param);
     else if (v === "experiment") main.innerHTML = viewExperiment(state.param);
     else if (v === "models") main.innerHTML = viewModels();
