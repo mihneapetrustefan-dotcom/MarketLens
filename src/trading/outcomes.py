@@ -267,6 +267,7 @@ def build_outcomes(orders: Sequence[ExecutionOrder],
                    marks: Optional[Dict[str, float]] = None,
                    code_version: str = "phase25-v1",
                    strategy_version: Optional[str] = None,
+                   models_by_signal: Optional[Dict[str, str]] = None,
                    ) -> List[TradeOutcome]:
     """
     One outcome per FILLED order, open or closed.
@@ -281,6 +282,7 @@ def build_outcomes(orders: Sequence[ExecutionOrder],
     reads OPEN with an entry and no exit — the honest shape.
     """
     marks = marks or {}
+    models_by_signal = models_by_signal or {}
     by_order: Dict[str, List[ExecutionFill]] = {}
     for fill in fills:
         by_order.setdefault(fill.order_id, []).append(fill)
@@ -319,7 +321,15 @@ def build_outcomes(orders: Sequence[ExecutionOrder],
             lineage=lineage_from_order(
                 order, session_id=session_id, fills=order_fills,
                 code_version=code_version,
-                strategy_version=strategy_version),
+                strategy_version=strategy_version,
+                # The trained model behind the signal, keyed on the
+                # SIGNAL and not the instrument. Outcomes are built in
+                # the observation half, which runs before the decision
+                # half has looked at any signal, so an instrument-keyed
+                # map from the current cycle is empty exactly when it
+                # is needed. The signal id is on the order and does not
+                # depend on cycle ordering.
+                model_id=models_by_signal.get(order.signal_id or "")),
             quality=quality_from_order(order, order_fills),
             entry_at=entry_at,
             exit_at=None if still_open else max(

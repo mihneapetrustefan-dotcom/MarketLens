@@ -255,27 +255,38 @@ def load_positions(conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
     if not (_table_exists(conn, "trade_outcomes")
             and _table_exists(conn, "loop_account_states")):
         return {}
-    try:
-        equity_row = conn.execute(
-            "SELECT equity FROM loop_account_states "
-            "WHERE equity IS NOT NULL ORDER BY observed_at DESC LIMIT 1"
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return {}
-    budget = float(equity_row[0]) if equity_row and equity_row[0] else None
-    if not budget:
+    # THE BUDGET AT THE TIME OF THE TRADE, not the latest one.
+    #
+    # An earlier version took `ORDER BY observed_at DESC LIMIT 1` -- the
+    # most recent equity -- and applied it to every attribution
+    # including trades from months earlier. That is future information
+    # in a diagnosis, which is the one thing this project has been
+    # built to prevent everywhere else. It made no visible difference
+    # while the account was static and would have made a silent one the
+    # moment equity moved.
+    #
+    # The join runs trade -> order -> lineage -> cycle -> the account
+    # state recorded for THAT cycle.
+    if not _table_exists(conn, "trade_lineage"):
         return {}
     try:
         rows = conn.execute("""
-            SELECT signal_id, quantity, entry_price, instrument_id
-              FROM trade_outcomes
-             WHERE signal_id IS NOT NULL AND signal_id != ''
+            SELECT o.signal_id, o.quantity, o.entry_price, o.instrument_id,
+                   a.equity
+              FROM trade_outcomes o
+              JOIN trade_lineage l ON l.order_id = o.order_id
+              JOIN loop_account_states a ON a.cycle_id = l.cycle_id
+             WHERE o.signal_id IS NOT NULL AND o.signal_id != ''
+               AND a.equity IS NOT NULL AND a.equity > 0
         """)
     except sqlite3.OperationalError:
         return {}
-    return {str(r[0]): {"quantity": r[1], "risk_budget": budget,
-                        "entry_price": r[2], "instrument_id": r[3]}
-            for r in rows}
+    out: Dict[str, Dict[str, Any]] = {}
+    for signal_id, quantity, entry_price, instrument_id, equity in rows:
+        out.setdefault(str(signal_id), {
+            "quantity": quantity, "risk_budget": float(equity),
+            "entry_price": entry_price, "instrument_id": instrument_id})
+    return out
 
 
 def load_cohorts(conn: sqlite3.Connection, *,

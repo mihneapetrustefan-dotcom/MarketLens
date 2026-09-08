@@ -55,9 +55,19 @@ from src.domain.trading_loop_models import (
     LOOP_METHOD_VERSION, ModeResolution, ModeSource, TradingMode, require_utc,
 )
 
-#: Read only as a LAST resort, after the stored value. An environment
-#: variable cannot enable trading that the database has switched off —
-#: `resolve()` consults the store first and returns on any stored row.
+#: An environment variable may only RESTRICT, never grant.
+#:
+#: It used to be consulted as a fallback when no row was stored, and
+#: `MARKETLENS_TRADING_MODE=paper` on a database that had never
+#: recorded a mode was enough to trade -- with no actor, no reason and
+#: no history row, which is exactly the durability and auditability §26
+#: asks for. A container, a CI job or a shell profile could enable
+#: trading, and nothing in the database would show who or why.
+#:
+#: Now: `off` here forces OFF regardless of the stored value; anything
+#: else is ignored for the purpose of granting permission. Trading
+#: requires a stored row written by `set_mode`, which demands an actor
+#: and a reason and appends to the history.
 ENV_TRADING_MODE = "MARKETLENS_TRADING_MODE"
 
 
@@ -107,24 +117,29 @@ class TradingModeStore:
         """
         What the system is permitted to do, right now.
 
-        Order: stored row, then environment, then the default of OFF.
-        The stored row wins because it is the one an operator changed
-        deliberately and durably; an environment variable that could
-        override it would make the durable state advisory.
+        Only a STORED row can grant permission. The environment can
+        take it away and can never give it: a mode that trades has an
+        actor, a reason and a history entry, and an environment
+        variable has none of those.
         """
         require_utc(now, "now")
-        row = self._row()
 
+        # The environment, read first and only as a brake.
+        raw_env = (os.environ.get(ENV_TRADING_MODE) or "").strip().lower()
+        if raw_env and raw_env != TradingMode.PAPER.value:
+            return ModeResolution(
+                mode=TradingMode.OFF, source=ModeSource.ENVIRONMENT,
+                reason=(f"{ENV_TRADING_MODE}={raw_env!r} switches trading off; "
+                        f"the environment may restrict but never grant"),
+                resolved_at=now, stored_raw=raw_env)
+
+        row = self._row()
         if row is None:
-            raw_env = (os.environ.get(ENV_TRADING_MODE) or "").strip()
-            if raw_env:
-                mode, reason = TradingMode.resolve(raw_env)
-                return ModeResolution(
-                    mode=mode, source=ModeSource.ENVIRONMENT,
-                    reason=reason or "", resolved_at=now, stored_raw=raw_env)
             return ModeResolution(
                 mode=TradingMode.OFF, source=ModeSource.DEFAULT,
-                reason="no trading mode has been recorded; the default is OFF",
+                reason=("no trading mode has been recorded. Trading requires a "
+                        "stored mode with an actor and a reason; an "
+                        "environment variable cannot grant it"),
                 resolved_at=now)
 
         stored_raw = row[0]

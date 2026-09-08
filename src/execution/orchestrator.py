@@ -57,7 +57,8 @@ from src.domain.broker_models import (
     CanonicalOrderType, CanonicalTimeInForce, DryRunResult, ExecutionEnvironment,
     ExecutionError, ExecutionEvent, ExecutionEventType, ExecutionFill,
     ExecutionOrder, ExecutionOrderState, ExecutionRejectCode, ExecutionResult,
-    MarketStatus, PositionSnapshot, ReconciliationRecord, ValidationResult,
+    MarketStatus, MismatchKind, PositionSnapshot, ReconciliationRecord,
+    ValidationResult,
     explain,
 )
 from src.execution.events import EventProcessor, ProcessingReport, pair_fills
@@ -662,24 +663,84 @@ class ExecutionOrchestrator:
         self.fills.extend(report.fills)
 
         # A fill the venue reported with no event to carry it still has
-        # to reach the book. Routed through the same duplicate guard, so
-        # a fill that WAS paired cannot be counted twice.
-        report.fills.extend(
-            fill for fill in collected
-            if fill not in report.fills
-            and self._record_unpaired(fill, now))
+        # to reach the book. THIS IS THE PARTIAL-FILL PATH: a venue that
+        # half-fills an order leaves its status unchanged, so
+        # `poll_events` emits nothing fill-bearing and the execution
+        # arrives alone.
+        #
+        # Built into a list first rather than extending `report.fills`
+        # from a generator that reads `report.fills` -- consuming a
+        # generator while the list it inspects grows underneath it is
+        # the kind of thing that works until it does not.
+        extra: List[ExecutionFill] = []
+        for fill in collected:
+            if fill in report.fills:
+                continue
+            if self._record_unpaired(fill, now, report):
+                extra.append(fill)
+        report.fills.extend(extra)
         return report
 
-    def _record_unpaired(self, fill: ExecutionFill, now: datetime) -> bool:
-        """Apply a fill that arrived without an event. Returns whether it counted."""
+    def _record_unpaired(self, fill: ExecutionFill, now: datetime,
+                         report: Optional[ProcessingReport] = None) -> bool:
+        """
+        Apply a fill that arrived without an event, and move the state.
+
+        Two things, because a fill is two facts: the quantity moved and
+        the order's lifecycle advanced. `apply_fill_to_order` does only
+        the first -- it folds the quantity, the price and the costs into
+        the running totals and returns False on an over-fill. The state
+        machine has to be driven separately, exactly as
+        `EventProcessor._process_one` does it.
+
+        An earlier version of this method called
+        `apply_fill_to_order(order, fill, self.machine, at=now)`, which
+        is not that function's signature. It raised TypeError inside a
+        generator inside the broker-poll stage, so the ONLY path that
+        can apply a partial fill had never once completed -- and no test
+        noticed, because every test filled its order completely and took
+        the paired path instead. Phase 25.5 found it by half-filling.
+        """
         key = fill.idempotency_key or fill.execution_id or fill.fill_id
         if key in self.events.seen_fill_keys:
             return False
         order = self.orders.get(fill.order_id)
         if order is None:
             return False
-        apply_fill_to_order(order, fill, self.machine, at=now)
+
+        if not apply_fill_to_order(order, fill.quantity, fill.price,
+                                   fill.commission, fill.fees):
+            # Over-fill: never applied, always recorded. A venue
+            # reporting more than we ordered is a discrepancy for a
+            # human, not a position to take.
+            if report is not None:
+                report.findings.append((
+                    MismatchKind.QUANTITY_MISMATCH,
+                    f"execution {fill.execution_id or fill.fill_id} of "
+                    f"{fill.quantity:g} would take order {order.order_id} past "
+                    f"its quantity ({order.filled_quantity:g}/"
+                    f"{order.quantity:g})"))
+            return False
+
         self.events.seed(fill_keys=[key])
+
+        # FILLED only when the fills actually account for the whole
+        # order. Anything less is PARTIALLY_FILLED, and claiming FILLED
+        # on a half fill would tell the portfolio layer the target was
+        # met and stop it finishing the trade.
+        complete = order.filled_quantity + 1e-9 >= order.quantity
+        target_state = (ExecutionOrderState.FILLED if complete
+                        else ExecutionOrderState.PARTIALLY_FILLED)
+        transition = self.machine.apply(
+            order, target_state, at=fill.filled_at or now,
+            reason="execution reported without an event",
+            correlation_id=order.correlation_id, strict=False)
+        if not transition.applied and report is not None:
+            report.findings.append((
+                MismatchKind.STATUS_MISMATCH,
+                f"order {order.order_id} could not move to "
+                f"{target_state.value}: {transition.ignored_reason}"))
+
         self.fills.append(fill)
         return True
 

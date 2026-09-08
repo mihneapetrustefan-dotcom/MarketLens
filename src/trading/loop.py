@@ -59,7 +59,7 @@ import json
 import sqlite3
 import traceback
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
@@ -95,6 +95,20 @@ from src.trading.stack import ExecutionStack, loop_caller
 #: something to carry, exactly as Phase 12 and Phase 13 do.
 LOOP_PORTFOLIO_ID = "__paper_loop__"
 
+#: How far behind the wall clock a cycle's anchor may be before the
+#: loop refuses to trade on it.
+#:
+#: `run_cycle(now=...)` takes the moment as an argument, which is what
+#: makes the loop testable -- and also what would let a backfill or a
+#: replay decide on month-old signals and send the resulting orders to
+#: a live venue at today's prices. Point-in-time correctness protects
+#: the DECISION; nothing protected the EXECUTION.
+#:
+#: Four hours rather than one: a scheduled run can be delayed by a slow
+#: runner, and refusing a legitimate cycle is also a cost. A replay is
+#: days or months out and is nowhere near this.
+MAX_ANCHOR_DRIFT_SECONDS = 4 * 3600.0
+
 
 def _validation_id(config: "LoopConfig", method_version: str) -> str:
     """The id `PaperValidator.start` would mint for this session."""
@@ -128,6 +142,12 @@ class LoopConfig:
     experimental: bool = False
     eligibility: EligibilityPolicy = field(default_factory=EligibilityPolicy)
     max_price_age_days: float = 5.0
+    #: How far behind the wall clock this session's anchors may be.
+    #: Configuration rather than a constant because a deliberate replay
+    #: is legitimate and a test must pin its clock -- and because a
+    #: threshold nobody can see is a threshold nobody reviews. It is
+    #: part of `as_dict()`, so it is in the session fingerprint.
+    max_anchor_drift_seconds: float = MAX_ANCHOR_DRIFT_SECONDS
     dry_run: bool = True
 
     def as_dict(self) -> Dict[str, Any]:
@@ -140,6 +160,7 @@ class LoopConfig:
                 "challenger_id": self.challenger_id,
                 "experimental": self.experimental,
                 "max_price_age_days": self.max_price_age_days,
+                "max_anchor_drift_seconds": self.max_anchor_drift_seconds,
                 "eligibility": json.dumps(self.eligibility.as_dict(),
                                           sort_keys=True)}
 
@@ -238,6 +259,7 @@ class TradingLoop:
         """
         now = require_utc(now or datetime.now(timezone.utc), "now")
         anchor = cycle_anchor(now, self.config.cycle_seconds)
+        drift = (datetime.now(timezone.utc) - anchor).total_seconds()
         cycle_id = cycle_id_for(self.config.session_id, anchor,
                                 self.method_version)
         worker = worker or f"{self.config.actor}"
@@ -257,6 +279,23 @@ class TradingLoop:
         result.timestamps.observed_at = anchor
 
         session = self.open_session(now)
+
+        # -- the anchor must describe roughly now (§31) ----------------
+        # A replay decides on old information, which is correct, and
+        # would then trade at today's venue, which is not. Blocked
+        # rather than refused outright, so the cycle still observes,
+        # reconciles and records -- a replay that cannot trade is still
+        # a useful read of the broker.
+        if (drift > self.config.max_anchor_drift_seconds
+                and not self.config.dry_run):
+            result.block(
+                BlockReason.STALE_SIGNAL,
+                f"the cycle anchor is {drift / 3600.0:.1f}h behind the wall "
+                f"clock, past the "
+                f"{self.config.max_anchor_drift_seconds / 3600.0:.1f}h limit. "
+                f"A replay may read the broker but may not trade on "
+                f"information this old.")
+            self.config = replace(self.config, dry_run=True)
 
         # -- the claim ------------------------------------------------
         self.repository.reclaim_stale(now)
@@ -368,6 +407,19 @@ class TradingLoop:
 
         # ---- 2. broker + account state (§4) -------------------------
         with self._stage(result, LoopStage.HEALTH) as entry:
+            # Beat the session first. `IBKRGateway.heartbeat` exists
+            # because the Client Portal session "lapses when idle", and
+            # until Phase 25.5 NOTHING called it -- not the loop, not
+            # either CLI. A loop that ticks every fifteen minutes is
+            # exactly the idle pattern it was written for. Its failure
+            # is not fatal on its own: the account read that follows is
+            # the real test of the session, and `connection_state`
+            # records what the beat found.
+            beat = None
+            try:
+                beat = self.stack.gateway.heartbeat()
+            except Exception as error:                      # noqa: BLE001
+                entry.detail = f"heartbeat failed: {error}; "
             account, broker_positions, open_orders = account_state.read_account_state(
                 self.stack.gateway, self.stack.broker_id,
                 self.config.account_id or self.stack.account_id,
@@ -375,9 +427,13 @@ class TradingLoop:
             self.repository.save_account_state(account)
             context["account"] = account
             entry.count = len(broker_positions)
-            entry.detail = (f"account {account.source.value}, "
-                            f"{len(broker_positions)} position(s), "
-                            f"{len(open_orders)} open order(s)")
+            entry.detail = (
+                (entry.detail or "")
+                + ("session beat ok, " if beat else
+                   "session beat FAILED, " if beat is False else "")
+                + f"account {account.source.value}, "
+                + f"{len(broker_positions)} position(s), "
+                + f"{len(open_orders)} open order(s)")
 
         self._observe(result, context, now, anchor)
         self._decide_and_submit(result, session, context, now, anchor)
@@ -452,21 +508,38 @@ class TradingLoop:
         # ---- 6. eligibility (§14) -----------------------------------
         eligible: List[Signal] = []
         with self._stage(result, LoopStage.ELIGIBILITY) as entry:
+            deployable, statuses, governance_detail = self._model_governance()
+            if governance_detail:
+                # A gate that could not answer is not a gate that said
+                # no. Recorded on the stage so an operator sees it,
+                # rather than every signal quietly reading experimental
+                # for a reason nobody can find.
+                entry.detail = "MODEL GATE UNREADABLE: " + governance_detail
+                result.block(BlockReason.MODEL_NOT_DEPLOYABLE,
+                             governance_detail)
             eligibility_context = EligibilityContext(
                 as_of=anchor, prices=prices, price_ages_days=price_ages,
                 tradeable_instruments=None,
                 open_order_quantity=target_math.combined_pending(
                     open_orders, self._our_working_orders()),
-                model_deployable=self._deployable_models(),
-                model_status=self._model_statuses())
+                model_deployable=deployable, model_status=statuses)
             verdicts = self.gate.evaluate_all(signals, result.cycle_id,
                                               eligibility_context)
             self.repository.save_eligibility(verdicts)
             passed = {v.signal_id for v in verdicts if v.is_eligible}
             eligible = [s for s in signals if s.signal_id in passed]
             result.signals_eligible = len(eligible)
+            # PROVENANCE, PER INSTRUMENT. Phase 25 passed none of this
+            # and every order reached `trade_outcomes` with an empty
+            # model, prediction and strategy -- so Phase 16 recorded
+            # `lineage_complete = 0` on every paper trade while Phase
+            # 25's own chain read complete, because that chain did not
+            # include the model. Two lineage models disagreeing, and
+            # the one that certified was the one that could not see.
+            context["provenance"] = self._provenance_for(eligible)
             entry.count = len(eligible)
-            entry.detail = (f"{len(eligible)} of {len(signals)} eligible; "
+            entry.detail = ((entry.detail + "; " if entry.detail else "")
+                            + f"{len(eligible)} of {len(signals)} eligible; "
                             + ", ".join(sorted(
                                 {v.code.value for v in verdicts
                                  if not v.is_eligible})))
@@ -573,6 +646,9 @@ class TradingLoop:
             return context
 
         # ---- 9. intents -> execution requests (§8, the Phase 17 joint)
+        provenance = context.get("provenance") or {
+            "strategies": {}, "model_versions": {}, "predictions": {},
+            "trained_models": {}}
         requests = []
         with self._stage(result, LoopStage.INTENTS) as entry:
             try:
@@ -583,6 +659,9 @@ class TradingLoop:
                     now=now, prices=prices,
                     quantities=deltas.quantities,
                     strategy_id=self.config.strategy_id,
+                    strategy_ids=provenance["strategies"],
+                    model_versions=provenance["model_versions"],
+                    predictions=provenance["predictions"],
                     time_in_force=CanonicalTimeInForce.DAY,
                     policy="market",
                     data_is_stale=(newest_age or 0.0) > self.config.max_price_age_days,
@@ -608,6 +687,29 @@ class TradingLoop:
         # ---- 10. submission (§15) -----------------------------------
         submitted: List[ExecutionOrder] = []
         with self._stage(result, LoopStage.SUBMISSION) as entry:
+            # THE LAST GATE, AND THE ONE THAT MAKES A BLOCK MEAN
+            # SOMETHING.
+            #
+            # `result.block()` records a reason; until Phase 25.5 it did
+            # not stop anything. The only thing that stopped a cycle
+            # trading was `health is BLOCKED`, so any block recorded
+            # after the health verdict -- an unreadable model gate, a
+            # P&L disagreement between the broker and our own books --
+            # was written into the record and then ignored, and the
+            # cycle submitted anyway. Found by making the model gate
+            # raise: the block appeared and the order still went.
+            #
+            # Checked here rather than earlier so everything before it
+            # still runs and is recorded: a blocked cycle should still
+            # be able to explain what it would have done.
+            if result.blocks:
+                self._blocked(
+                    result, entry, result.blocks[0].reason,
+                    "not submitted: " + "; ".join(
+                        f"{b.reason.value} ({b.detail})"
+                        for b in result.blocks[:3]))
+                return context
+
             if self.config.dry_run:
                 entry.outcome = StageOutcome.SKIPPED
                 entry.detail = (f"dry run: {len(requests)} request(s) were "
@@ -792,7 +894,11 @@ class TradingLoop:
                  if o.broker_id == self.stack.broker_id],
                 list(self.stack.orchestrator.fills),
                 session_id=self.config.session_id, marks=marks,
-                strategy_version=self.config.strategy_version)
+                strategy_version=self.config.strategy_version,
+                models_by_signal=self._models_by_signal(
+                    [o.signal_id for o
+                     in self.stack.orchestrator.orders.values()
+                     if o.signal_id]))
             written = loop_outcomes.persist_outcomes(
                 self.conn, produced, session_id=self.config.session_id)
             result.outcomes_recorded = written
@@ -829,7 +935,11 @@ class TradingLoop:
                 result, evaluation,
                 [o for o in self.stack.orchestrator.orders.values()
                  if o.broker_id == self.stack.broker_id],
-                now, outcome_by_order)
+                now, outcome_by_order,
+                models=self._models_by_signal(
+                    [o.signal_id for o
+                     in self.stack.orchestrator.orders.values()
+                     if o.signal_id]))
             self.repository.save_lineage(chains)
             entry.count = len(chains)
             entry.detail = f"{len(chains)} lineage chain(s)"
@@ -938,6 +1048,84 @@ class TradingLoop:
                 if order.broker_id == self.stack.broker_id
                 and not order.state.is_terminal]
 
+    def _models_by_signal(self, signal_ids: Sequence[str]) -> Dict[str, str]:
+        """
+        The trained model behind each signal, read from the record.
+
+        `signal_contributions` is where Phase 10 stores it, so this is
+        the source rather than a copy carried through the cycle. That
+        matters because outcomes are built in the observation half,
+        before this cycle has looked at a single signal -- a map built
+        during the decision half is empty exactly when the outcome
+        builder needs it, which is how `trade_outcomes.model_id` stayed
+        None after the first attempt at this fix.
+        """
+        wanted = sorted({s for s in signal_ids if s})
+        if not wanted:
+            return {}
+        placeholders = ",".join("?" * len(wanted))
+        try:
+            rows = self.conn.execute(
+                "SELECT signal_id, trained_model_id, weight FROM "
+                "signal_contributions WHERE signal_id IN (%s) "
+                "AND is_abstention = 0 ORDER BY weight DESC" % placeholders,
+                wanted)
+        except sqlite3.OperationalError as error:
+            if "no such table" in str(error).lower():
+                return {}
+            raise
+        out: Dict[str, str] = {}
+        for signal_id, trained_model_id, _weight in rows:
+            if trained_model_id:
+                out.setdefault(str(signal_id), str(trained_model_id))
+        return out
+
+    def _provenance_for(self, signals: Sequence[Signal]) -> Dict[str, Any]:
+        """
+        Model, prediction and strategy per instrument, from the signals.
+
+        Read off Phase 10's own `ModelContribution` and
+        `SignalProvenance` rather than from configuration, so the value
+        recorded on an order is the one that actually produced the
+        signal. Configuration is the fallback, not the source.
+
+        A signal with two instruments cannot happen; a signal with no
+        model contribution yields no model entry, and the lineage row
+        then honestly shows a missing model instead of a borrowed one.
+        """
+        from src.trading.eligibility import model_of, strategy_of
+
+        strategies: Dict[str, str] = {}
+        model_versions: Dict[str, str] = {}
+        predictions: Dict[str, str] = {}
+        trained_models: Dict[str, str] = {}
+
+        for signal in signals:
+            instrument = signal.instrument_id
+            strategy = strategy_of(signal)
+            if strategy:
+                strategies[instrument] = strategy
+
+            trained = model_of(signal)
+            if trained:
+                trained_models[instrument] = trained
+
+            best = None
+            for contribution in getattr(signal, "contributions", None) or []:
+                if getattr(contribution, "is_abstention", False):
+                    continue
+                if best is None or (contribution.weight or 0.0) > (
+                        best.weight or 0.0):
+                    best = contribution
+            if best is not None:
+                if best.model_qualified_id:
+                    model_versions[instrument] = best.model_qualified_id
+                if best.prediction_id:
+                    predictions[instrument] = best.prediction_id
+
+        return {"strategies": strategies, "model_versions": model_versions,
+                "predictions": predictions, "trained_models": trained_models}
+
     def _confidence_floor(self, service: PortfolioService) -> Optional[float]:
         """
         Phase 11's `min_signal_confidence`, asked rather than assumed.
@@ -1011,43 +1199,53 @@ class TradingLoop:
                 ages[instrument_id] = point.age_days(anchor)
         return prices, ages
 
-    def _deployable_models(self) -> Dict[str, bool]:
+    def _model_governance(self) -> Tuple[Dict[str, bool], Dict[str, str], str]:
         """
-        Phase 18's verdict per trained model. Asked, never assumed.
+        Phase 18's verdict per trained model, asked ONCE.
 
-        A missing `model_promotions` table means nothing was promoted,
-        which means no model is deployable -- so the dict is empty and
-        every signal reads as experimental. That is the correct answer
-        on this database, and it is reached by asking rather than by
-        defaulting.
+        Returns `(deployable, statuses, detail)`. `detail` is empty when
+        the gate answered and carries the failure when it did not --
+        which is the whole point of this rewrite. The two halves used to
+        be separate methods that each called Phase 18's `candidates()`
+        and each swallowed every exception with a bare `except`, so a
+        crashed governance query produced exactly the same empty dict as
+        "nothing has been promoted".
+
+        The direction was never unsafe: an unreadable gate marks a
+        promoted model as experimental rather than the reverse. But an
+        invisible failure in the component that decides what may trade
+        is not something to leave silent, and calling it twice meant
+        the two answers could disagree if the database moved between
+        them.
         """
         try:
             from src.modeling.selection import candidates
             from src.domain.model_models import ModelStatus
-        except ImportError:
-            return {}
-        try:
-            verdicts = candidates(self.conn)
-        except Exception:                                   # noqa: BLE001
-            return {}
-        return {v.trained_model_id: (v.status == ModelStatus.ACTIVE)
-                for v in verdicts if v.trained_model_id}
+        except ImportError as error:
+            return {}, {}, f"Phase 18 is not importable here: {error}"
 
-    def _model_statuses(self) -> Dict[str, str]:
-        try:
-            from src.modeling.selection import candidates
-        except ImportError:
-            return {}
         try:
             verdicts = candidates(self.conn)
-        except Exception:                                   # noqa: BLE001
-            return {}
-        return {v.trained_model_id: getattr(v.status, "value", str(v.status))
-                for v in verdicts if v.trained_model_id}
+        except sqlite3.OperationalError as error:
+            if "no such table" in str(error).lower():
+                # Nothing has ever been trained or promoted here. That
+                # is an answer, not a failure.
+                return {}, {}, ""
+            return {}, {}, f"the model gate could not be read: {error}"
+        except Exception as error:                          # noqa: BLE001
+            return {}, {}, (f"the model gate raised "
+                            f"{type(error).__name__}: {error}")
+
+        deployable = {v.trained_model_id: (v.status == ModelStatus.ACTIVE)
+                      for v in verdicts if v.trained_model_id}
+        statuses = {v.trained_model_id: getattr(v.status, "value", str(v.status))
+                    for v in verdicts if v.trained_model_id}
+        return deployable, statuses, ""
 
     def _lineage(self, result: CycleResult, evaluation: Any,
                  orders: Sequence[ExecutionOrder], now: datetime,
-                 outcome_by_order: Optional[Dict[str, str]] = None
+                 outcome_by_order: Optional[Dict[str, str]] = None,
+                 models: Optional[Dict[str, str]] = None
                  ) -> List[TradeLineage]:
         """
         One chain per order, carrying every link that exists yet.
@@ -1059,6 +1257,7 @@ class TradingLoop:
         exactly what the integrity check reads.
         """
         outcome_by_order = outcome_by_order or {}
+        models = models or {}
         by_order = {}
         for fill in self.stack.orchestrator.fills:
             by_order.setdefault(fill.order_id, fill)
@@ -1068,6 +1267,7 @@ class TradingLoop:
             chains.append(TradeLineage(
                 cycle_id=result.cycle_id,
                 instrument_id=order.instrument_id,
+                trained_model_id=models.get(order.signal_id or ""),
                 signal_id=order.signal_id,
                 decision_id=order.decision_id,
                 intent_id=order.intent_id,

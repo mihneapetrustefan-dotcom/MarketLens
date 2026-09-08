@@ -475,12 +475,24 @@ class TestSecurity(unittest.TestCase):
 
 class TestIntegrity(unittest.TestCase):
 
-    def test_a_clean_run_passes_every_check(self):
+    def test_a_clean_run_fails_no_check(self):
+        """
+        Nothing FAILS on a clean cycle.
+
+        Not "everything passes": a cycle that placed an order but has
+        no fill yet has no trade outcome, so the two lineage-agreement
+        checks Phase 25.5 added cannot run. That is reported as NOT RUN
+        and the report is therefore NOT conclusive -- which is the
+        distinction the whole check set exists to preserve. The
+        conclusive case is asserted in the end-to-end test, where a
+        trade actually completes.
+        """
         conn = a_ready_database()
         build_loop(conn).run_cycle(NOW)
         report = TradingLoopAPI(conn).integrity_check()
         self.assertTrue(report["ok"], report["checks"])
-        self.assertTrue(report["conclusive"])
+        self.assertEqual(
+            [c["name"] for c in report["checks"] if c["ok"] is False], [])
         conn.close()
 
     def test_a_check_that_could_not_run_is_not_a_pass(self):

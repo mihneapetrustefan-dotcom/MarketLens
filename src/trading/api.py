@@ -147,7 +147,7 @@ class TradingLoopAPI:
 
     def integrity_check(self) -> Dict[str, Any]:
         """
-        Twelve checks that read rows.
+        Fourteen checks that read rows.
 
         Every one reports what it COUNTED, so a passing check on an
         empty database is visibly a check over nothing rather than a
@@ -230,6 +230,48 @@ class TradingLoopAPI:
             check("no_broken_lineage", broken == 0,
                   f"{broken} of {total} chain(s) have a gap before a "
                   f"link that is present", total)
+
+        # 6b. Phase 25 and Phase 16 agree about completeness
+        #
+        # They did not. Phase 25 recorded `complete = 1` on chains whose
+        # model, model version and prediction were empty, because its
+        # own chain did not include them, while Phase 16 recorded
+        # `lineage_complete = 0` on the same trades. A check that
+        # certifies what it cannot see is worse than no check.
+        if (_table_exists(self.conn, "trade_lineage")
+                and _table_exists(self.conn, "trade_outcomes")):
+            disagreements = _count(self.conn, """
+                SELECT COUNT(*) FROM trade_lineage l
+                  JOIN trade_outcomes o ON o.order_id = l.order_id
+                 WHERE l.complete != o.lineage_complete
+            """)
+            compared = _count(self.conn, """
+                SELECT COUNT(*) FROM trade_lineage l
+                  JOIN trade_outcomes o ON o.order_id = l.order_id
+            """) or 0
+            check("lineage_models_agree", (disagreements or 0) == 0,
+                  f"{disagreements} of {compared} trade(s) where Phase 25 and "
+                  f"Phase 16 disagree about lineage completeness", compared)
+        else:
+            check("lineage_models_agree", None,
+                  "no trade has both a lineage row and an outcome", None)
+
+        # 6c. a filled order can name the model that produced it
+        if _table_exists(self.conn, "trade_lineage"):
+            total_filled = _count(self.conn,
+                                  "SELECT COUNT(*) FROM trade_lineage "
+                                  "WHERE fill_id IS NOT NULL") or 0
+            unexplained = _count(self.conn, """
+                SELECT COUNT(*) FROM trade_lineage
+                 WHERE fill_id IS NOT NULL
+                   AND (strategy_id IS NULL OR strategy_id = '')
+            """) or 0
+            check("every_trade_names_its_strategy", unexplained == 0,
+                  f"{unexplained} of {total_filled} filled trade(s) name no "
+                  f"strategy", total_filled)
+        else:
+            check("every_trade_names_its_strategy", None,
+                  "no lineage table", None)
 
         # 7. every signal the loop saw has a verdict
         seen = _count(self.conn, "SELECT COUNT(*) FROM signal_eligibility")

@@ -158,7 +158,9 @@ def from_decision(decision: RiskDecision,
                   prices: Optional[Dict[str, float]] = None,
                   quantities: Optional[Dict[str, float]] = None,
                   strategy_id: Optional[str] = None,
+                  strategy_ids: Optional[Dict[str, str]] = None,
                   model_version: Optional[str] = None,
+                  model_versions: Optional[Dict[str, str]] = None,
                   predictions: Optional[Dict[str, str]] = None,
                   time_in_force: CanonicalTimeInForce = CanonicalTimeInForce.DAY,
                   policy: str = "market",
@@ -178,6 +180,22 @@ def from_decision(decision: RiskDecision,
     reference price cannot be validated for notional, slippage or
     staleness, and the execution validator would refuse it anyway —
     better to say so here, with the instrument named.
+
+    PER-INSTRUMENT PROVENANCE (added in Phase 25.5)
+    --------------------------------------------------
+    `model_version` and `strategy_id` were scalars, one value for a
+    whole batch, and a batch spanning two instruments scored by two
+    different models could carry at most one of them. In practice both
+    were left None by the only caller and every order reached
+    `trade_outcomes` with `model_version`, `prediction_id` and
+    `strategy_id` empty — so Phase 16 recorded `lineage_complete = 0`
+    on every paper trade while Phase 25 recorded its own chain as
+    complete, because Phase 25's chain did not include the model.
+
+    `model_versions` and `strategy_ids` are the per-instrument maps.
+    The scalars remain as the fallback so existing callers are
+    unaffected, and a lookup that finds nothing falls back rather than
+    guessing.
     """
     if decision is None:
         raise RiskNotApproved(
@@ -196,6 +214,8 @@ def from_decision(decision: RiskDecision,
     prices = prices or {}
     quantities = quantities or {}
     predictions = predictions or {}
+    model_versions = model_versions or {}
+    strategy_ids = strategy_ids or {}
 
     requests: List[IntentRequest] = []
     rejected: List[IntakeRejection] = []
@@ -269,8 +289,9 @@ def from_decision(decision: RiskDecision,
             freshness_detail=freshness_detail,
             signal_id=signal_id,
             prediction_id=predictions.get(intent.instrument_id),
-            model_version=model_version,
-            strategy_id=strategy_id,
+            model_version=model_versions.get(intent.instrument_id,
+                                             model_version),
+            strategy_id=strategy_ids.get(intent.instrument_id, strategy_id),
             portfolio_id=portfolio_id,
             decision_id=decision_id,
             expires_at=intent.valid_until))

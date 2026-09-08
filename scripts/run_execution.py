@@ -293,6 +293,55 @@ def do_dry_run(service: ExecutionService, caller: Caller, args,
     print(result.render())
 
 
+def risk_verdict_for(conn, args, instrument_id: str):
+    """
+    The risk verdict for a hand-built CLI order, from the real engine.
+
+    WHY THIS REPLACED `--assume-risk-approved`
+    ----------------------------------------------
+    That flag set `risk_approved=True` on an `IntentRequest` with no
+    `RiskDecision` behind it. It was a human-operable bypass of the one
+    gate the whole architecture is built around, it had no test
+    covering it, and it survived the Phase 17 fix that was written
+    specifically to remove exactly this pattern from the codebase --
+    TD-01 recorded the defect as FIXED while both CLIs kept the flag.
+
+    Now the operator names a decision the Phase 11 engine actually
+    produced. It is loaded, checked, and refused if it does not approve
+    or does not cover this instrument. There is no argument that
+    fabricates approval, so there is nothing to remember not to use.
+
+    Returns `(risk_approved, detail)`. `risk_approved` is None when no
+    decision was supplied, which the Phase 14 validator refuses -- the
+    behaviour without the flag has always been correct.
+    """
+    decision_id = getattr(args, "decision_id", None)
+    if not decision_id:
+        return None, ("no risk decision was supplied to this CLI. Pass "
+                      "--decision-id with a decision the Phase 11 engine "
+                      "produced (scripts/evaluate_portfolio_risk.py or "
+                      "scripts/run_trading_loop.py write them).")
+
+    from src.data_access.portfolio_repository import PortfolioRepository
+
+    decision = PortfolioRepository(conn).get_decision(decision_id)
+    if decision is None:
+        return None, f"no risk decision {decision_id!r} exists in this database"
+    if not decision.is_approved:
+        return None, (f"risk decision {decision_id} is "
+                      f"{decision.state.value.upper()}, which does not permit "
+                      f"exposure to change")
+
+    covered = {change.instrument_id for change in decision.approved_changes}
+    if covered and instrument_id not in covered:
+        return None, (f"risk decision {decision_id} approved "
+                      f"{sorted(covered)} and says nothing about "
+                      f"{instrument_id}")
+
+    return True, (f"risk decision {decision_id} "
+                  f"{decision.state.value} at {decision.as_of.isoformat()}")
+
+
 def build_request(service: ExecutionService, args,
                   now: datetime) -> IntentRequest:
     context = service._cli_context
@@ -302,6 +351,8 @@ def build_request(service: ExecutionService, args,
     bar = context["calendar"].bar_at_or_before(instrument_id, now)
     if bar is not None:
         reference = bar.close
+    risk_approved, risk_detail = risk_verdict_for(
+        service.repository.conn, args, instrument_id)
 
     return IntentRequest(
         intent_id=args.intent_id, broker_id=args.broker,
@@ -317,10 +368,7 @@ def build_request(service: ExecutionService, args,
         # A CLI order carries no risk verdict of its own, and "not
         # consulted" is deliberately not approval — so an unattended
         # submit is refused rather than waved through.
-        risk_approved=True if args.assume_risk_approved else None,
-        risk_detail=("assumed approved via --assume-risk-approved"
-                     if args.assume_risk_approved else
-                     "no risk engine verdict was supplied to this CLI"))
+        risk_approved=risk_approved, risk_detail=risk_detail)
 
 
 def do_submit(service: ExecutionService, caller: Caller, args,
@@ -476,14 +524,13 @@ def main() -> int:
 
     parser.add_argument("--allow-paper", action="store_true",
                         help="grant this caller paper execution")
-    parser.add_argument("--assume-risk-approved", action="store_true",
-                        help="OPERATOR OVERRIDE for a hand-typed order: assert "
-                             "a risk verdict this CLI did not obtain. Without "
-                             "it a submit is refused, because 'not consulted' "
-                             "is not approval. The real path is "
-                             "src/execution/intake.from_decision(), which takes "
-                             "the verdict from an actual Phase 11 RiskDecision "
-                             "and cannot be told to assume one.")
+    parser.add_argument(
+        "--decision-id",
+        help="a Phase 11 risk decision id that approves this order. There is "
+             "deliberately no flag that asserts approval without one: the "
+             "risk gate is the boundary this whole architecture is built "
+             "around, and a CLI that could wave it through would be the "
+             "shortest path past it.")
     parser.add_argument("--as-of", metavar="YYYY-MM-DD",
                         help="evaluate at this moment instead of now. The "
                              "cached bars end well before today, so wall "

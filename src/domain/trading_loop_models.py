@@ -1013,6 +1013,20 @@ LINEAGE_CHAIN = (
     "outcome_id",
 )
 
+#: The provenance links, reported but NOT required for completeness.
+#:
+#: They are separate from the spine because a rule-based signal
+#: genuinely has no model, and forcing one would make an honest chain
+#: read as broken. They are reported because a chain that cannot name
+#: its model cannot fully answer "why did this happen" (§26) -- and
+#: because Phase 25 shipped with all three permanently empty while its
+#: own completeness check, which did not look at them, read TRUE.
+PROVENANCE_LINKS = (
+    "trained_model_id",
+    "model_version",
+    "strategy_id",
+)
+
 
 @dataclass
 class TradeLineage:
@@ -1048,7 +1062,22 @@ class TradeLineage:
         return getattr(self, name, None)
 
     def missing_links(self) -> List[str]:
+        """Spine links only -- what `is_complete` is about."""
         return [name for name in LINEAGE_CHAIN if not self.link(name)]
+
+    def missing_provenance(self) -> List[str]:
+        """
+        Model, model version and strategy, when any of them is absent.
+
+        Reported separately from `missing_links` so the two questions
+        stay apart: "can this trade be traced" and "can it be
+        explained" have different answers and different fixes.
+        """
+        return [name for name in PROVENANCE_LINKS if not self.link(name)]
+
+    @property
+    def has_provenance(self) -> bool:
+        return not self.missing_provenance()
 
     @property
     def is_complete(self) -> bool:
@@ -1075,9 +1104,11 @@ class TradeLineage:
         return {name: self.link(name) for name in LINEAGE_CHAIN} | {
             "cycle_id": self.cycle_id, "instrument_id": self.instrument_id,
             "trained_model_id": self.trained_model_id,
+            "model_version": self.model_version,
             "strategy_id": self.strategy_id,
             "challenger_id": self.challenger_id,
-            "complete": self.is_complete, "broken": self.is_broken}
+            "complete": self.is_complete, "broken": self.is_broken,
+            "missing_provenance": self.missing_provenance()}
 
 
 # ======================================================================

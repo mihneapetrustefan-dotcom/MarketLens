@@ -102,10 +102,29 @@ def store_signals(conn: sqlite3.Connection,
 
 
 def a_live_signal(instrument_id: str = "i-aapl",
-                  cutoff: Optional[datetime] = None, **kwargs) -> Signal:
-    return make_signal(instrument_id, cutoff or (NOW - timedelta(hours=6)),
-                       signal_id=kwargs.pop("signal_id", "sig-live-1"),
-                       **kwargs)
+                  cutoff: Optional[datetime] = None,
+                  with_model: bool = True, **kwargs) -> Signal:
+    """
+    A live signal, carrying a model contribution by default.
+
+    `with_model=True` matters more than it looks: a Phase 10 signal
+    that scored an observation always carries a `ModelContribution`,
+    and the fixture did not. That absence hid a real defect for a whole
+    phase -- every order reached `trade_outcomes` with an empty model,
+    prediction and strategy, and no test could see it because the
+    fixture had no model to lose.
+    """
+    signal = make_signal(instrument_id, cutoff or (NOW - timedelta(hours=6)),
+                         signal_id=kwargs.pop("signal_id", "sig-live-1"),
+                         **kwargs)
+    if with_model:
+        from src.domain.signal_models import ModelContribution
+        signal.contributions.append(ModelContribution(
+            prediction_id="pred-" + signal.signal_id,
+            trained_model_id="tm-fixture-1",
+            model_qualified_id="ridge_abnormal_return:v1",
+            predicted_value=0.02, confidence=0.75, weight=1.0))
+    return signal
 
 
 def enable_paper(conn: sqlite3.Connection, at: Optional[datetime] = None) -> None:
@@ -154,6 +173,12 @@ def build_loop(conn: sqlite3.Connection, *, dry_run: bool = False,
             stack.transport.set_position(conid, quantity, 100.0)
 
     policy = EligibilityPolicy(allow_experimental_models=experimental)
+    # The suite pins its clock to a fixed NOW, which is by construction
+    # far behind the real wall clock. The drift guard exists to stop a
+    # REPLAY trading on month-old information at today's venue; a test
+    # that pins its clock is not that, so it widens the limit
+    # explicitly rather than the guard being weakened for everyone.
+    config_overrides.setdefault("max_anchor_drift_seconds", 3650 * 86400.0)
     config = LoopConfig(session_id=session_id, name="test loop",
                         account_id=MOCK_ACCOUNT, actor="test",
                         allow_paper_orders=allow_paper_orders,
