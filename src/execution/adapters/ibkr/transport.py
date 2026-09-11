@@ -111,6 +111,17 @@ class IBKRTransport(ABC):
         Ask the gateway about its session. Never asserts, never logs in.
         """
 
+    def init_brokerage_session(self) -> bool:
+        """
+        Open the brokerage session that `/iserver` endpoints require.
+
+        Not abstract, and defaults to False: a transport that has no
+        such concept -- the mock, or a future TWS socket transport --
+        simply reports that it opened nothing. Callers treat this as
+        best effort and must not depend on it succeeding.
+        """
+        return False
+
     @abstractmethod
     def keepalive(self) -> bool:
         """
@@ -364,6 +375,40 @@ class ClientPortalTransport(IBKRTransport):
             connected=bool(body.get("connected")),
             competing=bool(body.get("competing")),
             message=str(body.get("message") or ""))
+
+    def init_brokerage_session(self) -> bool:
+        """
+        Open the brokerage session the `/iserver` endpoints require.
+
+        IBKR documents a brokerage session as a PREREQUISITE for every
+        endpoint under `/iserver` -- which is nearly all of them here:
+        auth status, contract search, market snapshots, orders,
+        executions. Logging in through the gateway's browser page
+        establishes the SSO session; `/iserver/auth/ssodh/init`
+        establishes the brokerage session on top of it.
+
+        This call did not exist in the adapter at all. Its absence is a
+        plausible contributor to `/iserver` calls degrading after a
+        period of inactivity, where the SSO session survives but the
+        brokerage session does not.
+
+        UNVERIFIED against the live venue: the gateway was down when
+        this was written, so it has never been observed to succeed or
+        to change any behaviour. It is therefore BEST EFFORT -- a
+        failure is returned, never raised, and `connect()` proceeds on
+        the authentication status as before. It can only help; it must
+        not be allowed to break a path that already works.
+        """
+        try:
+            body = self.request("POST", "/iserver/auth/ssodh/init",
+                                payload={})
+        except IBKRError:
+            return False
+        if isinstance(body, dict):
+            # The endpoint answers with the session state it just
+            # established.
+            return bool(body.get("connected") or body.get("authenticated"))
+        return False
 
     def keepalive(self) -> bool:
         try:

@@ -77,6 +77,12 @@ from src.execution.instruments import InstrumentRegistry
 #: be delayed — so this is checked rather than assumed.
 DEFAULT_QUOTE_MAX_AGE_SECONDS = 60.0
 
+#: How far the evaluation moment may sit from the wall clock before a
+#: live quote stops being evidence about it. A quote answers "is this
+#: trading now"; for any other moment the calendar is the only honest
+#: source.
+LIVE_SESSION_TOLERANCE_SECONDS = 300.0
+
 
 class MarketDataAvailability(str, Enum):
     """
@@ -207,6 +213,16 @@ class IBKRGateway(BrokerGateway):
             return self._state
 
         self._state = BrokerConnectionState.CONNECTING
+        # Best effort, before asking: IBKR requires a brokerage session
+        # for the `/iserver` endpoints, and `is_authenticated` is one
+        # of them. A transport with no such concept returns False and
+        # nothing changes. Never fatal -- see
+        # `init_brokerage_session`.
+        try:
+            self.transport.init_brokerage_session()
+        except Exception:                                # noqa: BLE001
+            pass
+
         delay = self.config.backoff_seconds
         for attempt in range(1, self.config.max_retries + 1):
             self._attempts = attempt
@@ -428,12 +444,30 @@ class IBKRGateway(BrokerGateway):
 
     def market_status(self, instrument_id: str, now: datetime) -> MarketStatus:
         """
-        Session state from the canonical calendar (spec §38).
+        Session state: the canonical calendar first, the venue second.
 
-        Reuses the Phase 12 calendar rather than hardcoding US hours,
-        and returns UNKNOWN when it cannot answer — which is different
-        from CLOSED, and is treated as not-tradeable by the Phase 14
-        validator either way.
+        WHY THE VENUE IS CONSULTED AT ALL (Phase 25.5)
+
+        The Phase 12 calendar answers from cached daily bars --
+        `is_open` is true only where a bar carries that exact date. No
+        script in this repository fetches a bar for today:
+        `cache_price_candles.py` fetches windows around canonical
+        events, for reproducible event studies. So the calendar can
+        never confirm that TODAY's market is open, and every live cycle
+        would refuse on the session gate forever. Measured on
+        2026-09-11: the newest bar for any instrument was 2026-09-05
+        while IBKR quoted us_and_intl-aapl live at 334.37.
+
+        IBKR knows the answer, because it is the venue. A live,
+        tradeable, fresh snapshot IS the session being open -- better
+        evidence than an inference from a historical bar.
+
+        The calendar still leads. It is the point-in-time record, it
+        costs nothing, and OPEN from it is returned unchanged. The
+        venue is asked only when the calendar says CLOSED or cannot
+        say, and it can only move the verdict TOWARDS open, never away
+        -- a quote that fails to arrive is a data problem, not proof
+        that a market shut.
         """
         if self._conid_for(instrument_id) is None:
             # No resolved IBKR contract. We do not know this venue's
@@ -441,13 +475,52 @@ class IBKRGateway(BrokerGateway):
             # claiming OPEN would let it past the session gate to fail
             # later on a missing contract instead.
             return MarketStatus.UNKNOWN
-        if self.calendar is None:
-            return MarketStatus.UNKNOWN
-        if not self.calendar.has_data(instrument_id):
-            return MarketStatus.UNKNOWN
-        return (MarketStatus.OPEN
-                if self.calendar.is_open(instrument_id, now.date())
-                else MarketStatus.CLOSED)
+
+        calendar_verdict = MarketStatus.UNKNOWN
+        if self.calendar is not None and self.calendar.has_data(instrument_id):
+            calendar_verdict = (MarketStatus.OPEN
+                                if self.calendar.is_open(instrument_id, now.date())
+                                else MarketStatus.CLOSED)
+        if calendar_verdict is MarketStatus.OPEN:
+            return calendar_verdict
+
+        venue_verdict = self._venue_session(instrument_id, now)
+        return venue_verdict if venue_verdict is not None else calendar_verdict
+
+    def _venue_session(self, instrument_id: str,
+                       now: datetime) -> Optional[MarketStatus]:
+        """
+        OPEN when the venue is serving live tradeable data right now,
+        otherwise no opinion (None).
+
+        Only AVAILABLE counts. A DELAYED quote is explicitly not
+        tradeable -- the runbook says so, and treating one as proof of
+        an open session is how a delayed price ends up backing a limit
+        order.
+
+        Returns None rather than CLOSED on every negative, because none
+        of them establish that the market is shut: a missing
+        subscription, a transport failure or an unresolved snapshot are
+        all facts about us, not about the session.
+        """
+        # A quote describes NOW. If `now` is an anchor from some other
+        # moment -- a replay, a backtest, an `--as-of` evaluation --
+        # the venue has nothing to say about it, and asking wastes a
+        # request against the rate budget.
+        drift = abs((datetime.now(timezone.utc) - now).total_seconds())
+        if drift > LIVE_SESSION_TOLERANCE_SECONDS:
+            return None
+        try:
+            quote = self.quote(instrument_id, now)
+        except IBKRError:
+            return None
+        if quote is None:
+            return None
+        if not quote.availability.is_tradeable:
+            return None
+        if not quote.is_fresh(now):
+            return None
+        return MarketStatus.OPEN
 
     # ================================================================
     # Orders (spec §19, §20, §24, §29, §30, §31)
