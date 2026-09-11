@@ -68,25 +68,45 @@ def root_mean_squared_error(actual: Sequence[float], predicted: Sequence[Optiona
 
 
 def directional_accuracy(actual: Sequence[float], predicted: Sequence[Optional[float]],
-                          threshold: float = 0.0) -> Optional[float]:
+                          threshold: float = 0.0,
+                          prediction_threshold: Optional[float] = None) -> Optional[float]:
     """
     Share of predictions whose DIRECTION matched.
 
     Reported separately from magnitude error because they can diverge
     sharply: a model can get direction right most of the time while
     being badly wrong about size, and one number hides that.
+
+    TWO thresholds, because the two sides are not in the same units.
+    `threshold` decides whether the OUTCOME was up, and is a return, so
+    zero. `prediction_threshold` decides whether the MODEL said up, and
+    depends on what that family emits -- zero for a signed return, one
+    half for a probability. Defaults to `threshold`, which is correct
+    for every regression family and for the class-indicator baselines,
+    so existing callers are unaffected.
     """
+    if prediction_threshold is None:
+        prediction_threshold = threshold
     pairs = [(a, p) for a, p in zip(actual, predicted) if p is not None]
     if not pairs:
         return None
-    correct = sum(1 for a, p in pairs if (a > threshold) == (p > threshold))
+    correct = sum(1 for a, p in pairs
+                  if (a > threshold) == (p > prediction_threshold))
     return round(correct / len(pairs), 6)
 
 
 def hit_rate(actual: Sequence[float], predicted: Sequence[Optional[float]],
-             threshold: float = 0.0) -> Optional[float]:
-    """Among predictions of 'up', how often the outcome was actually up (precision on the positive class)."""
-    pairs = [(a, p) for a, p in zip(actual, predicted) if p is not None and p > threshold]
+             threshold: float = 0.0,
+             prediction_threshold: Optional[float] = None) -> Optional[float]:
+    """
+    Among predictions of 'up', how often the outcome was actually up
+    (precision on the positive class). See `directional_accuracy` for
+    why the prediction side carries its own threshold.
+    """
+    if prediction_threshold is None:
+        prediction_threshold = threshold
+    pairs = [(a, p) for a, p in zip(actual, predicted)
+             if p is not None and p > prediction_threshold]
     if not pairs:
         return None
     return round(sum(1 for a, _ in pairs if a > threshold) / len(pairs), 6)
@@ -112,19 +132,36 @@ def r_squared(actual: Sequence[float], predicted: Sequence[Optional[float]]) -> 
 
 
 def compute_metrics(task: PredictionTask, actual: Sequence[float],
-                     predicted: Sequence[Optional[float]]) -> Dict[str, float]:
-    """Metrics appropriate to the task. Values that cannot be computed are OMITTED, never defaulted to zero."""
+                     predicted: Sequence[Optional[float]],
+                     prediction_threshold: Optional[float] = None) -> Dict[str, float]:
+    """
+    Metrics appropriate to the task. Values that cannot be computed are
+    OMITTED, never defaulted to zero.
+
+    `prediction_threshold` is the value above which this family's
+    output means "up" -- see `algorithms.decision_threshold`. It is
+    passed per model AND per baseline, because they need not share an
+    output space.
+    """
     metrics: Dict[str, float] = {}
     if task == PredictionTask.DIRECTION:
-        for name, value in (("directional_accuracy", directional_accuracy(actual, predicted)),
-                             ("hit_rate", hit_rate(actual, predicted))):
+        for name, value in (
+                ("directional_accuracy",
+                 directional_accuracy(actual, predicted,
+                                      prediction_threshold=prediction_threshold)),
+                ("hit_rate",
+                 hit_rate(actual, predicted,
+                          prediction_threshold=prediction_threshold))):
             if value is not None:
                 metrics[name] = value
     else:
-        for name, value in (("mae", mean_absolute_error(actual, predicted)),
-                             ("rmse", root_mean_squared_error(actual, predicted)),
-                             ("r_squared", r_squared(actual, predicted)),
-                             ("directional_accuracy", directional_accuracy(actual, predicted))):
+        for name, value in (
+                ("mae", mean_absolute_error(actual, predicted)),
+                ("rmse", root_mean_squared_error(actual, predicted)),
+                ("r_squared", r_squared(actual, predicted)),
+                ("directional_accuracy",
+                 directional_accuracy(actual, predicted,
+                                      prediction_threshold=prediction_threshold))):
             if value is not None:
                 metrics[name] = value
     return metrics
@@ -316,7 +353,9 @@ class ModelingEngine:
         predicted = algorithms.predict_batch(model.parameters, X_clean)
         abstentions = sum(1 for p in predicted if p is None)
         evaluation.abstention_rate = round(abstentions / len(predicted), 4)
-        evaluation.metrics = compute_metrics(model.specification.task, Y_clean, predicted)
+        evaluation.metrics = compute_metrics(
+            model.specification.task, Y_clean, predicted,
+            prediction_threshold=algorithms.decision_threshold(model.parameters))
 
         metric_name = primary_metric_name(model.specification.task)
         model_score = evaluation.metrics.get(metric_name)
@@ -324,7 +363,13 @@ class ModelingEngine:
         for baseline_family in MANDATORY_BASELINES:
             baseline_parameters = algorithms.fit(baseline_family, X_train, Y_train)
             baseline_predicted = algorithms.predict_batch(baseline_parameters, X_clean)
-            baseline_metrics = compute_metrics(model.specification.task, Y_clean, baseline_predicted)
+            # Each baseline is scored in ITS OWN output space. A
+            # probabilistic model against a class-indicator baseline is
+            # a like-for-like comparison only if each is read at the
+            # threshold that means "up" for that family.
+            baseline_metrics = compute_metrics(
+                model.specification.task, Y_clean, baseline_predicted,
+                prediction_threshold=algorithms.decision_threshold(baseline_parameters))
             baseline_score = baseline_metrics.get(metric_name)
 
             comparison = BaselineComparison(
