@@ -43,6 +43,7 @@ transport would fill the same buffer, and nothing above would change.
 from __future__ import annotations
 
 import itertools
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timedelta, timezone
@@ -82,6 +83,14 @@ DEFAULT_QUOTE_MAX_AGE_SECONDS = 60.0
 #: trading now"; for any other moment the calendar is the only honest
 #: source.
 LIVE_SESSION_TOLERANCE_SECONDS = 300.0
+
+#: IBKR's first snapshot for an unsubscribed conid returns no
+#: fields; the request opens the subscription and the data arrives
+#: later. Measured: retrying within one invocation does not hurry
+#: it, so this is deliberately small -- a cheap try, not a wait.
+#: See `_venue_session` for the residual behaviour it leaves.
+COLD_SNAPSHOT_ATTEMPTS = 2
+COLD_SNAPSHOT_PAUSE_SECONDS = 1.0
 
 
 class MarketDataAvailability(str, Enum):
@@ -510,10 +519,39 @@ class IBKRGateway(BrokerGateway):
         drift = abs((datetime.now(timezone.utc) - now).total_seconds())
         if drift > LIVE_SESSION_TOLERANCE_SECONDS:
             return None
-        try:
-            quote = self.quote(instrument_id, now)
-        except IBKRError:
-            return None
+
+        # The FIRST snapshot for a conid the gateway has not subscribed
+        # to yet comes back without fields. The request opens the
+        # subscription; the data arrives later.
+        #
+        # MEASURED on 2026-09-11 against the live gateway, because the
+        # behaviour is worth stating exactly rather than guessing at:
+        # a cold conid stayed empty across 4 attempts over 6 seconds
+        # in one process, then answered in 0.4s from the very next
+        # process. Retrying inside one invocation does not hurry it.
+        #
+        # So these attempts are a cheap improvement, NOT a cure. The
+        # residual behaviour is explicit and acceptable: the first
+        # session check for a newly subscribed instrument can report
+        # no opinion, the calendar verdict stands, and the instrument
+        # is simply not traded that cycle. The next cycle sees it.
+        # That degradation is fail-closed -- it can only withhold a
+        # trade, never invent one -- which is the right direction for
+        # the one guard standing between a stale calendar and a live
+        # order.
+        quote = None
+        for attempt in range(COLD_SNAPSHOT_ATTEMPTS):
+            if attempt:
+                time.sleep(COLD_SNAPSHOT_PAUSE_SECONDS)
+            try:
+                quote = self.quote(instrument_id, now)
+            except IBKRError:
+                return None
+            if quote is not None and quote.availability.is_tradeable:
+                break
+            # `now` was captured before the pause; re-anchor so the
+            # freshness check below measures the quote we just took.
+            now = datetime.now(timezone.utc)
         if quote is None:
             return None
         if not quote.availability.is_tradeable:
