@@ -349,7 +349,12 @@ class ClientPortalTransport(IBKRTransport):
 
     def is_authenticated(self) -> AuthStatus:
         try:
-            body = self.request("POST", "/iserver/auth/status")
+            # `payload={}` matters: `requests` omits the JSON body AND
+            # the Content-Type header entirely when `json=None`, and
+            # IBKR's real gateway (unlike the mock) answers a bodyless
+            # POST with a 400 from its edge layer before this ever
+            # reaches auth logic. A JSON body of "{}" is all it takes.
+            body = self.request("POST", "/iserver/auth/status", payload={})
         except IBKRError as error:
             return AuthStatus(message=error.message)
         if not isinstance(body, dict):
@@ -362,7 +367,7 @@ class ClientPortalTransport(IBKRTransport):
 
     def keepalive(self) -> bool:
         try:
-            body = self.request("POST", "/tickle")
+            body = self.request("POST", "/tickle", payload={})
         except IBKRError:
             return False
         if isinstance(body, dict):
