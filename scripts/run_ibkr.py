@@ -340,7 +340,25 @@ def risk_verdict_for(conn, args, instrument_id: str):
                       f"exposure to change")
 
     covered = {change.instrument_id for change in decision.approved_changes}
-    if covered and instrument_id not in covered:
+    # An APPROVED decision that changed nothing authorises NOTHING.
+    #
+    # This is the normal verdict, not an edge case: with every signal
+    # below Phase 11's confidence floor the engine proposes no changes
+    # and records APPROVED with the summary "no changes proposed;
+    # current state is within all limits". That is correct -- nothing
+    # was proposed, so nothing breached a limit.
+    #
+    # Reading it as permission was not. `if covered and ...` skipped
+    # the coverage check whenever the set was empty and fell through to
+    # approval, so a decision about nothing authorised an order for any
+    # instrument it had never heard of. That is the hole
+    # `--assume-risk-approved` was deleted in Phase 25.5 to close,
+    # reachable again through a decision that is genuinely approved.
+    if not covered:
+        return None, (f"risk decision {decision_id} approved no position "
+                      f"change, so it authorises no instrument -- "
+                      f"{decision.summary or 'no changes proposed'}")
+    if instrument_id not in covered:
         return None, (f"risk decision {decision_id} approved "
                       f"{sorted(covered)} and says nothing about "
                       f"{instrument_id}")
