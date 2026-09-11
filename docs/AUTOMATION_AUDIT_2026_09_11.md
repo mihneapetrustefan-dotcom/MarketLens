@@ -902,6 +902,38 @@ folder. Outside the repo; worth knowing before sharing those logs.
 | 10 | `detect_portfolio_error` unmeasured | MEDIUM | ❌ | ❌ | ⚠️ | 26 |
 | 11 | Duplicate `cOID` unverified at venue | LOW | ❌ | ❌ | ✅ | 25.95 |
 | 12 | Live-price table does not exist | MEDIUM | ✅ | ✅ | ✅ | 25.7 |
+| 13 | Twenty workflows write one release asset | MEDIUM | ⚠️ | ⚠️ | ⚠️ | next CI touch |
+
+### CI: a shared release asset with twenty writers
+
+**FACT** The production database is a single GitHub Release asset
+written by 20 of the 26 workflows with `gh release upload ... --clobber`.
+**EVIDENCE** Observed failing on 2026-09-11:
+`HTTP 404 ... /releases/378607152/assets?label=&name=marketlens.db`.
+Root cause: `archive_articles.yml` and `daily.yml` carried the *same*
+`name:`, the *same* three crons, and sat in *different* concurrency
+groups, so GitHub never serialised them. `--clobber` is
+delete-then-upload, so the loser of the race deleted the asset the
+winner was uploading against.
+
+`archive_articles.yml` was additionally a stale duplicate: a strict
+subset of `daily.yml`'s steps, missing `migrate_news_to_canonical.py`
+which `daily.yml` gained in `f98c864` (TD-02). It had been running an
+outdated daily job against the shared database three times a day.
+
+**FIXED 2026-09-11** — schedule disabled on `archive_articles.yml`
+(kept dispatchable); bounded retry added to the upload in `daily.yml`
+and `pipeline.yml`. Verified: no two scheduled workflows overlap at
+all, and both retry scripts pass `bash -n`.
+
+**REMAINING, for whoever next touches CI:** twenty writers to one
+asset is still the shape of the system, and the roadmap in §24 adds
+more. The durable fix is a single composite action
+(`.github/actions/upload-db`) used by every workflow, so the retry and
+locking policy live in one place instead of twenty. Not done here —
+it touches twenty files that cannot be executed locally, and the
+recurring failure is already eliminated.
+**STATUS** ⚠️ MITIGATED, NOT ELIMINATED
 
 ### The five biggest
 

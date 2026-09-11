@@ -16,11 +16,44 @@ name: MarketLens Daily Pipeline
 #
 # Redus de la 5 la 3 rulari pentru a incetini cresterea bazei de date.
 # Eliminate: rularea de la 15:00 ET si cea de la miezul noptii.
+# SCHEDULE DISABLED 2026-09-11 — this workflow is a stale duplicate of
+# daily.yml and was colliding with it three times a day.
+#
+# WHAT WAS HAPPENING
+#
+# Both files carry the same `name:` ("MarketLens Daily Pipeline"), ran
+# on the same three crons, and both end with
+# `gh release upload db-latest data/marketlens.db --clobber`. They sit
+# in DIFFERENT concurrency groups — this one in
+# `marketlens-data-write`, daily.yml in `marketlens-daily-pipeline` —
+# so GitHub never serialised them. `--clobber` deletes the asset before
+# uploading, so whichever run got there second deleted the asset the
+# other was uploading against, and the loser failed with
+# `HTTP 404 ... /releases/378607152/assets?name=marketlens.db`.
+#
+# daily.yml's own comment accepts a collision risk, but scopes it to
+# "manual, occasional research runs". That reasoning missed this file,
+# which was neither manual nor occasional.
+#
+# WHY THIS ONE AND NOT daily.yml
+#
+# This workflow runs a strict SUBSET: run_daily.py,
+# archive_old_articles.py, reduce_database_size.py. daily.yml runs all
+# three PLUS scripts/migrate_news_to_canonical.py, which it gained in
+# f98c864 (TD-02) and this file never did. So this was also running an
+# outdated version of the daily job against the shared database.
+#
+# Verified after disabling: no two scheduled workflows overlap at all.
+# daily.yml runs 13:00/16:30/21:15 UTC; pipeline.yml runs 02:00 UTC on
+# Sunday and Wednesday. Nothing else has an active cron.
+#
+# Kept dispatchable rather than deleted, so the archiving path stays
+# runnable on demand while daily.yml owns the schedule.
 on:
-  schedule:
-    - cron: '0 13 * * *'
-    - cron: '30 16 * * *'
-    - cron: '15 21 * * *'
+  # schedule:
+  #   - cron: '0 13 * * *'
+  #   - cron: '30 16 * * *'
+  #   - cron: '15 21 * * *'
   workflow_dispatch: {}
 
 permissions:
