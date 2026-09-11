@@ -114,6 +114,18 @@ def build(conn: sqlite3.Connection, args) -> Dict[str, Any]:
         SELECT instrument_id FROM price_candle_cache WHERE interval='1d'
         GROUP BY instrument_id ORDER BY COUNT(*) DESC LIMIT 25
     """)]
+    # The instrument this invocation is ABOUT must be in the calendar,
+    # whatever its rank. The top 25 by bar count is a convenience for
+    # reporting, and on this database every one of them is crypto --
+    # so a US equity lands outside it, the calendar cannot determine
+    # the session, and the validator fails closed with "the market for
+    # this instrument is closed" on an instrument whose market is
+    # open. Failing closed is right; being unable to answer for the
+    # one instrument we were asked about is not.
+    target = getattr(args, "instrument", None) or (
+        f"i-{args.symbol.lower()}" if getattr(args, "symbol", None) else None)
+    if target and target not in universe:
+        universe.append(target)
     if universe:
         calendar.load(universe)
 
