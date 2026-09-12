@@ -69,6 +69,7 @@ from src.execution.adapters.ibkr.mapper import (
     order_view_from_ibkr, position_from_ibkr, quote_from_ibkr,
     state_from_ibkr,
 )
+from src.domain.market_data_models import MarketDataAvailability
 from src.execution.adapters.ibkr.transport import AuthStatus, IBKRTransport
 from src.execution.gateway import BrokerGateway, BrokerOrderView, SubmissionAck
 from src.execution.instruments import InstrumentRegistry
@@ -93,30 +94,14 @@ COLD_SNAPSHOT_ATTEMPTS = 2
 COLD_SNAPSHOT_PAUSE_SECONDS = 1.0
 
 
-class MarketDataAvailability(str, Enum):
-    """
-    What market data this account actually has (spec §18).
-
-    Modelled explicitly because an IBKR account does NOT automatically
-    carry every subscription, and a delayed quote presented as live is
-    the kind of error that only shows up in the fill price.
-    """
-    AVAILABLE = "available"
-    DELAYED = "delayed"
-    RESTRICTED = "restricted"
-    UNAVAILABLE = "unavailable"
-    UNKNOWN = "unknown"
-
-    @property
-    def is_tradeable(self) -> bool:
-        """
-        Only genuinely live data backs an order.
-
-        DELAYED is excluded deliberately. A delayed quote is fine for a
-        dashboard and wrong for a limit price, and the difference is
-        invisible in the number itself.
-        """
-        return self is MarketDataAvailability.AVAILABLE
+#: Re-exported, not defined here (Phase 25.7).
+#:
+#: Whether a quote is live or delayed is a property of market data, not
+#: of one broker's wire format, and the operational market-data layer
+#: needs it without importing an adapter. It moved to
+#: `src/domain/market_data_models.py`; this name stays bound so every
+#: existing import of it from this module keeps working.
+__all_market_data_availability__ = MarketDataAvailability
 
 
 @dataclass
