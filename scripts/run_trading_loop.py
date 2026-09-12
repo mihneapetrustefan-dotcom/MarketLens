@@ -49,6 +49,7 @@ import argparse
 import json
 import os
 import sqlite3
+import time
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -213,7 +214,29 @@ def run_cycles(conn: sqlite3.Connection, args, now: datetime) -> int:
 
     exit_code = 0
     for index in range(args.cycles):
-        moment = now + timedelta(seconds=index * args.cycle_seconds)
+        # REAL TIME, NOT SIMULATED TIME (Phase 25.8).
+        #
+        # This read:
+        #     moment = now + timedelta(seconds=index * args.cycle_seconds)
+        # which ran every cycle immediately while stamping them at
+        # now, +15m, +30m, +45m. Three of four cycles claimed to have
+        # happened at moments that had not arrived, on real signals
+        # writing real rows. Phase 25.5's anchor-drift guard did not
+        # catch it: it rejects anchors more than FOUR HOURS out, and a
+        # 45-minute forward drift passes.
+        #
+        # Each cycle now asks the clock. `--cycles N` with no waiting
+        # means N cycles at the same anchor, which the idempotency
+        # keys correctly collapse into one -- honest, and very
+        # different from inventing three futures. Use
+        # scripts/run_session.py for a runner that actually waits.
+        moment = datetime.now(timezone.utc)
+        if index and args.wait_between_cycles:
+            target = moment + timedelta(seconds=args.cycle_seconds)
+            while datetime.now(timezone.utc) < target:
+                time.sleep(min(5.0, (target - datetime.now(timezone.utc))
+                               .total_seconds()))
+            moment = datetime.now(timezone.utc)
         result = loop.run_cycle(moment, worker=args.worker or args.actor)
         line(f"CYCLE {index + 1}/{args.cycles} — {result.cycle_id}")
         print(f"  anchor                {result.anchor.isoformat()}")
@@ -354,6 +377,10 @@ def main() -> int:
                         default=True)
     parser.add_argument("--no-dry-run", dest="dry_run", action="store_false",
                         help="actually submit to IBKR PAPER")
+    parser.add_argument("--wait-between-cycles", action="store_true",
+                        help=("actually wait cycle_seconds between "
+                              "cycles instead of running them back to "
+                              "back at the same anchor"))
     parser.add_argument("--verbose", action="store_true")
 
     parser.add_argument("--set-mode", choices=("off", "paper", "live"),
