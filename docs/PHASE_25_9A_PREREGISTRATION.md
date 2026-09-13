@@ -118,3 +118,66 @@ failure there is a failure.
 human approval, mandatory baselines, the paper/live boundary. The
 gate defect found in 25.9 remains a pending human decision and is not
 changed here.
+
+---
+---
+
+# STAGE 2 — Appended after Stage 1, before any confirmatory run
+
+Written 2026-09-13 after Stage 1 (`99c6464`) and before any protected
+row's label was read. Only label **counts** were consulted to write this.
+
+## 7. What Stage 1 found, and what it turned out to be
+
+Stage 1's pre-registered test returned **INFORMATION PRESENT**
+(best |IC| 0.334 vs null 95th pct 0.167, p = 0.002). Two follow-up
+checks, run before this stage was written, show most of it is an
+artifact of how the labels are built.
+
+**Every post-event window shares one anchor price.** In all 1,002
+studies `intraday_5m.price_before == d1.price_before`, and all 1,013
+share it between the 5- and 60-minute windows. `ImpactEngine` sets
+`before = baseline` — the last candle at or before the event — for
+every post-event window regardless of resolution. So "intraday_5m" is
+really *prior close → five minutes after the event*.
+
+A shared noisy anchor mechanically creates negative correlation with
+any feature ending at that price. Cancelling the anchor by differencing
+two windows that share it:
+
+| `market.return_1d` vs | IC |
+|---|---|
+| intraday_5m, anchor shared | −0.362 |
+| 60m − 5m, anchor cancelled | **+0.087** |
+
+**The intraday effect flips sign. It is an artifact.**
+
+The daily reversal effect does **not** flip:
+
+| `market.return_60d` vs | shared | anchor cancelled |
+|---|---|---|
+| d20 (day 5→20) | −0.284 | −0.183 |
+| d10 (day 3→10) | −0.223 | −0.159 |
+
+It survives artifact removal. It is also post-hoc, discovered in the
+research region, drawn from one 52-day market episode, and measured on
+heavily overlapping forward windows.
+
+## 8. Stage 2 decision: NO confirmatory test. Protected window preserved.
+
+The only independent test is the protected window. It cannot power
+one:
+
+| Horizon | Resolved protected labels |
+|---|---|
+| d20 | **0** |
+| d10 | 92 |
+
+d20 cannot be tested at all. For d10, power to detect the observed
+|IC| of 0.159 is **33%** at n = 92 ignoring overlap, and roughly
+**9–13%** at a realistic effective sample. 80% power needs |IC| ≥ 0.29.
+
+Running it would most likely return inconclusive **and** permanently
+spend the only clean holdout. **The protected window is not opened.**
+
+Stage 2 candidate budget used: **0 of 4.**
