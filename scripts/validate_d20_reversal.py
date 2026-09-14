@@ -253,6 +253,68 @@ def persist(conn, status: str, result: Dict[str, object]) -> None:
     conn.commit()
 
 
+
+def open_once(conn, rows, gate, ledger_path=None, now=None,
+              readiness_fn=None, evaluate_fn=None) -> Dict[str, object]:
+    """
+    The protected sequence, in the only safe order (Phase 25.9C).
+
+      1. ledger: registered, unspent, spec unchanged
+      2. full mechanical readiness READY
+      3. OPENING written to the ledger  <- before any statistic exists
+      4. evaluate
+      5. CONSUMED written, then the database record
+
+    The database gate is not enough on its own: the procedure runs on a
+    disposable working copy, so the lock that matters is the
+    git-tracked ledger. A crash after step 3 leaves the test consumed,
+    which is the safe failure.
+
+    `readiness_fn` and `evaluate_fn` exist so tests can drive this with a
+    temporary ledger; production passes neither.
+    """
+    from scripts.check_d20_readiness import evaluate_readiness
+    from src.research import protected_ledger as L
+
+    ledger_path = ledger_path or L.DEFAULT_LEDGER
+    readiness_fn = readiness_fn or evaluate_readiness
+    evaluate_fn = evaluate_fn or evaluate
+    now = now or datetime.now(timezone.utc)
+
+    try:
+        L.require_openable(EXPERIMENT_ID, fingerprint(), ledger_path)
+    except L.LedgerError as error:
+        print(f"REFUSED by protected-test ledger: {error}")
+        return {"exit_code": 3, "opened": False, "reason": str(error)}
+
+    full = readiness_fn(conn, now, ledger_path)
+    if not full["ready"]:
+        print("REFUSED: mechanical readiness is NOT READY -- window stays closed")
+        for reason in full["reasons"]:
+            print(f"  - {reason}")
+        return {"exit_code": 4, "opened": False, "reason": full["reasons"]}
+
+    L.append(EXPERIMENT_ID, L.OPENING, {
+        "dataset_identity": full["dataset_identity"],
+        "code_version": code_version(), "spec_fingerprint": fingerprint(),
+    }, ledger_path)
+
+    print("READY. Opening the protected window once.")
+    result = evaluate_fn(rows)
+    L.append(EXPERIMENT_ID, L.CONSUMED, {
+        "dataset_identity": full["dataset_identity"],
+        "code_version": code_version(),
+        "verdict": result["verdict"],
+        "result_fingerprint": hashlib.sha256(
+            json.dumps(result, sort_keys=True, default=str).encode()).hexdigest()[:24],
+    }, ledger_path)
+    for key, value in result.items():
+        print(f"  {key:22s} {value}")
+    persist(conn, result["verdict"].lower().replace(" ", "_"),
+            {"gate": gate, "opened": True, **result})
+    return {"exit_code": 0, "opened": True, "verdict": result["verdict"]}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True)
@@ -299,13 +361,9 @@ def main() -> int:
         persist(conn, "insufficient_data", {"gate": gate, "opened": False})
         return 0
 
-    print("\nREADY. Opening the protected window once.")
-    result = evaluate(rows)
-    for key, value in result.items():
-        print(f"  {key:22s} {value}")
-    persist(conn, result["verdict"].lower().replace(" ", "_"),
-            {"gate": gate, "opened": True, **result})
-    return 0
+    ledger_path = os.environ.get("MARKETLENS_PROTECTED_LEDGER", None)
+    outcome = open_once(conn, rows, gate, ledger_path=ledger_path)
+    return outcome["exit_code"]
 
 
 if __name__ == "__main__":

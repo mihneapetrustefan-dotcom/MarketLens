@@ -50,6 +50,7 @@ from src.impact.anchoring import (
 from src.impact.engine import Candle
 
 PROTECTED_START = "2026-08-15T01:23:31"
+PROTECTED_END = "2026-08-27T17:09:32"
 LABEL_VERSION = "v2"
 POST_WINDOWS = [w for w in DEFAULT_WINDOWS if w.kind == WindowKind.POST_EVENT]
 
@@ -107,7 +108,10 @@ def main() -> int:
     counts = defaultdict(Counter)      # (window, region) -> {resolved, reason...}
     written = 0
     for obs_id, instrument_id, benchmark_id, anchor_text, cutoff in rows:
-        region = "protected" if (cutoff or "") >= PROTECTED_START else "research"
+        # Bounded on both sides. Observations after the protected END are
+        # not part of the protected test and must not be reported as such.
+        region = ("protected" if PROTECTED_START <= (cutoff or "") <= PROTECTED_END
+                  else "research" if (cutoff or "") < PROTECTED_START else "after_protected")
         anchor = datetime.fromisoformat(anchor_text)
         minute, daily, sessions = candles(instrument_id)
         b_minute, b_daily, _b_sessions = (candles(benchmark_id) if benchmark_id
@@ -151,7 +155,7 @@ def main() -> int:
     print(f"generated at          {generated_at}")
     print(f"source daily cutoff   {newest}")
     print(f"label rows written    {written}{'  (dry run)' if args.dry_run else ''}")
-    for region in ("research", "protected"):
+    for region in ("research", "protected", "after_protected"):
         print(f"\n--- {region.upper()} ---")
         for window in POST_WINDOWS:
             c = counts[(window.name, region)]
