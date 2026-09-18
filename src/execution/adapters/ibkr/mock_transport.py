@@ -182,21 +182,28 @@ class MockIBKRTransport(IBKRTransport):
                 company_name=name)
             self.quotes[conid] = {"conid": conid, "31": "100.00",
                                   "84": "99.98", "86": "100.02",
-                                  "88": "1000", "is_mock": True}
+                                  "88": "1000", "6509": "R", "is_mock": True}
 
     def add_contract(self, contract: MockContract,
                      quote: Optional[Dict[str, Any]] = None) -> MockContract:
         self.contracts[contract.conid] = contract
         self.quotes[contract.conid] = quote or {
             "conid": contract.conid, "31": "100.00", "84": "99.98",
-            "86": "100.02", "88": "1000", "is_mock": True}
+            "86": "100.02", "88": "1000", "6509": "R", "is_mock": True}
         return contract
 
     def set_quote(self, conid: str, last: float, bid: float, ask: float,
-                  volume: float = 1000.0) -> None:
+                  volume: float = 1000.0, realtime: bool = True) -> None:
         self.quotes[conid] = {
             "conid": conid, "31": f"{last:.2f}", "84": f"{bid:.2f}",
-            "86": f"{ask:.2f}", "88": f"{volume:.0f}", "is_mock": True}
+            "86": f"{ask:.2f}", "88": f"{volume:.0f}",
+            # Field 6509 (Phase 25.9E): IBKR's own live/delayed marker.
+            # A seeded quote with no marker classified as UNKNOWN and
+            # never reached "tradeable" through the real acquisition
+            # path (src/marketdata/quotes.py), so the market-data
+            # SERVICE could only be exercised by writing operational
+            # state directly, never end to end via a snapshot.
+            "6509": ("R" if realtime else ""), "is_mock": True}
 
     # ---------------- plumbing ----------------
 
@@ -248,7 +255,12 @@ class MockIBKRTransport(IBKRTransport):
             "initmarginreq": {"amount": 0.0, "currency": "USD"},
             "maintmarginreq": {"amount": 0.0, "currency": "USD"},
             "realizedpnl": {"amount": 0.0, "currency": "USD"},
-            "unrealizedpnl": {"amount": 0.0, "currency": "USD"},
+            # The sum of the book, as the venue reports it (Phase 25.9E);
+            # a constant zero disagreed with any position marked away
+            # from its cost.
+            "unrealizedpnl": {"amount": sum(
+                float(p.get("unrealizedPnl") or 0.0)
+                for p in self.positions_book.values()), "currency": "USD"},
             "is_mock": True,
         }
 
@@ -450,7 +462,19 @@ class MockIBKRTransport(IBKRTransport):
         signed = quantity if order.side.upper() == "BUY" else -quantity
         existing = self.positions_book.get(order.conid)
         held = float(existing["position"]) if existing else 0.0
-        self.set_position(order.conid, held + signed, price, price)
+        # Average cost as a venue keeps it (Phase 25.9E): weighted when
+        # adding, unchanged when reducing, the new price when reversing.
+        # The double used to overwrite it with the last fill price, so two
+        # partials at 100 and 101 reported a cost of 101 and the loop's
+        # P&L cross-check correctly refused to agree with it.
+        cost = float(existing["avgCost"]) if existing else price
+        after = held + signed
+        if abs(held) <= 1e-9 or (held > 0) != (after > 0) and abs(after) > 1e-9:
+            cost = price
+        elif abs(after) > abs(held):
+            cost = (abs(held) * cost + abs(signed) * price) / abs(after)
+        self.set_position(order.conid, after, cost, price)
+        self.positions_book[order.conid]["unrealizedPnl"] = (price - cost) * after
         self.cash -= signed * price * 1.0 + commission
 
         execution = {

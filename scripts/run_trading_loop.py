@@ -187,7 +187,8 @@ def run_cycles(conn: sqlite3.Connection, args, now: datetime) -> int:
                         account_id=args.account,
                         allow_paper_orders=args.allow_paper_orders,
                         universe_limit=args.universe_limit,
-                        persist=not args.dry_run)
+                        persist=not args.dry_run,
+                        pre_submission_only=args.pre_submission_only)
 
     config = LoopConfig(
         session_id=args.session, name=args.name,
@@ -199,9 +200,16 @@ def run_cycles(conn: sqlite3.Connection, args, now: datetime) -> int:
         challenger_id=args.challenger,
         allow_paper_orders=args.allow_paper_orders,
         experimental=args.experimental, eligibility=policy,
-        dry_run=args.dry_run)
+        dry_run=args.dry_run, pre_submission_only=args.pre_submission_only)
 
     loop = TradingLoop(conn, stack, config)
+
+    if args.accept_broker_positions:
+        baseline = loop.accept_broker_positions(actor=args.actor,
+                                                reason=args.reason, now=now)
+        print(f"  broker positions accepted as baseline {baseline} "
+              f"by {args.actor}: {args.reason}")
+        return 0
 
     line("GATEWAY")
     print(f"  transport             {stack.transport.name}")
@@ -211,6 +219,8 @@ def run_cycles(conn: sqlite3.Connection, args, now: datetime) -> int:
     print(f"  may submit            {stack.may_submit}")
     if args.dry_run:
         print("  DRY RUN               orders are validated and NOT sent")
+    if args.pre_submission_only:
+        print("  PRE-SUBMISSION ONLY   Phase 25.9E: the gateway cannot submit")
 
     exit_code = 0
     for index in range(args.cycles):
@@ -382,6 +392,13 @@ def main() -> int:
                               "cycles instead of running them back to "
                               "back at the same anchor"))
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--pre-submission-only", action="store_true",
+                        help="Phase 25.9E: run every gate, validate every "
+                             "request and stop at READY_TO_SUBMIT. The "
+                             "gateway is structurally unable to submit.")
+    parser.add_argument("--accept-broker-positions", action="store_true",
+                        help="operator: adopt the broker's current positions "
+                             "as the reconciliation baseline (needs --reason)")
 
     parser.add_argument("--set-mode", choices=("off", "paper", "live"),
                         help="record the durable trading mode ('live' is refused)")
@@ -422,6 +439,12 @@ def main() -> int:
 
         if args.integrity:
             return show_integrity(conn)
+
+        if args.accept_broker_positions:
+            if not args.reason:
+                print("--reason is required to accept broker positions.")
+                return 2
+            return run_cycles(conn, args, now)
 
         if args.cycles > 0:
             code = run_cycles(conn, args, now)

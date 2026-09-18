@@ -83,7 +83,9 @@ def build_market_data(conn, args):
     if names:
         calendar.load(names)
 
-    gateway = IBKRGateway(config, transport, instruments, calendar=calendar)
+    from src.marketdata.calendar import USEquityCalendar
+    gateway = IBKRGateway(config, transport, instruments, calendar=calendar,
+                          exchange_calendar=USEquityCalendar())
     gateway.connect()
     service = MarketDataService(conn, gateway, interval_seconds=args.tick)
     service.builder = MinuteBarBuilder(
@@ -112,6 +114,8 @@ def main() -> int:
                              "the runner observes and decides but sends "
                              "nothing")
     parser.add_argument("--experimental", action="store_true")
+    parser.add_argument("--pre-submission-only", action="store_true",
+                        help="Phase 25.9E: every gate runs, nothing can be sent")
     parser.add_argument("--describe", action="store_true",
                         help="print operational state as JSON and exit")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true",
@@ -135,7 +139,8 @@ def main() -> int:
                         account_id=args.account,
                         allow_paper_orders=args.allow_paper_orders,
                         universe_limit=args.limit,
-                        persist=not args.dry_run)
+                        persist=not args.dry_run,
+                        pre_submission_only=args.pre_submission_only)
     loop = TradingLoop(
         conn, stack,
         config=LoopConfig(
@@ -147,7 +152,8 @@ def main() -> int:
             experimental=args.experimental,
             eligibility=EligibilityPolicy(
                 allow_experimental_models=args.experimental),
-            dry_run=args.dry_run))
+            dry_run=args.dry_run,
+            pre_submission_only=args.pre_submission_only))
 
     overrides = {name: getattr(args, f"cadence_{name}")
                  for name in DEFAULT_CADENCES
@@ -160,7 +166,8 @@ def main() -> int:
         clock=WallClock(),
         schedule=schedule,
         worker=args.worker or args.actor,
-        orders_enabled=args.allow_paper_orders and not args.dry_run,
+        orders_enabled=(args.allow_paper_orders and not args.dry_run
+                        and not args.pre_submission_only),
         max_ticks=args.max_ticks)
 
     print("=" * 70)

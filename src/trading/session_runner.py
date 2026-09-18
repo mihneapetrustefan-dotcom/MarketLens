@@ -38,6 +38,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from src.domain.paper_models import HealthState
 from src.marketdata.prices import operational_price, tradeable_prices
+from src.trading import leases
 from src.trading.clock import Clock, ClockModeViolation, RunMode, clock_for
 from src.trading.schedule import Schedule
 
@@ -48,8 +49,10 @@ BLIND_SESSION_LIMIT_SECONDS = 900.0
 
 #: How long a runner's lease on a session is honoured without a
 #: heartbeat. A crashed runner must not hold the session forever;
-#: another may take over only after this.
-DEFAULT_LEASE_SECONDS = 300.0
+#: another may take over only after this. Enforced by
+#: `src/trading/leases.py` since Phase 25.9E; before that it was
+#: declared here and used nowhere.
+DEFAULT_LEASE_SECONDS = leases.DEFAULT_LEASE_SECONDS
 
 
 class SessionRefused(RuntimeError):
@@ -161,6 +164,10 @@ class SessionRunner:
         self.state: Optional[SessionState] = None
         self._stop = False
         self._blind_since: Optional[datetime] = None
+        #: Unique per process, so two runners with the same worker name
+        #: are still two owners.
+        self.owner = leases.new_owner(self.worker)
+        self.lease: Optional[leases.Lease] = None
 
     # ---------------- lifecycle ----------------
 
@@ -184,12 +191,53 @@ class SessionRunner:
                 "the broker session is not connected; a human may need to "
                 "log into the Client Portal Gateway in a browser")
 
+        session_id = session_id_for(self.mode, now, account)
+        # ONE OPERATOR PER ACCOUNT (Phase 25.9E). Taken last, after every
+        # other refusal, so a runner that could not have started does not
+        # hold the account for five minutes.
+        try:
+            self.lease = leases.acquire(
+                self.conn, self.lease_scope(account), self.owner, now,
+                session_id=session_id, ttl_seconds=self.lease_ttl_seconds)
+        except leases.LeaseRefused as refusal:
+            raise SessionRefused(str(refusal)) from refusal
+        self._share_ownership()
+
         state = SessionState(
-            session_id=session_id_for(self.mode, now, account),
+            session_id=session_id,
             mode=self.mode, started_at=now, worker=self.worker,
             fingerprint=self.fingerprint())
+        if self.lease.took_over_from:
+            state.blocks.append(
+                f"took over the account from {self.lease.took_over_from}, "
+                f"whose lease had expired; reconciliation runs before any "
+                f"decision")
         self.state = state
         return state
+
+    @property
+    def lease_ttl_seconds(self) -> float:
+        """
+        At least three ticks. A lease no longer than one tick expires at
+        the very moment it is renewed -- found by the replay test, whose
+        300-second ticks met a 300-second lease exactly.
+        """
+        return max(DEFAULT_LEASE_SECONDS, 3.0 * float(self.schedule.tick_seconds))
+
+    def lease_scope(self, account: str = "") -> str:
+        config = getattr(self.loop, "config", None)
+        stack = getattr(self.loop, "stack", None)
+        broker = (getattr(config, "broker_id", "")
+                  or getattr(stack, "broker_id", "") or "ibkr")
+        resolved = (account or getattr(config, "account_id", "")
+                    or getattr(stack, "account_id", ""))
+        return leases.lease_scope(broker, resolved)
+
+    def _share_ownership(self) -> None:
+        """Tell the loop who operates the account, so it can check."""
+        config = getattr(self.loop, "config", None)
+        if config is not None and hasattr(config, "lease_owner"):
+            config.lease_owner = self.owner
 
     def fingerprint(self) -> Dict[str, Any]:
         """The operational configuration this session runs under (§41)."""
@@ -220,6 +268,8 @@ class SessionRunner:
         if self.state is None or not self.state.is_open:
             return self.state
         self.state.closed_at = self.clock.now()
+        if self.lease is not None:
+            leases.release(self.conn, self.lease, self.state.closed_at)
         return self.state
 
     # ---------------- the loop ----------------
@@ -268,6 +318,19 @@ class SessionRunner:
         """
         now = now or self.clock.now()
         tick = SessionTick(at=now)
+
+        # Renew first. A runner that has lost the account must not poll,
+        # decide or advance the loop on it -- the new owner does that.
+        if self.lease is not None and not leases.renew(
+                self.conn, self.lease, now, self.lease_ttl_seconds):
+            tick.blocks.append(
+                "the account lease was lost to another runner; this runner "
+                "stops acting on the account")
+            tick.health = HealthState.FAILED
+            self._stop = True
+            if self.state is not None:
+                self.state.blocks = list(tick.blocks)
+            return tick
 
         market = self._run_stage(tick, "market_data", now, self._stage_market_data)
         if market.ran and not market.ok:
@@ -359,13 +422,13 @@ class SessionRunner:
         trade and a running loop -- never a crash and never a lowered
         threshold.
         """
-        try:
-            deployable = self.loop.deployable_models()
-        except Exception:                                 # noqa: BLE001
-            deployable = None
-        if not deployable:
+        # Not swallowed (Phase 25.9E): an unreadable gate fails the stage
+        # with its reason instead of reading as "no deployable model".
+        deployable = self.loop.deployable_models()
+        if not any(deployable.values()):
             return "no deployable model; observing only"
-        return "signal evaluation due"
+        return (f"{sum(1 for v in deployable.values() if v)} deployable "
+                f"model(s); signal evaluation due")
 
     def _stage_portfolio(self, now: datetime) -> str:
         """Revalue against CURRENT operational prices only (§13, §21)."""

@@ -259,6 +259,8 @@ class BlockReason(str, Enum):
     SESSION_NOT_OPEN = "session_not_open"
     CYCLE_ALREADY_RUNNING = "cycle_already_running"
     CONFIGURATION_CHANGED = "configuration_changed"
+    #: Another runner holds the account lease (Phase 25.9E).
+    RUNNER_NOT_OWNER = "runner_not_owner"
 
     @property
     def needs_a_person(self) -> bool:
@@ -923,6 +925,9 @@ class CycleResult:
     stages: List[StageResult] = field(default_factory=list)
     timestamps: LoopTimestamps = field(default_factory=LoopTimestamps)
     detail: str = ""
+    #: Phase 25.9E `ExecutionReadiness`, set at the end of every cycle
+    #: that advanced. None when the cycle was not claimed.
+    readiness: Any = None
 
     def __post_init__(self):
         require_utc(self.anchor, "anchor")

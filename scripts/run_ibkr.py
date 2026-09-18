@@ -79,6 +79,11 @@ DEFAULT_DB = os.path.join("data", "marketlens.db")
 RULE = "-" * 70
 
 
+def _exchange_calendar():
+    """US equity exchange rules (Phase 25.9E): every gateway builder uses them."""
+    from src.marketdata.calendar import USEquityCalendar
+    return USEquityCalendar()
+
 def line(title: str) -> None:
     print(f"\n--- {title} {RULE[:max(0, 66 - len(title))]}")
 
@@ -129,7 +134,8 @@ def build(conn: sqlite3.Connection, args) -> Dict[str, Any]:
     if universe:
         calendar.load(universe)
 
-    gateway = IBKRGateway(config, transport, instruments, calendar=calendar)
+    gateway = IBKRGateway(config, transport, instruments, calendar=calendar,
+                          exchange_calendar=_exchange_calendar())
     # Establish the session here rather than only in --status. Every
     # command below needs it, and a disconnected gateway would
     # otherwise fail validation for a reason that has nothing to do

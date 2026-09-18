@@ -50,6 +50,11 @@ from src.marketdata.service import (
 DEFAULT_DB = os.path.join("data", "marketlens.db")
 
 
+def _exchange_calendar():
+    """US equity exchange rules (Phase 25.9E): every gateway builder uses them."""
+    from src.marketdata.calendar import USEquityCalendar
+    return USEquityCalendar()
+
 def build_gateway(conn, args):
     config = IBKRConfig.from_environment(
         **({"account_id": args.account} if args.account else {}))
@@ -71,7 +76,8 @@ def build_gateway(conn, args):
     if universe:
         calendar.load(universe)
 
-    gateway = IBKRGateway(config, transport, instruments, calendar=calendar)
+    gateway = IBKRGateway(config, transport, instruments, calendar=calendar,
+                          exchange_calendar=_exchange_calendar())
     gateway.connect()
     return gateway
 

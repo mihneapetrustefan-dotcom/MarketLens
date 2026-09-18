@@ -156,7 +156,8 @@ class IBKRGateway(BrokerGateway):
     def __init__(self, config: IBKRConfig, transport: IBKRTransport,
                  registry: InstrumentRegistry,
                  calendar: Optional[MarketCalendar] = None,
-                 quote_max_age_seconds: float = DEFAULT_QUOTE_MAX_AGE_SECONDS):
+                 quote_max_age_seconds: float = DEFAULT_QUOTE_MAX_AGE_SECONDS,
+                 exchange_calendar: Any = None):
         # Refuse a live configuration before anything else happens.
         if config.environment.is_real_money:
             raise ValueError(
@@ -166,6 +167,10 @@ class IBKRGateway(BrokerGateway):
         self.transport = transport
         self.registry = registry
         self.calendar = calendar
+        #: Exchange rules for regular hours, holidays and early closes
+        #: (Phase 25.9E). When present it is AUTHORITATIVE for the
+        #: instruments it governs; see `market_status`.
+        self.exchange_calendar = exchange_calendar
         self.broker_id = config.broker_id
         self.quote_max_age_seconds = quote_max_age_seconds
 
@@ -463,6 +468,19 @@ class IBKRGateway(BrokerGateway):
         -- a quote that fails to arrive is a data problem, not proof
         that a market shut.
         """
+        # EXCHANGE RULES FIRST (Phase 25.9E). For a US-listed equity the
+        # exchange calendar decides: a holiday, a weekend, pre-market,
+        # after-hours and the time past an early close are all closed to
+        # this project however fresh an IBKR snapshot looks -- IBKR
+        # serves available quotes outside regular hours, and the Phase 12
+        # calendar calls a whole date open. Neither can open a session
+        # the exchange has not opened.
+        mapping = self.registry.get(self.broker_id, instrument_id)
+        if (self.exchange_calendar is not None and mapping is not None
+                and self.exchange_calendar.governs(mapping.asset_class,
+                                                   mapping.currency)):
+            return self.exchange_calendar.status(now)
+
         if self._conid_for(instrument_id) is None:
             # No resolved IBKR contract. We do not know this venue's
             # session for an instrument this venue cannot identify, and
