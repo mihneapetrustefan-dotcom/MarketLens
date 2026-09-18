@@ -168,6 +168,9 @@ class SessionRunner:
         #: are still two owners.
         self.owner = leases.new_owner(self.worker)
         self.lease: Optional[leases.Lease] = None
+        #: What the feature stage last computed, and at which boundary.
+        #: Read by the signal stage; empty until the stage has run.
+        self.feature_state: Dict[str, Any] = {}
 
     # ---------------- lifecycle ----------------
 
@@ -396,22 +399,97 @@ class SessionRunner:
 
     def _stage_features(self, now: datetime) -> str:
         """
-        Intraday feature refresh (§14, §15).
+        Intraday feature refresh (Phase 25.9F, §49, §50).
 
-        Phase 25.8 establishes the CADENCE and the boundary; the
-        computation itself belongs to the feature layer and is not
-        rebuilt here. What this proves is that completed bars reach a
-        refresh on a schedule, which is the bridge the batch pipeline
-        never had.
+        WHAT THIS USED TO DO. It counted instruments that had at least
+        one completed bar and reported that count as the feature stage.
+        Nothing was computed. Phase 25.9E's audit named it: the stage
+        validated cadence, not features, and a runner reporting
+        "features: 3 instruments" had produced no feature at all.
+
+        WHAT IT DOES NOW. It computes the registered intraday feature
+        set at the last CLOSED bar boundary for every active instrument
+        and reports the real outcome per instrument:
+
+            COMPUTED   the full set resolved
+            PARTIAL    some features were None (short run, missing input)
+            NO_DATA    no closed bar reaches this boundary
+            BLOCKED    the computation itself failed
+
+        `feature_state` carries the result to the signal stage, which
+        is what lets §52's freshness rule mean something: a fresh price
+        does not make a stale feature current.
         """
-        from src.marketdata.repository import MarketDataRepository
-        repository = MarketDataRepository(self.conn)
-        refreshed = 0
-        for entry in self._universe():
-            bars = repository.bars_for(entry.instrument_id, limit=5)
-            if bars:
-                refreshed += 1
-        return f"{refreshed} instrument(s) have completed intraday bars"
+        from src.research.intraday_dataset import IntradayDatasetBuilder
+
+        boundary = self.feature_boundary(now)
+        builder = IntradayDatasetBuilder(self.conn)
+        universe = list(self._universe())
+        peers = [e.instrument_id for e in universe]
+
+        computed = partial = no_data = blocked = 0
+        state: Dict[str, Any] = {"boundary": boundary, "instruments": {}}
+        for entry in universe:
+            try:
+                row = builder.observation(entry.instrument_id, boundary,
+                                          peers=peers, now=now)
+            except Exception as error:                    # noqa: BLE001
+                blocked += 1
+                state["instruments"][entry.instrument_id] = {
+                    "status": "BLOCKED", "detail": f"{type(error).__name__}: {error}"}
+                continue
+            if row is None:
+                no_data += 1
+                state["instruments"][entry.instrument_id] = {"status": "NO_DATA"}
+                continue
+            missing = [k for k, v in row.features.items() if v is None]
+            status = "COMPUTED" if not missing else "PARTIAL"
+            computed += status == "COMPUTED"
+            partial += status == "PARTIAL"
+            state["instruments"][entry.instrument_id] = {
+                "status": status, "run_minutes": row.run_minutes,
+                "missing": len(missing), "computed": len(row.features) - len(missing)}
+
+        state["summary"] = {"computed": computed, "partial": partial,
+                            "no_data": no_data, "blocked": blocked}
+        self.feature_state = state
+
+        if blocked:
+            # A stage that could not compute must not read as healthy:
+            # raising marks it FAILED, and the runner blocks trading on
+            # the tick rather than letting a signal use absent features.
+            raise RuntimeError(
+                f"feature computation failed for {blocked} instrument(s) at "
+                f"{boundary.isoformat()}")
+        return (f"boundary {boundary:%H:%M}: {computed} computed, "
+                f"{partial} partial, {no_data} without a closed bar")
+
+    def feature_boundary(self, now: datetime) -> datetime:
+        """
+        The last minute boundary that has definitively CLOSED.
+
+        Features are computed here and never at `now`: the minute in
+        progress is not a bar, and a feature built from it would be
+        reading a price that can still change (§10, §18).
+        """
+        moment = now.astimezone(timezone.utc)
+        return moment.replace(second=0, microsecond=0)
+
+    def features_are_fresh(self, now: datetime,
+                           tolerance_minutes: float = 5.0) -> bool:
+        """
+        Whether the computed feature state still describes this moment
+        (§52).
+
+        A fresh quote does not make a forty-five-minute-old feature
+        current. The signal stage asks this before relying on them.
+        """
+        state = getattr(self, "feature_state", None) or {}
+        boundary = state.get("boundary")
+        if boundary is None:
+            return False
+        age = (now.astimezone(timezone.utc) - boundary).total_seconds() / 60.0
+        return 0 <= age <= tolerance_minutes
 
     def _stage_signals(self, now: datetime) -> str:
         """
@@ -427,6 +505,11 @@ class SessionRunner:
         deployable = self.loop.deployable_models()
         if not any(deployable.values()):
             return "no deployable model; observing only"
+        # Phase 25.9F §52: a model may only be asked about a moment its
+        # features actually describe.
+        if not self.features_are_fresh(now):
+            return ("features are not current for this boundary; no signal "
+                    "may be derived from them")
         return (f"{sum(1 for v in deployable.values() if v)} deployable "
                 f"model(s); signal evaluation due")
 
