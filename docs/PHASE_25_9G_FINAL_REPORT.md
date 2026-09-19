@@ -32,7 +32,7 @@ What is proven:
 - The real process chain was rehearsed on this host: supervisor, child, status, duplicate refusal and graceful STOP (REAL HOST).
 - On the real transport with no gateway, the runner lands in WAITING_FOR_AUTH and tells the human what to do (REAL HOST).
 
-What is not proven: any real IBKR contact, any real captured session. The gateway was not running and the market is closed. **REAL FULL-SESSION CAPTURE = NOT VERIFIED.** The scheduled task is also **not installed**, because registering it is a persistent host change that needs your approval (section AP).
+What is not proven: any real IBKR contact, any real captured session. The gateway was not running and the market is closed. **REAL FULL-SESSION CAPTURE = NOT VERIFIED.** With your approval the scheduled task was installed and started on 2026-09-19. Capture is now running on this host: IDLE, waiting for Monday's pre-open (section AP).
 
 ## B. Baseline
 
@@ -55,7 +55,7 @@ Re-checked on 2026-09-19, not assumed:
 | Question | Answer |
 |---|---|
 | Any persistent process in the repo? | None before this phase. Every entry point was a batch job. |
-| Scheduled task for capture? | None registered (`Get-ScheduledTask`: no MarketLens task). |
+| Scheduled task for capture? | None registered before this phase (`Get-ScheduledTask`: no MarketLens task). Installed at the end of this phase, with approval. |
 | Could GitHub Actions host it? | No. The Client Portal session is a browser login on this machine, and the spec forbids moving it to Actions. Actions also has no persistent runtime. |
 | Gateway on this host? | Not running (no listener on 5000/5001/4001/4002/7496/7497). |
 | Market | Closed (Saturday). Next regular session: Mon 2026-09-21, 13:30 UTC. |
@@ -344,7 +344,7 @@ See the failure matrix (§127). Faults were injected at the venue (auth, endpoin
 
 ## AG. Real Capture Session
 
-**NOT ATTEMPTED.** Distinct real captured sessions: **0**.
+**NOT ATTEMPTED** (not yet possible). Distinct real captured sessions: **0**. The collector is deployed and RUNNING, but it has collected nothing: it is IDLE until the next regular session, and it will capture only if a human is logged in to the gateway.
 
 Mock rehearsals are labelled MOCK and are not presented as market observations:
 
@@ -352,7 +352,7 @@ Mock rehearsals are labelled MOCK and are not presented as market observations:
 - two sessions, 30 instruments;
 - one session, 30 instruments, for sizing.
 
-Exact remaining step: install the task (section AP) and log in to the gateway before Monday 2026-09-21 13:10 UTC. Let one session run, then run `capture_status` and `capture_report`.
+Exact remaining step: log in to the gateway before Monday 2026-09-21 13:10 UTC (the task is installed and running). Let one session run, then run `capture_status` and `capture_report`.
 
 ## AH. Security
 
@@ -410,15 +410,11 @@ See §128.
 
 ## AP. Readiness for Phase 25.9H
 
-Engineering is ready. Three steps remain, in order, and the first two need you:
+Engineering is ready and deployed.
 
-1. **Approve installing the scheduled task.** It is a persistent host change, so it was not done without you:
-   ```
-   powershell -ExecutionPolicy Bypass -File deploy\windows\capture_task.ps1 install
-   powershell -ExecutionPolicy Bypass -File deploy\windows\capture_task.ps1 start
-   ```
-2. **Log in** to the IBKR Client Portal Gateway (paper) in a browser before 13:10 UTC on each trading day.
-3. After the first session: `python scripts/capture_status.py` and `python scripts/capture_report.py`. That turns REAL FULL-SESSION CAPTURE from NOT VERIFIED into PARTIAL or VERIFIED on evidence.
+1. **Done, with your approval (2026-09-19).** The task "MarketLens Intraday Capture" is registered for the logged-on user: interactive, no stored password, triggers at log-on and daily 08:00, IgnoreNew. It was started. Status right after: supervisor RUNNING, runner IDLE, market closed, next open 2026-09-21 13:30 UTC, broker writes 0, exit 0. Undo with `capture_task.ps1 stop` / `remove`.
+2. **Log in** to the IBKR Client Portal Gateway (paper) in a browser before 13:10 UTC (16:10 local) on each trading day.
+3. After the first session: `python scripts/capture_status.py` and `python scripts/capture_report.py`. That turns REAL FULL-SESSION CAPTURE from NOT VERIFIED into PARTIAL or VERIFIED on evidence, and closes this phase.
 
 Data maturity then accumulates without the phase staying open: 20 sessions no earlier than 2026-10-16, and 120 sessions / 6 months no earlier than March 2027.
 
@@ -428,16 +424,16 @@ Data maturity then accumulates without the phase staying open: 20 sessions no ea
 
 | Component | Code | Deployed | Automatically started | Restartable | Real verified | Blocker |
 |---|---|---|---|---|---|---|
-| persistent process | `run_capture.py`, `capture_supervisor.py`, `capture_task.ps1` | no | no (task not installed) | yes (supervisor, MOCK + REAL HOST) | REAL HOST rehearsal | install needs approval |
-| runner lease | 25.9E lease + instance takeover check | no | with process | yes | REAL HOST (duplicate supervisor refused, exit 3) | — |
-| gateway detection | `IBKRGateway.connect` | no | with process | yes | REAL HOST (unreachable → WAITING_FOR_AUTH) | gateway not running |
-| auth detection | WAITING_FOR_AUTH / AUTH_LOST | no | with process | yes | no | gateway not running |
-| market calendar | `USEquityCalendar` | no | with process | n/a | REAL HOST (Saturday → IDLE) | — |
-| market-data polling | `MarketDataService.run_cycle` | no | with process | yes | no | gateway, market |
-| bar builder | `MinuteBarBuilder` | no | with process | yes | no | gateway, market |
-| feature computation | `capture/features.py` | no | with process | yes (recompute) | no | gateway, market |
-| archive | `archive_operational_bars` | no | with process | yes (idempotent) | no | gateway, market |
-| EOD finalization | `quality.finalize_session` | no | with process | yes (recovered at start) | no | gateway, market |
+| persistent process | `run_capture.py`, `capture_supervisor.py`, `capture_task.ps1` | yes (Task Scheduler, 2026-09-19) | configured (log-on + daily 08:00); started manually once, trigger firing not yet observed | yes (supervisor, MOCK + REAL HOST) | REAL HOST (running, IDLE) | — |
+| runner lease | 25.9E lease + instance takeover check | yes (in the running process) | with the task | yes | REAL HOST (duplicate supervisor refused, exit 3) | — |
+| gateway detection | `IBKRGateway.connect` | yes (in the running process) | with the task | yes | REAL HOST (unreachable → WAITING_FOR_AUTH) | gateway not running |
+| auth detection | WAITING_FOR_AUTH / AUTH_LOST | yes (in the running process) | with the task | yes | no | gateway not running |
+| market calendar | `USEquityCalendar` | yes (in the running process) | with the task | n/a | REAL HOST (Saturday → IDLE, next open computed) | — |
+| market-data polling | `MarketDataService.run_cycle` | yes (in the running process) | with the task | yes | no | gateway, market |
+| bar builder | `MinuteBarBuilder` | yes (in the running process) | with the task | yes | no | gateway, market |
+| feature computation | `capture/features.py` | yes (in the running process) | with the task | yes (recompute) | no | gateway, market |
+| archive | `archive_operational_bars` | yes (in the running process) | with the task | yes (idempotent) | no | gateway, market |
+| EOD finalization | `quality.finalize_session` | yes (in the running process) | with the task | yes (recovered at start) | no | gateway, market |
 | status command | `capture_status.py` | yes (on demand) | n/a | n/a | REAL HOST | — |
 
 ## 122. Universe Matrix
@@ -576,7 +572,7 @@ Not derived from bar count: the band comes only from sessions and calendar month
 
 | ID | Severity | Finding | Evidence | Reproduced | Fixed | Tests | Remaining Risk |
 |---|---|---|---|---|---|---|---|
-| G-01 | High | No persistent runtime existed for capture; 25.9E code could never run continuously | re-audit, section C | yes | yes (supervisor, runner, task script) | 77 capture tests | task not yet installed |
+| G-01 | High | No persistent runtime existed for capture; 25.9E code could never run continuously | re-audit, section C | yes | yes (supervisor, runner, task script) | 77 capture tests | log-on trigger not yet observed firing |
 | G-02 | High | The transport kept `place_order`/`cancel_order`/`reply` reachable behind the gateway guard | code read; `market_data_snapshot` reads `gateway.transport` directly | yes | yes (`ReadOnlyTransport`, `capture_only`) | write-path negative control | none known |
 | G-03 | High | `archive_operational_bars` had never run: full-table rescan, one transaction | code audit | yes | yes (window, batches, provenance keys) | idempotency, restart, 25.9F suite | none known |
 | G-04 | High | 25.7 `prune` deletes operational bars after 30 days whether archived or not, which would destroy data after an archive outage | code read | yes | yes for capture (`prune_archived`); 25.7 `prune` unchanged for its callers | prune test | other callers of `prune` |
@@ -585,6 +581,7 @@ Not derived from bar count: the band comes only from sessions and calendar month
 | G-07 | Low | Status called a deliberate STOP a SYSTEM_ERROR | REAL HOST rehearsal | yes | yes (STOPPED_BY_OPERATOR) | status test | — |
 | G-08 | Medium | Disk headroom ~14 GB vs ≈ 5.3 GB/year | measurement | n/a | mitigated (status ATTENTION < 2 GB) | — | operator must free space over time |
 | G-09 | Low | A lock held past `busy_timeout` loses that tick's minute | lock injection | yes | bounded, not fixed | lock test | recorded as missing, never synthesised |
+| G-11 | Medium | `capture_task.ps1 install` failed: `$action` collided with the validated `-Action` parameter (PowerShell names are case-insensitive) | first real install | yes | yes (`$taskAction`); nothing had been registered | real install succeeded | — |
 | G-10 | Info | A test's lock holder released its lock at once (garbage-collected handle), letting a real child start in a temp dir | test hang | yes | yes (holder keeps the reference; guard tests stub `Supervisor.run`) | supervisor tests | — (the stray child idled and made no IBKR request) |
 
 ---
@@ -593,10 +590,10 @@ PHASE 25.9G STATUS:
 INCOMPLETE
 
 PERSISTENT RUNTIME:
-PARTIAL
+OPERATIONAL
 
 AUTOMATIC START:
-NOT CONFIGURED
+CONFIGURED
 
 SUPERVISOR / RESTART:
 PASS
@@ -659,7 +656,7 @@ REAL FULL-SESSION CAPTURE:
 NOT VERIFIED
 
 DATA COLLECTION:
-READY TO RUN
+RUNNING
 
 RESEARCH DATA MATURITY:
 INSUFFICIENT

@@ -68,7 +68,9 @@ switch ($Action) {
         New-Item -ItemType Directory -Force -Path (Join-Path $CaptureDir "logs") | Out-Null
         $exe = Resolve-Pythonw
         $user = "$env:USERDOMAIN\$env:USERNAME"
-        $action = New-ScheduledTaskAction -Execute $exe `
+        # Not "$action": PowerShell names are case-insensitive, and that
+        # would collide with the validated -Action parameter.
+        $taskAction = New-ScheduledTaskAction -Execute $exe `
             -Argument "`"$Repo\scripts\capture_supervisor.py`"" -WorkingDirectory $Repo
         $triggers = @(
             (New-ScheduledTaskTrigger -AtLogOn -User $user),
@@ -79,7 +81,7 @@ switch ($Action) {
             -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 `
             -RestartInterval (New-TimeSpan -Minutes 5) -StartWhenAvailable `
             -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-        Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers `
+        Register-ScheduledTask -TaskName $TaskName -Action $taskAction -Trigger $triggers `
             -Principal $principal -Settings $settings `
             -Description "MarketLens Phase 25.9G capture-only intraday market data. No orders; no stored credentials." | Out-Null
         Write-Output "Registered '$TaskName' for $user (interactive, no stored password)."
