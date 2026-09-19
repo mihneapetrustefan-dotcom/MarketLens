@@ -132,7 +132,37 @@ jobs:
       - name: Upload updated database to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+        # Retried, because `--clobber` is delete-then-upload and that
+        # gap is not atomic. Twenty workflows write this one asset; if
+        # another deletes it mid-upload, this run fails with
+        # `HTTP 404 ... /assets?name=marketlens.db` and the database
+        # silently stops being updated until somebody notices.
+        #
+        # The recurring cause was fixed by disabling the duplicate
+        # schedule in archive_articles.yml, so no two SCHEDULED runs
+        # overlap any more. What remains is a manual research run
+        # landing on top of this one, which daily.yml accepts
+        # deliberately (see the concurrency comment above). This makes
+        # that accepted risk self-healing instead of a failed run.
+        #
+        # Three attempts with growing backoff. Not a loop that hides a
+        # real failure: if the asset still cannot be written after the
+        # third try, the step fails loudly with the last exit code.
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if gh release upload db-latest data/marketlens.db \
+                 --repo "${{ github.repository }}" --clobber; then
+              echo "uploaded on attempt ${attempt}"
+              exit 0
+            fi
+            echo "upload attempt ${attempt} failed"
+            if [ "${attempt}" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "upload failed after 3 attempts" >&2
+          exit 1
 
       - name: Commit and push report + archive files (not the database)
         run: |

@@ -253,6 +253,75 @@ def migrate(conn: sqlite3.Connection, limit: Optional[int],
     return stats
 
 
+def orphaned_link_ids(conn: sqlite3.Connection) -> set:
+    """
+    Articles an entity link points at that exist in NEITHER table.
+
+    The article left `articles` before it ever reached `news_articles`.
+    Measured on the production snapshot of 2026-09-17: 503 links, 427
+    articles, every one of them archived in `articles_2026-07.jsonl.gz`.
+    They aged past the 60-day window and were archived by the duplicate
+    `archive_articles.yml` schedule, which archives WITHOUT running this
+    sync first -- `daily.yml` runs it before archiving precisely so this
+    cannot happen.
+    """
+    return {row[0] for row in conn.execute("""
+        SELECT DISTINCT e.article_id FROM article_entities e
+         WHERE NOT EXISTS (SELECT 1 FROM news_articles n
+                           WHERE n.article_id = e.article_id)
+           AND NOT EXISTS (SELECT 1 FROM articles a
+                           WHERE a.article_id = e.article_id)
+    """)}
+
+
+def recover_from_archives(conn: sqlite3.Connection, archive_dir: str,
+                          dry_run: bool = False,
+                          quiet: bool = False) -> Dict[str, int]:
+    """
+    Give orphaned entity links their canonical row back, from the archive.
+
+    Nothing is invented: a row is written only when the archive holds
+    the article itself, and it goes through the same `to_normalized`
+    mapping and the same `NewsRepository` write as a live row, so an
+    archived article is not a second kind of article. `articles` is not
+    touched -- the archive stays archived.
+
+    A link whose article is in no archive stays unresolved, and
+    verification keeps failing on it. That would be real loss, and it
+    must stay loud.
+    """
+    import glob
+    import gzip
+
+    wanted = orphaned_link_ids(conn)
+    stats = {"orphaned": len(wanted), "recovered": 0, "not_in_archive": 0}
+    if not wanted:
+        return stats
+
+    sources = source_index(conn)
+    winners = canonical_of_group(conn)
+    found: List[NormalizedArticle] = []
+    for path in sorted(glob.glob(os.path.join(archive_dir, "*.jsonl.gz"))):
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            for text in handle:
+                try:
+                    row = json.loads(text)
+                except ValueError:
+                    continue
+                article_id = row.get("article_id")
+                if article_id not in wanted or not (row.get("title") or "").strip():
+                    continue
+                found.append(to_normalized(row, sources, winners))
+                wanted.discard(article_id)
+
+    stats["not_in_archive"] = len(wanted)
+    if found and not dry_run:
+        stats["recovered"] = NewsRepository(conn).bulk_write(found)
+    else:
+        stats["recovered"] = len(found)
+    return stats
+
+
 def verify(conn: sqlite3.Connection, quiet: bool = False) -> bool:
     """
     Check the migration against the source, and report rather than
@@ -318,6 +387,9 @@ def main() -> int:
                         help="map every row and write nothing")
     parser.add_argument("--verify-only", action="store_true",
                         help="check a previous migration without writing")
+    parser.add_argument("--archive-dir", default=None,
+                        help="where archived articles live (default: the "
+                             "'archives' folder beside the database)")
     args = parser.parse_args()
 
     if not os.path.exists(args.db):
@@ -344,6 +416,14 @@ def main() -> int:
         print(f"  written               {stats['written']:,}")
         print(f"  skipped (no title)    {stats['skipped_no_title']:,}")
         print(f"  marked duplicate      {stats['duplicates']:,}")
+
+        line("RECOVERY FROM ARCHIVES")
+        archive_dir = args.archive_dir or os.path.join(
+            os.path.dirname(os.path.abspath(args.db)), "archives")
+        recovered = recover_from_archives(conn, archive_dir, args.dry_run)
+        print(f"  orphaned entity links' articles  {recovered['orphaned']:,}")
+        print(f"  recovered from the archive       {recovered['recovered']:,}")
+        print(f"  in no archive (genuinely lost)   {recovered['not_in_archive']:,}")
 
     if args.dry_run:
         print("\n  Dry run: no verification, because nothing was written.")

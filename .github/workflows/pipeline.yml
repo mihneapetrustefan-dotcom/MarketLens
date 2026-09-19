@@ -311,7 +311,28 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload db-latest data/marketlens.db --repo ${{ github.repository }} --clobber
+        # Retried for the same reason as daily.yml: `--clobber` is
+        # delete-then-upload, twenty workflows write this one asset,
+        # and a lost race returns `HTTP 404 ... /assets?name=...`.
+        # This job is the twice-weekly research pipeline -- losing its
+        # upload discards up to a full rebuild of features, models,
+        # predictions and signals, so it is the worst place to fail
+        # silently. Fails loudly after the third attempt.
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if gh release upload db-latest data/marketlens.db \
+                 --repo "${{ github.repository }}" --clobber; then
+              echo "uploaded on attempt ${attempt}"
+              exit 0
+            fi
+            echo "upload attempt ${attempt} failed"
+            if [ "${attempt}" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "upload failed after 3 attempts" >&2
+          exit 1
 
       - name: Commit the rebuilt dashboard
         if: always()
