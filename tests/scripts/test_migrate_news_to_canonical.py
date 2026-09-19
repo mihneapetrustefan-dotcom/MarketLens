@@ -293,5 +293,87 @@ class TestSafety(MigrationCase):
         self.assertTrue(migrate_mod.verify(self.conn, quiet=True))
 
 
+class TestRecoveryFromArchives(MigrationCase):
+    """
+    An entity link whose article left `articles` before it ever reached
+    `news_articles`. Found in production on 2026-09-17: 503 links, 427
+    articles, every one preserved in the July archive. The daily run
+    reported FAILED on every pass because of them.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.archive_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        super().tearDown()
+        import shutil
+        shutil.rmtree(self.archive_dir, ignore_errors=True)
+
+    def archive(self, *rows, name="articles_2026-07.jsonl.gz"):
+        import gzip
+        with gzip.open(os.path.join(self.archive_dir, name), "wt",
+                       encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row) + "\n")
+
+    def link(self, article_id):
+        self.conn.execute("INSERT INTO article_entities VALUES (?, 'company', 'co-1')",
+                          (article_id,))
+        self.conn.commit()
+
+    def test_an_archived_orphan_is_recovered_and_verification_passes(self):
+        self.archive(legacy_row(article_id="gone-1", url="https://ex.com/g"))
+        self.link("gone-1")
+        self.assertFalse(migrate_mod.verify(self.conn, quiet=True))
+
+        stats = migrate_mod.recover_from_archives(self.conn, self.archive_dir)
+        self.assertEqual(stats["recovered"], 1)
+        self.assertEqual(stats["not_in_archive"], 0)
+        self.assertEqual(self.canonical("gone-1")["title"], "A headline")
+        self.assertTrue(migrate_mod.verify(self.conn, quiet=True))
+
+    def test_a_link_to_an_article_in_no_archive_stays_a_failure(self):
+        """NEGATIVE CONTROL: real loss must not be papered over."""
+        self.link("never-archived")
+        stats = migrate_mod.recover_from_archives(self.conn, self.archive_dir)
+        self.assertEqual(stats["recovered"], 0)
+        self.assertEqual(stats["not_in_archive"], 1)
+        self.assertFalse(migrate_mod.verify(self.conn, quiet=True))
+
+    def test_recovery_never_writes_the_articles_table(self):
+        self.archive(legacy_row(article_id="gone-1", url="https://ex.com/g"))
+        self.link("gone-1")
+        migrate_mod.recover_from_archives(self.conn, self.archive_dir)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0], 0,
+            "the archive was un-archived into the live table")
+
+    def test_only_orphans_are_recovered_not_the_whole_archive(self):
+        self.archive(legacy_row(article_id="gone-1", url="https://ex.com/g"),
+                     legacy_row(article_id="unlinked", url="https://ex.com/u"))
+        self.link("gone-1")
+        migrate_mod.recover_from_archives(self.conn, self.archive_dir)
+        self.assertIsNotNone(self.canonical("gone-1"))
+        self.assertIsNone(self.canonical("unlinked"))
+
+    def test_recovery_is_idempotent(self):
+        self.archive(legacy_row(article_id="gone-1", url="https://ex.com/g"))
+        self.link("gone-1")
+        migrate_mod.recover_from_archives(self.conn, self.archive_dir)
+        first = tuple(self.canonical("gone-1"))
+        again = migrate_mod.recover_from_archives(self.conn, self.archive_dir)
+        self.assertEqual(again["orphaned"], 0)
+        self.assertEqual(tuple(self.canonical("gone-1")), first)
+
+    def test_a_dry_run_recovers_nothing(self):
+        self.archive(legacy_row(article_id="gone-1", url="https://ex.com/g"))
+        self.link("gone-1")
+        stats = migrate_mod.recover_from_archives(self.conn, self.archive_dir,
+                                                  dry_run=True)
+        self.assertEqual(stats["recovered"], 1)
+        self.assertIsNone(self.canonical("gone-1"))
+
+
 if __name__ == "__main__":
     unittest.main()
