@@ -131,6 +131,14 @@ class ExecutionService:
         self.repository = repository
         self.registry: BrokerRegistry = orchestrator.registry
         self.safety: ExecutionSafety = orchestrator.safety
+        if repository is not None:
+            orchestrator.before_submit = self._write_ahead
+
+    def _write_ahead(self, order) -> None:
+        """Persist an order in SUBMITTING before its venue call (25.9E)."""
+        self.repository.save_execution(
+            order,
+            transitions=self.orchestrator.machine.transitions_for(order.order_id))
 
     # ---------------- permission helper ----------------
 

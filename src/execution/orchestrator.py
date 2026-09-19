@@ -220,6 +220,12 @@ class ExecutionOrchestrator:
         self.event_log: List[ExecutionEvent] = []
         #: idempotency key -> order id. The duplicate guard.
         self._by_key: Dict[str, str] = {}
+        #: Called with the order after it enters SUBMITTING and BEFORE
+        #: the gateway is contacted (Phase 25.9E). The service wires it
+        #: to durable storage, so a process that dies after the venue
+        #: accepted leaves an in-flight row for the restart to find.
+        #: Without it the only record of that order was in memory.
+        self.before_submit: Optional[Callable[[ExecutionOrder], None]] = None
 
     # ---------------- recovery ----------------
 
@@ -544,8 +550,34 @@ class ExecutionOrchestrator:
                            at=request.now, reason="handing to the gateway",
                            correlation_id=order.correlation_id)
         order.submitted_at = request.now
-        entry.rate_limiter.record(request.now)
 
+        # WRITE-AHEAD (Phase 25.9E). The order is made durable before the
+        # venue can learn of it. Measured before this existed: a crash
+        # between `submit_order` returning and the service persisting the
+        # result left no local trace of an order the broker held, so a
+        # restart could only notice it if the broker already listed it.
+        # A record that cannot be written means the order is not sent.
+        if self.before_submit is not None:
+            try:
+                self.before_submit(order)
+            except Exception as error:                    # noqa: BLE001
+                self.machine.apply(order, ExecutionOrderState.REJECTED,
+                                   at=request.now,
+                                   reason=("not sent: the write-ahead record "
+                                           f"could not be stored ({error})"),
+                                   correlation_id=order.correlation_id,
+                                   strict=False)
+                result.error = self._record_error(
+                    ExecutionRejectCode.ADAPTER_ERROR,
+                    f"write-ahead record failed, order not sent: {error}",
+                    request, order.correlation_id, order_id=order.order_id)
+                self._audit("write_ahead_failed", request.now,
+                            subject_id=order.order_id,
+                            correlation_id=order.correlation_id,
+                            detail=str(error))
+                return result
+
+        entry.rate_limiter.record(request.now)
         try:
             ack: SubmissionAck = entry.gateway.submit_order(order, request.now)
         except Exception as error:                        # noqa: BLE001

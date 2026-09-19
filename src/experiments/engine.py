@@ -180,6 +180,13 @@ def load_cohort(conn: sqlite3.Connection, experiment: Experiment
     if snapshot.as_of:
         clauses.append("available_at <= ?")
         params.append(snapshot.as_of)
+    # The recorded cutoff is a bound, not a label (Phase 25.9D). Without
+    # this a stored experiment re-run later read rows its dataset
+    # identity says it never had, and a challenger stamped with one
+    # cutoff was measured on a longer record.
+    if getattr(snapshot, "data_cutoff", ""):
+        clauses.append("available_at <= ?")
+        params.append(snapshot.data_cutoff)
     if snapshot.filters.get("horizon"):
         clauses.append("horizon = ?")
         params.append(snapshot.filters["horizon"])
@@ -328,6 +335,34 @@ def _metric_series(rows: Sequence[Dict[str, Any]], metric: str) -> List[float]:
     return [r[key] for r in rows if r.get(key) is not None]
 
 
+def cohort_digest(rows: Sequence[Dict[str, Any]]) -> str:
+    """
+    The identity of what a run actually read (Phase 25.9D, F1).
+
+    `Experiment.fingerprint` identifies the DEFINITION and
+    `current_data_cutoff` only how far the record reaches. Neither moves
+    when an outcome arrives late behind the newest `available_at`, a
+    return is revised, or a row is reclassified out of the usable
+    qualities -- all reproduced: a revision that turned an effect of
+    +0.236 into -0.097 was served from the cache as +0.236.
+
+    Hashing the loaded rows closes that for every change the cohort
+    can see, and only those: an edit to a row the cohort excludes does
+    not invalidate anything.
+    """
+    payload = json.dumps([[row.get(column) for column in _EXPERIENCE_COLUMNS]
+                          for row in rows], default=str, separators=(",", ":"))
+    return "cd-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
+def cohort_span(rows: Sequence[Dict[str, Any]]) -> Tuple[str, str]:
+    """First and last `available_at` of a cohort ordered by it."""
+    if not rows:
+        return ("", "")
+    return (str(rows[0].get("available_at") or ""),
+            str(rows[-1].get("available_at") or ""))
+
+
 def run(conn: sqlite3.Connection, experiment: Experiment, *,
         seed: Optional[int] = None,
         environment: str = "local",
@@ -372,15 +407,35 @@ def run(conn: sqlite3.Connection, experiment: Experiment, *,
         fingerprint=fingerprint,
         started_at=now)
 
+    started = time.time()
+
+    # ---- the rows, then the protection, then the cache ----------------
+    # Phase 25.9D: the cohort is read BEFORE reuse is considered. The
+    # cache used to answer first, so neither a changed record nor a
+    # protected window declared after the first run could stop a stored
+    # result being served.
+    try:
+        rows = load_cohort(conn, experiment)
+        run_record.rows_examined = len(rows)
+        run_record.cohort_digest = cohort_digest(rows)
+        _assert_outside_protected_windows(conn, rows)
+    except ExperimentError as error:
+        run_record.status = RunStatus.FAILED
+        run_record.error = str(error)
+        run_record.completed_at = datetime.now(timezone.utc)
+        run_record.duration_seconds = time.time() - started
+        return run_record, None
+
     # ---- cache (§61) -------------------------------------------------
-    if allow_cache:
+    if allow_cache and rows:
         cached = conn.execute("""
             SELECT r.run_id FROM experiment_runs r
             JOIN experiment_results x ON x.run_id = r.run_id
             WHERE r.fingerprint = ? AND r.seed = ? AND r.status = 'completed'
-              AND r.cache_hit = 0
+              AND r.cache_hit = 0 AND r.cohort_digest = ?
             ORDER BY r.completed_at DESC LIMIT 1
-        """, (fingerprint, run_record.seed)).fetchone()
+        """, (fingerprint, run_record.seed,
+              run_record.cohort_digest)).fetchone()
         if cached:
             # Reuse is NEVER silent. The run is recorded as a cache hit
             # naming the run it copied, so a reader can tell a fresh
@@ -394,11 +449,9 @@ def run(conn: sqlite3.Connection, experiment: Experiment, *,
             if result is not None:
                 result.run_id = run_record.run_id
                 result.limitations.append(
-                    f"reused from run {cached[0]}: identical fingerprint and "
-                    f"seed. Nothing was recomputed.")
+                    f"reused from run {cached[0]}: identical fingerprint, "
+                    f"seed and cohort contents. Nothing was recomputed.")
             return run_record, result
-
-    started = time.time()
 
     def check_limits():
         if cancel_check is not None and cancel_check():
@@ -411,8 +464,6 @@ def run(conn: sqlite3.Connection, experiment: Experiment, *,
                 f"{elapsed:.1f}s")
 
     try:
-        rows = load_cohort(conn, experiment)
-        run_record.rows_examined = len(rows)
         check_limits()
 
         if not rows:
@@ -477,7 +528,9 @@ def run(conn: sqlite3.Connection, experiment: Experiment, *,
         result.economically_significant = significant
 
         # ---- selection bias (§41, §42) ------------------------------
-        family_counts = family_statistics(conn, experiment)
+        family_counts = family_statistics(
+            conn, experiment,
+            current=(fingerprint, run_record.seed, run_record.cohort_digest))
         result.family_experiment_count = family_counts["experiments"]
         result.family_comparison_count = family_counts["comparisons"]
 
@@ -625,13 +678,23 @@ def decide(experiment: Experiment, result: ExperimentResult, *,
 
 
 def family_statistics(conn: sqlite3.Connection,
-                      experiment: Experiment) -> Dict[str, int]:
+                      experiment: Experiment, *,
+                      current: Optional[Tuple[str, int, str]] = None
+                      ) -> Dict[str, int]:
     """
     How many siblings this hypothesis has (§41, §42, §43).
 
     A family of fifty will produce a winner by chance. The count travels
     with every decision so that a PASS is read alongside the number of
     attempts it took.
+
+    A COMPARISON IS A DISTINCT LOOK, NOT A STORED ROW (Phase 25.9D, F3).
+    The count used to be result rows, so every cache hit saved with its
+    reused result, and every retry of the same definition on the same
+    rows, added one: four reads of one measurement reported five
+    comparisons. A look is (definition, seed, cohort contents). A new
+    seed is counted, because a seed can be shopped for; a reuse is not.
+    `current` is the look being made now, added only if it is new.
     """
     initialize_experiment_schema(conn)
     family = experiment.hypothesis.family_id
@@ -640,13 +703,48 @@ def family_statistics(conn: sqlite3.Connection,
     experiments = conn.execute(
         "SELECT COUNT(*) FROM experiments WHERE family_id = ?",
         (family,)).fetchone()[0] or 1
-    comparisons = conn.execute("""
-        SELECT COUNT(*) FROM experiment_results x
+    # A result with no run, or a run from before the digest existed, is
+    # counted once per row: unknown contents are never merged away.
+    looks = {tuple(row) for row in conn.execute("""
+        SELECT COALESCE(r.fingerprint, x.run_id), COALESCE(r.seed, 0),
+               CASE WHEN r.cohort_digest IS NULL OR r.cohort_digest = ''
+                    THEN 'run:' || x.run_id ELSE r.cohort_digest END
+        FROM experiment_results x
         JOIN experiments e ON e.experiment_id = x.experiment_id
-        WHERE e.family_id = ?
-    """, (family,)).fetchone()[0] or 0
+        LEFT JOIN experiment_runs r ON r.run_id = x.run_id
+        WHERE e.family_id = ? AND COALESCE(r.cache_hit, 0) = 0
+    """, (family,))}
+    comparisons = len(looks)
+    if current is None or tuple(current) not in looks:
+        comparisons += 1
     return {"experiments": max(experiments, 1),
-            "comparisons": max(comparisons + 1, 1)}
+            "comparisons": max(comparisons, 1)}
+
+
+class ProtectedWindowRefused(ExperimentError):
+    """The cohort reaches into a region reserved from research."""
+
+
+def _assert_outside_protected_windows(conn: sqlite3.Connection,
+                                      rows: Sequence[Dict[str, Any]]) -> None:
+    """
+    Refuse a cohort that overlaps a protected window (Phase 25.9D, F6).
+
+    Declared windows were enforced only by the challenger evaluator. An
+    autoresearch cycle ran every row inside a window declared over the
+    whole record and concluded "supported, promising". The check lives
+    here, in the one engine every experiment path goes through, and
+    uses the whole cohort: training on a reserved region is tuning
+    against it just as surely as testing on it.
+    """
+    if not rows:
+        return
+    from src.autoresearch import governance
+    start, end = cohort_span(rows)
+    try:
+        governance.assert_window_allowed(conn, starts_at=start, ends_at=end)
+    except governance.ProtectedWindowRefused as refusal:
+        raise ProtectedWindowRefused(str(refusal)) from refusal
 
 
 # ======================================================================
@@ -858,14 +956,15 @@ def save_run(conn: sqlite3.Connection, run_record: ExperimentRun,
     conn.execute("""
         INSERT OR REPLACE INTO experiment_runs (
             run_id, experiment_id, status, seed, environment,
-            dataset_snapshot_id, code_version, fingerprint, started_at,
-            completed_at, duration_seconds, rows_examined, cache_hit,
-            cached_from_run, error, cancelled_reason
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            dataset_snapshot_id, code_version, fingerprint, cohort_digest,
+            started_at, completed_at, duration_seconds, rows_examined,
+            cache_hit, cached_from_run, error, cancelled_reason
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (run_record.run_id, run_record.experiment_id, run_record.status.value,
           run_record.seed, run_record.environment,
           run_record.dataset_snapshot_id, run_record.code_version,
-          run_record.fingerprint, iso(run_record.started_at),
+          run_record.fingerprint, run_record.cohort_digest,
+          iso(run_record.started_at),
           iso(run_record.completed_at), run_record.duration_seconds,
           run_record.rows_examined, int(run_record.cache_hit),
           run_record.cached_from_run, run_record.error,

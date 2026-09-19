@@ -15,3 +15,6 @@ data/marketlens.db
 # Windows binary would always be a mistake, and a 65 MB one landing in
 # the repo root is easy to commit by reflex with `git add -A`.
 *.exe
+
+# Phase 25.9G: the local capture store, its logs and supervisor state
+data/capture/

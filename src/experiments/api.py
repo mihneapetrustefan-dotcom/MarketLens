@@ -151,7 +151,8 @@ def runs(conn: sqlite3.Connection, experiment_id: str) -> List[Dict[str, Any]]:
     """`GET /experiments/{id}/runs` — newest first."""
     initialize_experiment_schema(conn)
     keys = ("run_id", "status", "seed", "environment", "dataset_snapshot_id",
-            "code_version", "fingerprint", "started_at", "completed_at",
+            "code_version", "fingerprint", "cohort_digest", "started_at",
+            "completed_at",
             "duration_seconds", "rows_examined", "cache_hit",
             "cached_from_run", "error", "cancelled_reason")
     return [dict(zip(keys, row)) for row in conn.execute(f"""

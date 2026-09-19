@@ -284,6 +284,32 @@ def predict_batch(parameters: Dict[str, Any], X: Sequence[Row]) -> List[Optional
     return [predict_one(parameters, row) for row in X]
 
 
+#: Families whose prediction is a probability in [0, 1] rather than a
+#: signed value.
+PROBABILISTIC_FAMILIES = frozenset({ModelFamily.LOGISTIC_REGRESSION.value})
+
+
+def decision_threshold(parameters: Dict[str, Any]) -> float:
+    """
+    The value above which a prediction means "up", for THIS family.
+
+    It is not a constant, because families do not share an output
+    space. A regression family predicts a signed return, so zero
+    separates up from down. A probabilistic family predicts P(up) in
+    [0, 1], where zero separates nothing at all -- every probability
+    exceeds it -- and the separator is one half.
+
+    Scoring a logistic model at the regression threshold would call
+    every prediction "up" and report the base rate of positive
+    outcomes as directional accuracy: a number that looks like a
+    result, moves when the data moves, and means nothing. The
+    baselines need this per-family too, since `majority_class` emits a
+    class indicator while `historical_mean` emits a return, and the
+    two are compared against the same model.
+    """
+    return 0.5 if parameters.get("family") in PROBABILISTIC_FAMILIES else 0.0
+
+
 #: Registry of fitters, so the engine never branches on family.
 FITTERS: Dict[ModelFamily, Callable[..., Dict[str, Any]]] = {
     ModelFamily.BASELINE_CONSTANT: fit_constant_baseline,

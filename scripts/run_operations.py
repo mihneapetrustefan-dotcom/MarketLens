@@ -74,6 +74,11 @@ DEFAULT_DB = os.path.join("data", "marketlens.db")
 RULE = "-" * 72
 
 
+def _exchange_calendar():
+    """US equity exchange rules (Phase 25.9E): every gateway builder uses them."""
+    from src.marketdata.calendar import USEquityCalendar
+    return USEquityCalendar()
+
 def line(title: str) -> None:
     print(f"\n--- {title} {RULE[:max(0, 68 - len(title))]}")
 
@@ -114,7 +119,8 @@ def build(conn: sqlite3.Connection, args) -> Dict[str, Any]:
     if universe:
         calendar.load(universe)
 
-    gateway = IBKRGateway(config, transport, instruments, calendar=calendar)
+    gateway = IBKRGateway(config, transport, instruments, calendar=calendar,
+                          exchange_calendar=_exchange_calendar())
     gateway.connect()
 
     account_id = config.account_id or MOCK_ACCOUNT
