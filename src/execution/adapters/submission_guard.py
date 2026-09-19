@@ -80,3 +80,80 @@ class PreSubmissionGateway:
     @property
     def attempted_writes(self) -> List[str]:
         return list(self.attempts)
+
+
+# ======================================================================
+# Phase 25.9G -- capture-only: guard the TRANSPORT as well
+# ======================================================================
+
+#: Transport methods that write to the venue. `reply` is included
+#: because answering an IBKR order-confirmation question is what
+#: actually places a confirmed order.
+TRANSPORT_WRITE_METHODS = ("place_order", "cancel_order", "reply")
+
+
+class ReadOnlyTransport:
+    """
+    Every read of an IBKR transport; no venue write, ever.
+
+    WHY THE GATEWAY GUARD WAS NOT ENOUGH FOR CAPTURE. `PreSubmissionGateway`
+    stops `submit_order`, `cancel_order` and `modify_order` at the gateway.
+    But the market-data service reads snapshots through
+    `gateway.transport` directly, and that object still carried
+    `place_order`, `cancel_order` and `reply`. No capture code called
+    them; "no code calls it" is a convention, and this phase requires a
+    structure. Wrapping the transport closes the second door.
+    """
+
+    submission_forbidden = True
+
+    def __init__(self, inner: Any):
+        object.__setattr__(self, "inner", inner)
+        object.__setattr__(self, "attempts", [])
+
+    def _refuse(self, method: str):
+        self.attempts.append(method)
+        raise BrokerSubmissionForbidden(method)
+
+    def place_order(self, *args, **kwargs):
+        self._refuse("place_order")
+
+    def cancel_order(self, *args, **kwargs):
+        self._refuse("cancel_order")
+
+    def reply(self, *args, **kwargs):
+        self._refuse("reply")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in ("inner", "attempts"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.inner, name, value)
+
+
+def capture_only(gateway: Any) -> PreSubmissionGateway:
+    """
+    A gateway that can observe the market and cannot touch it.
+
+    The transport is wrapped first, INSIDE the gateway, so every path
+    that reaches the venue -- the gateway's own methods and anything
+    holding `gateway.transport` -- meets a guard.
+    """
+    inner_transport = getattr(gateway, "transport", None)
+    if inner_transport is not None and not getattr(
+            inner_transport, "submission_forbidden", False):
+        gateway.transport = ReadOnlyTransport(inner_transport)
+    guarded = gateway if getattr(gateway, "submission_forbidden", False) \
+        else PreSubmissionGateway(gateway)
+    return guarded
+
+
+def broker_write_attempts(gateway: Any) -> List[str]:
+    """Every refused venue write, at either layer, in order."""
+    attempts = list(getattr(gateway, "attempts", []) or [])
+    transport = getattr(gateway, "transport", None)
+    attempts += list(getattr(transport, "attempts", []) or [])
+    return attempts

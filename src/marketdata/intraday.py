@@ -413,10 +413,29 @@ def instruments_with_bars(conn: sqlite3.Connection,
 # The operational -> research bridge
 # ======================================================================
 
+#: Version of the operational -> research archival transformation. Recorded
+#: by the capture layer beside every archived minute, so a later change to
+#: what "archivable" means is visible in the data it produced.
+ARCHIVE_VERSION = "v1"
+
+#: The research-cache `source` written for live-captured minutes. Its
+#: canonical classification is `IBKR_LIVE_CAPTURE` (see src/capture).
+LIVE_CAPTURE_SOURCE = "ibkr_operational_archive"
+
+#: Rows written per transaction. A crash loses at most one batch, never a
+#: whole session (Phase 25.9G, §58).
+ARCHIVE_BATCH = 500
+
+
 def archive_operational_bars(conn: sqlite3.Connection, *,
-                             source_label: str = "ibkr_operational_archive",
+                             source_label: str = LIVE_CAPTURE_SOURCE,
                              interval: str = RESEARCH_INTERVAL,
-                             complete_only: bool = True) -> Dict[str, int]:
+                             complete_only: bool = True,
+                             since: Optional[datetime] = None,
+                             until: Optional[datetime] = None,
+                             instruments: Optional[Sequence[str]] = None,
+                             batch_size: int = ARCHIVE_BATCH
+                             ) -> Dict[str, object]:
     """
     Rescue completed operational bars into the durable research cache.
 
@@ -431,19 +450,49 @@ def archive_operational_bars(conn: sqlite3.Connection, *,
     research consumer can always tell live-captured minutes from
     vendor ones, and an existing research candle is never overwritten:
     the vendor's record of a minute wins over our sampled one.
+
+    PHASE 25.9G, FOR CONTINUOUS USE. Audited before the capture process
+    called it for the first time, and it had never been called or
+    tested. It rescanned the WHOLE operational table on every call and
+    committed the lot as one transaction. Now:
+
+      - `since` / `until` bound the scan to a window of bar STARTS, so a
+        once-a-minute call reads minutes, not the month;
+      - writes commit every `batch_size` rows;
+      - the insert is `INSERT OR IGNORE` on the research key, so a
+        second pass -- a retry, a restart, a catch-up -- is harmless;
+      - the result carries `archived`, the (instrument, bar_start) keys
+        actually written, so the caller can record provenance.
+
+    Called with no bounds it behaves exactly as before.
     """
-    written = {"considered": 0, "written": 0, "skipped_existing": 0,
-               "skipped_quality": 0}
+    written: Dict[str, object] = {"considered": 0, "written": 0,
+                                  "skipped_existing": 0, "skipped_quality": 0,
+                                  "archived": []}
+    clauses: List[str] = []
+    params: List[object] = []
+    if since is not None:
+        clauses.append("bar_start >= ?")
+        params.append(since.astimezone(timezone.utc).isoformat())
+    if until is not None:
+        clauses.append("bar_start < ?")
+        params.append(until.astimezone(timezone.utc).isoformat())
+    if instruments:
+        clauses.append("instrument_id IN (%s)" % ",".join("?" * len(instruments)))
+        params.extend(instruments)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     try:
         rows = conn.execute(
             "SELECT instrument_id, bar_start, open, high, low, close, volume, "
-            "is_complete, is_gap FROM market_data_bars ORDER BY bar_start"
-        ).fetchall()
+            "is_complete, is_gap FROM market_data_bars" + where +
+            " ORDER BY bar_start, instrument_id", params).fetchall()
     except sqlite3.OperationalError as error:
         if "no such table" in str(error).lower():
             return written
         raise
 
+    pending = 0
+    archived: List[Tuple[str, str]] = []
     for (instrument_id, bar_start, open_, high, low, close, volume,
          is_complete, is_gap) in rows:
         written["considered"] += 1
@@ -454,20 +503,22 @@ def archive_operational_bars(conn: sqlite3.Connection, *,
         if stamp is None:
             written["skipped_quality"] += 1
             continue
-        existing = conn.execute(
-            "SELECT 1 FROM price_candle_cache WHERE instrument_id = ? "
-            "AND interval = ? AND timestamp = ?",
-            (instrument_id, interval, stamp.isoformat())).fetchone()
-        if existing:
-            written["skipped_existing"] += 1
-            continue
-        conn.execute(
-            "INSERT INTO price_candle_cache (instrument_id, interval, timestamp, "
-            "open, high, low, close, adjusted_close, volume, source, fetched_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO price_candle_cache (instrument_id, interval, "
+            "timestamp, open, high, low, close, adjusted_close, volume, source, "
+            "fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (instrument_id, interval, stamp.isoformat(), open_, high, low,
              close, close, volume, source_label,
              datetime.now(timezone.utc).isoformat()))
-        written["written"] += 1
+        if cursor.rowcount == 1:
+            written["written"] += 1
+            archived.append((instrument_id, stamp.isoformat()))
+            pending += 1
+            if pending >= batch_size:
+                conn.commit()
+                pending = 0
+        else:
+            written["skipped_existing"] += 1
     conn.commit()
+    written["archived"] = archived
     return written

@@ -1,0 +1,319 @@
+{
+  "version": "v1",
+  "purpose": "Phase 25.9G continuous intraday capture pilot",
+  "rule": "top 2 US-listed stocks per sector by daily-candle count in the research cache, ties broken by ticker; plus the SPY benchmark",
+  "excludes": "returns, signals, model output and labels",
+  "built_at": "2026-09-19T11:24:04.510393+00:00",
+  "built_from_db_sha256_prefix": "cd0967e95f7e60a9",
+  "instruments": [
+    {
+      "instrument_id": "benchmark-spy",
+      "ticker": "SPY",
+      "sector_id": "benchmark",
+      "asset_class": "etf",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "benchmark"
+    },
+    {
+      "instrument_id": "us_and_intl-ual",
+      "ticker": "UAL",
+      "sector_id": "airlines-aviation",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 213
+    },
+    {
+      "instrument_id": "us_and_intl-luv",
+      "ticker": "LUV",
+      "sector_id": "airlines-aviation",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 211
+    },
+    {
+      "instrument_id": "us_and_intl-bwa",
+      "ticker": "BWA",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 210
+    },
+    {
+      "instrument_id": "us_and_intl-rivn",
+      "ticker": "RIVN",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 209
+    },
+    {
+      "instrument_id": "us_and_intl-kmb",
+      "ticker": "KMB",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-clx",
+      "ticker": "CLX",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 210
+    },
+    {
+      "instrument_id": "us_and_intl-cop",
+      "ticker": "COP",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-vlo",
+      "ticker": "VLO",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 211
+    },
+    {
+      "instrument_id": "us_and_intl-usb",
+      "ticker": "USB",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 215
+    },
+    {
+      "instrument_id": "us_and_intl-spgi",
+      "ticker": "SPGI",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-mck",
+      "ticker": "MCK",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 213
+    },
+    {
+      "instrument_id": "us_and_intl-cor",
+      "ticker": "COR",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-itw",
+      "ticker": "ITW",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-rtx",
+      "ticker": "RTX",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-ecl",
+      "ticker": "ECL",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 213
+    },
+    {
+      "instrument_id": "us_and_intl-fcx",
+      "ticker": "FCX",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-wbd",
+      "ticker": "WBD",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 211
+    },
+    {
+      "instrument_id": "us_and_intl-cmcsa",
+      "ticker": "CMCSA",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 208
+    },
+    {
+      "instrument_id": "us_and_intl-cci",
+      "ticker": "CCI",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 211
+    },
+    {
+      "instrument_id": "us_and_intl-psa",
+      "ticker": "PSA",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 210
+    },
+    {
+      "instrument_id": "us_and_intl-cost",
+      "ticker": "COST",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 218
+    },
+    {
+      "instrument_id": "us_and_intl-amzn",
+      "ticker": "AMZN",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 215
+    },
+    {
+      "instrument_id": "us_and_intl-adi",
+      "ticker": "ADI",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-klac",
+      "ticker": "KLAC",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 209
+    },
+    {
+      "instrument_id": "us_and_intl-aapl",
+      "ticker": "AAPL",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 215
+    },
+    {
+      "instrument_id": "us_and_intl-dbx",
+      "ticker": "DBX",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 212
+    },
+    {
+      "instrument_id": "us_and_intl-vz",
+      "ticker": "VZ",
+      "sector_id": "telecommunications",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 207
+    },
+    {
+      "instrument_id": "us_and_intl-tmus",
+      "ticker": "TMUS",
+      "sector_id": "telecommunications",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 205
+    },
+    {
+      "instrument_id": "us_and_intl-aep",
+      "ticker": "AEP",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 213
+    },
+    {
+      "instrument_id": "us_and_intl-eix",
+      "ticker": "EIX",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "member",
+      "daily_candles_at_build": 211
+    }
+  ]
+}
