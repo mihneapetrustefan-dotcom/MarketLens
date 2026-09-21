@@ -131,6 +131,7 @@ class CaptureConfig:
     post_close_minutes: int = 10
     auth_retry_seconds: float = 60.0
     idle_poll_seconds: float = 300.0
+    idle_keepalive_seconds: float = 60.0
     feature_every_minutes: int = 5
     mapping_retry_minutes: int = 15
     lease_ttl_seconds: float = 900.0
@@ -384,8 +385,49 @@ class CaptureRunner:
         upcoming = self._next_pre_open(now)
         if upcoming is None:
             return self.config.idle_poll_seconds
-        return max(1.0, min(self.config.idle_poll_seconds,
-                            (upcoming - now).total_seconds()))
+        delay = max(1.0, min(self.config.idle_poll_seconds,
+                             (upcoming - now).total_seconds()))
+        window = self.calendar.session(now.astimezone(NEW_YORK).date())
+        if window.is_trading_day and now < window.opens_at and \
+                self._idle_keepalive(now):
+            delay = min(delay, self.config.idle_keepalive_seconds)
+        return delay
+
+    def _idle_keepalive(self, now: datetime) -> bool:
+        """
+        Keep a morning login alive until the pre-open.
+
+        A human who logs in to the gateway hours before the open would
+        otherwise find the session expired by the time capture first
+        used it. On a trading day, before the open, a live session gets
+        the same read-only keepalive the active session sends (one
+        request a minute). With no session, the gateway is asked quietly
+        every idle poll: no WAITING_FOR_AUTH is announced before the
+        pre-open, because nobody is expected to be logged in yet.
+        """
+        if self.connected:
+            self.budget.spend(now)
+            if self.gateway.heartbeat():
+                self.auth_state = "connected"
+                return True
+            self.connected = False
+            self.auth_state = "lapsed"
+            self._event("IDLE_SESSION_LAPSED", {})
+            return False
+        self.budget.spend(now, 2)
+        try:
+            state = self.gateway.connect()
+        except Exception as error:                        # noqa: BLE001
+            self.auth_state = f"unreachable: {type(error).__name__}"
+            return False
+        value = getattr(state, "value", str(state))
+        self.auth_state = value
+        if value == "connected":
+            self.connected = True
+            self._auth_announced = False
+            self._event("AUTHENTICATED", {"while": "idle before pre-open"})
+            return True
+        return False
 
     def _pre_open(self, now: datetime, window: SessionWindow) -> float:
         if self.state not in (CaptureState.WAITING_FOR_MARKET,

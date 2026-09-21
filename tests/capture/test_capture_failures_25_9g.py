@@ -366,3 +366,48 @@ class TestReports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestIdleKeepalive(_Case):
+    """A morning login is kept alive until the pre-open (read-only)."""
+
+    def test_morning_login_is_kept_alive_until_pre_open(self):
+        runner, venue, clock = self.start(at(7, 30, day=21))       # Monday
+        run_until(runner, clock, at(13, 5, day=21))
+        self.assertEqual(runner.auth_state, "connected")
+        # about one keepalive a minute across 5.5 hours
+        self.assertGreater(venue.keepalive_calls, 300)
+        self.assertEqual(venue.snapshot_calls, 0, "no market data before pre-open")
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM capture_sessions").fetchone()[0], 0)
+        self.assertEqual((venue.place_calls, venue.cancel_calls), (0, 0))
+
+    def test_session_carries_into_the_open_without_a_new_login(self):
+        runner, venue, clock = self.start(at(7, 30, day=21))
+        run_until(runner, clock, at(14, 0, day=21))
+        self.assertEqual(runner.state.value, "ACTIVE_SESSION")
+        self.assertEqual(len(self.events("AUTHENTICATED")), 1,
+                         "the morning login is the only login")
+
+    def test_nobody_logged_in_is_quiet_before_pre_open(self):
+        runner, venue, clock = self.start(at(7, 30, day=21))
+        venue.authenticated = False
+        run_until(runner, clock, at(13, 5, day=21))
+        self.assertEqual(self.events("WAITING_FOR_AUTH"), [])
+        self.assertEqual(runner.state.value, "IDLE")
+        self.assertLess(venue.auth_calls, 400, "polled every idle interval, not hammered")
+
+    def test_lapse_is_recorded_and_a_new_login_is_picked_up(self):
+        runner, venue, clock = self.start(at(7, 30, day=21))
+        run_until(runner, clock, at(9, 0, day=21))
+        venue.authenticated = False
+        run_until(runner, clock, at(10, 0, day=21))
+        self.assertEqual(len(self.events("IDLE_SESSION_LAPSED")), 1)
+        venue.authenticated = True
+        run_until(runner, clock, at(10, 10, day=21))
+        self.assertEqual(runner.auth_state, "connected")
+
+    def test_weekend_and_holiday_make_no_request(self):
+        runner, venue, clock = self.start(at(10, 0, day=19))        # Saturday
+        run_until(runner, clock, at(10, 0, day=20))
+        self.assertEqual((venue.auth_calls, venue.keepalive_calls), (0, 0))

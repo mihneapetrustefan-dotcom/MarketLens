@@ -59,12 +59,22 @@ class MovingVenue(MockIBKRTransport):
         self.clock = clock
         self.snapshot_calls = 0
         self.silent = set()          # conids the venue says nothing about
+        self.keepalive_calls = 0
+        self.auth_calls = 0
         self.stale_seconds = 0       # >0: quotes carry an old venue timestamp
         for i, ticker in enumerate(tickers):
             conid = str(900000 + i)
             self.add_contract(MockContract(conid=conid, symbol=ticker,
                                            primary_exchange="NYSE",
                                            company_name=ticker))
+
+    def keepalive(self):
+        self.keepalive_calls += 1
+        return super().keepalive()
+
+    def is_authenticated(self):
+        self.auth_calls += 1
+        return super().is_authenticated()
 
     def market_snapshot(self, conids, fields=()):
         self.snapshot_calls += 1
