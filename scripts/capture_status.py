@@ -112,6 +112,25 @@ def collect(db_path: str, state_path: str, now: datetime) -> dict:
             "SELECT session_id, tick_at, requested, tradeable, health "
             "FROM capture_ticks ORDER BY tick_at DESC LIMIT 1").fetchone()
         report["last_tick"] = dict(tick) if tick else None
+        # Stage B: the latest power and clock episode, if one is still open.
+        latest = {}
+        for kind, detail in conn.execute(
+                "SELECT kind, detail FROM capture_events WHERE kind IN ('ON_BATTERY', "
+                "'BATTERY_LOW', 'AC_RESTORED', 'CLOCK_SKEW', 'CLOCK_OK', 'STARTED') "
+                "ORDER BY event_id DESC LIMIT 50"):
+            group = ("clock" if kind.startswith("CLOCK") else
+                     "power" if kind != "STARTED" else None)
+            if group is None:
+                # a new process starts with no open episode of either kind
+                latest.setdefault("power", ("STARTED", "{}"))
+                latest.setdefault("clock", ("STARTED", "{}"))
+                continue
+            latest.setdefault(group, (kind, detail))
+        report["power_alert"] = (json.loads(latest["power"][1]) | {"kind": latest["power"][0]}
+                                 if latest.get("power", ("",))[0] in ("ON_BATTERY", "BATTERY_LOW")
+                                 else None)
+        report["clock_alert"] = (json.loads(latest["clock"][1])
+                                 if latest.get("clock", ("",))[0] == "CLOCK_SKEW" else None)
         if report["sessions"] and report["sessions"][0]["status"] != "finalized":
             live = report["sessions"][0]
             from src.capture.quality import session_coverage
@@ -182,6 +201,17 @@ def verdict(report: dict) -> int:
     if inst.get("state") == "WAITING_FOR_AUTH":
         reasons.append("IBKR gateway is not logged in: log in to the Client "
                        "Portal Gateway in a browser; capture resumes by itself")
+        code = ATTENTION
+    power = report.get("power_alert")
+    if power:
+        reasons.append("capture host is on BATTERY (%s%%): plug it in; on 2026-09-21 "
+                       "a flat battery ended the session 36 min early"
+                       % power.get("battery_percent"))
+        code = ATTENTION
+    clock = report.get("clock_alert")
+    if clock:
+        reasons.append("local clock is %ss behind venue time: tick times are not "
+                       "trusted until Windows resyncs it" % clock.get("venue_ahead_seconds"))
         code = ATTENTION
     finalized = [s for s in report.get("sessions", []) if s["status"] == "finalized"]
     if finalized and finalized[0]["quality"] in ("DEGRADED", "FAILED"):

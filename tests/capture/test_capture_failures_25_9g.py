@@ -526,3 +526,55 @@ class TestUSListingPolicy(_Case):
         runner.start()
         run_until(runner, clock, at(13, 20))
         self.assertEqual(runner.outcomes["us_and_intl-amzn"].status.value, "RESOLVED")
+
+
+class TestHostPowerAndClock(_Case):
+    """Phase 25.9H Stage B: the first real session ended on a flat battery,
+    and the host came back with its clock 674 s slow."""
+
+    def test_battery_is_announced_once_then_low_then_restored(self):
+        runner, venue, clock = self.start(at(13, 25))
+        run_until(runner, clock, at(14, 0))
+        venue.power = {"on_ac": False, "battery_percent": 94}
+        run_until(runner, clock, at(15, 0))
+        venue.power = {"on_ac": False, "battery_percent": 20}
+        run_until(runner, clock, at(15, 30))
+        venue.power = {"on_ac": True, "battery_percent": 21}
+        run_until(runner, clock, at(15, 40))
+        self.assertEqual(self.events("ON_BATTERY"), [{"battery_percent": 94}])
+        self.assertEqual(self.events("BATTERY_LOW"), [{"battery_percent": 20}])
+        self.assertEqual(self.events("AC_RESTORED"), [{"battery_percent": 21}])
+
+    def test_power_is_not_read_outside_a_session(self):
+        runner, venue, clock = self.start(at(10, 0, day=19))        # Saturday
+        venue.power = {"on_ac": False, "battery_percent": 5}
+        run_until(runner, clock, at(10, 0, day=20))
+        self.assertEqual(self.events("ON_BATTERY"), [])
+
+    def test_unknown_power_says_nothing(self):
+        runner, venue, clock = self.start(at(13, 25))
+        venue.power = {"on_ac": None, "battery_percent": None}
+        run_until(runner, clock, at(14, 0))
+        self.assertEqual(self.events("ON_BATTERY") + self.events("AC_RESTORED"), [])
+
+    def test_slow_local_clock_is_labelled_and_cannot_archive_past_the_close(self):
+        runner, venue, clock = self.start(at(13, 25))
+        run_until(runner, clock, at(19, 40))
+        venue.clock_offset_seconds = 674              # venue 11 min ahead of us
+        run_until(runner, clock, at(20, 15))
+        self.assertEqual(self.events("CLOCK_SKEW"), [{"venue_ahead_seconds": 674.0}])
+        skewed = self.conn.execute(
+            "SELECT COUNT(*) FROM capture_ticks WHERE health = 'CLOCK_SKEW'").fetchone()[0]
+        self.assertGreaterEqual(skewed, 15)
+        # bars are placed by venue time and the archive stops at the close
+        self.assertEqual(self.research_minutes(at(20, 0), at(21, 0)), 0)
+
+    def test_clock_recovery_is_recorded(self):
+        runner, venue, clock = self.start(at(13, 25))
+        run_until(runner, clock, at(14, 0))
+        venue.clock_offset_seconds = 300
+        run_until(runner, clock, at(14, 5))
+        venue.clock_offset_seconds = 1        # resynced: a second of jitter
+        run_until(runner, clock, at(14, 20))
+        self.assertEqual(len(self.events("CLOCK_SKEW")), 1)
+        self.assertEqual(len(self.events("CLOCK_OK")), 1)

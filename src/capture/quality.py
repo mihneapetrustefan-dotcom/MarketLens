@@ -29,7 +29,10 @@ and classified, with the rule written here rather than tuned later:
 
 MATURITY IS COUNTED IN SESSIONS (§35-§37)
 ----------------------------------------------
-Qualifying sessions are GOOD and PARTIAL. The verdict reuses
+Qualifying sessions are GOOD and PARTIAL, and REALTIME: a session whose
+quotes were delayed (a paper account without a live subscription -- every
+quote of the first real session, 2026-09-21) never counts, whatever its
+grade; nor does one whose realtime status was not recorded. The verdict reuses
 `scripts/audit_intraday_data.calendar_ceiling` unchanged -- one rule for
 "how much intraday history is enough", not two. The milestones
 20/40/60/90/120 are planning targets: reaching one says the calendar
@@ -55,6 +58,10 @@ PARTIAL_WINDOW = 0.90
 FAILED_FLOOR = 0.10
 
 QUALIFYING = ("GOOD", "PARTIAL")
+#: A qualifying session must also be REALTIME: at least this share of its
+#: observed quotes carried IBKR's realtime marker. Delayed quotes are
+#: someone else's past, on a clock the features cannot see.
+REALTIME_SHARE = 0.90
 MILESTONES = (20, 40, 60, 90, 120)
 
 
@@ -265,6 +272,23 @@ def _trading_days_after(start: date, count: int,
     return None
 
 
+def realtime_status(conn: sqlite3.Connection, session_id: str) -> str:
+    """REALTIME, DELAYED or UNPROVEN, from the per-tick availability counts."""
+    try:
+        realtime, delayed, unknown = conn.execute(
+            "SELECT COALESCE(SUM(realtime), 0), COALESCE(SUM(delayed), 0), "
+            "COALESCE(SUM(unknown_availability), 0) FROM capture_ticks "
+            "WHERE session_id = ?", (session_id,)).fetchone()
+    except sqlite3.OperationalError:                       # pre-25.9H schema
+        return "UNPROVEN"
+    observed = realtime + delayed + unknown
+    if not observed:
+        return "UNPROVEN"
+    if realtime >= REALTIME_SHARE * observed:
+        return "REALTIME"
+    return "DELAYED" if delayed >= unknown else "UNPROVEN"
+
+
 def maturity(conn: sqlite3.Connection, today: date,
              calendar: Optional[USEquityCalendar] = None) -> Dict[str, Any]:
     """Where the captured corpus stands, in sessions and calendar months."""
@@ -284,14 +308,18 @@ def maturity(conn: sqlite3.Connection, today: date,
         "SELECT session_id, session_date, quality, session_type FROM capture_sessions "
         "WHERE status = 'finalized' ORDER BY session_date").fetchall()
     evidence = {r[0]: session_evidence(conn, r[0]) for r in all_rows}
-    rows = [r[1:] for r in all_rows if evidence[r[0]] == "REAL"]
+    real_rows = [r for r in all_rows if evidence[r[0]] == "REAL"]
+    rows = [r[1:] for r in real_rows]
     excluded = {sid: ev for sid, ev in evidence.items() if ev != "REAL"}
+    availability = {r[0]: realtime_status(conn, r[0]) for r in real_rows}
+    not_realtime = {sid: st for sid, st in availability.items() if st != "REALTIME"}
+    realtime_dates = {r[1] for r in real_rows if availability[r[0]] == "REALTIME"}
     by_quality = {q: 0 for q in ("GOOD", "PARTIAL", "DEGRADED", "FAILED")}
     qualifying_dates: List[str] = []
     early_close = sum(1 for r in rows if r[2] == "early_close")
     for session_date, quality, _type in rows:
         by_quality[quality] = by_quality.get(quality, 0) + 1
-        if quality in QUALIFYING:
+        if quality in QUALIFYING and session_date in realtime_dates:
             qualifying_dates.append(session_date)
     sessions = len(qualifying_dates)
     months = len({d[:7] for d in qualifying_dates})
@@ -316,6 +344,7 @@ def maturity(conn: sqlite3.Connection, today: date,
     return {
         "evidence": "REAL sessions only",
         "excluded_non_real_sessions": excluded,
+        "excluded_not_realtime_sessions": not_realtime,
         "finalized_sessions": len(rows),
         "by_quality": by_quality,
         "full_sessions": by_quality["GOOD"],

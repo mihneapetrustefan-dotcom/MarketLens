@@ -267,3 +267,43 @@ class TestReadOnlyCommand(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestClockEvidence(unittest.TestCase):
+    """Stage B: a few seconds of venue/host disagreement is normal; minutes
+    mean the local clock was wrong, and its tick times are not trusted."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base = captured(config=CaptureConfig(feature_every_minutes=5))
+
+    def setUp(self):
+        self.conn = copy(self.base)
+
+    def test_seconds_of_jitter_is_not_a_future_timestamp(self):
+        self.conn.execute(
+            "UPDATE capture_quote_samples SET broker_at = "
+            "strftime('%Y-%m-%dT%H:%M:%f', julianday(received_at) + 4.5 / 86400.0) "
+            "|| '+00:00' WHERE rowid <= 3")
+        result = audit.acceptance(self.conn)
+        self.assertEqual(status(result, "no venue timestamp in the future"), "PASS")
+        detail = next(c["detail"] for c in result["checks"]
+                      if c["check"] == "no venue timestamp in the future")
+        self.assertEqual(detail["within_tolerance"], 3)
+
+    def test_skewed_local_clock_fails_and_its_windows_are_not_expected(self):
+        # the last 8 ticks: local clock 674 s slow, no features computed
+        last = [r[0] for r in self.conn.execute(
+            "SELECT tick_at FROM capture_ticks ORDER BY tick_at DESC LIMIT 8")]
+        self.conn.executemany("UPDATE capture_ticks SET venue_lag_seconds = -674 "
+                              "WHERE tick_at = ?", [(t,) for t in last])
+        self.conn.execute("DELETE FROM intraday_feature_values WHERE cutoff >= ?",
+                          (min(last)[:16],))
+        result = audit.acceptance(self.conn)
+        self.assertEqual(status(result, "local clock agrees with venue time"), "FAIL")
+        self.assertEqual(result["quotes"]["clock_skewed_ticks"], 8)
+        self.assertEqual(result["features"]["missing_cutoffs"], [])
+
+    def test_clean_session_clock_passes(self):
+        result = audit.acceptance(self.conn)
+        self.assertEqual(status(result, "local clock agrees with venue time"), "PASS")

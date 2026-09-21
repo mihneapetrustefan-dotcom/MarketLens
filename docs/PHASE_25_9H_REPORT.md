@@ -1,6 +1,6 @@
 # Phase 25.9H — Real IBKR Capture Validation & First-Session Data Quality Audit
 
-**Status of this document: STAGE A (pre-session), written 2026-09-21 08:20 UTC.** The first real session opens today at 13:30 UTC. Every Stage B section below is marked **PENDING**; none of it is filled from assumption.
+**Status of this document: STAGE A (pre-session), written 2026-09-21 08:20 UTC, left as written. STAGE B (post-session), written 2026-09-21 ~20:45 UTC, is appended at the end ([Stage B](#stage-b--first-real-session-2026-09-21)); it answers every PENDING below from persisted evidence.** Stage A was not rerun: nothing in the session evidence contradicted it.
 
 Evidence labels:
 
@@ -255,3 +255,208 @@ NEXT ACTION:
 Let the existing persistent capture process collect the real market session.
 After the session, resume Phase 25.9H Stage B against the existing capture
 store. Do not rebuild Stage A unless evidence requires it.
+
+---
+---
+
+# Stage B — First Real Session, 2026-09-21
+
+Written after the close, from persisted evidence only. The store was opened read-only (`mode=ro`) and nothing was rebuilt. Sources:
+
+- `capture_status.py`, `capture_report.py` and `capture_report.py --acceptance`
+- `capture_events`, `capture_ticks`, `capture_quote_samples` and `market_data_bars`
+- `data/capture/logs/` and `supervisor.json`
+- the Windows System log and `powercfg /batteryreport`
+
+## B1. Verdict
+
+**REAL DATA CAPTURED BUT SESSION INVALID. Quality DEGRADED. Not qualifying.**
+
+- **What was captured is real and clean.** From 13:30 to 19:23 UTC, all 31 members were real IBKR quotes, archived with no duplicates, gaps or contamination, and 0 broker writes.
+- **The capture ended 36 minutes early.** The laptop ran on battery from 16:26 UTC and **lost power at ~19:24 UTC**. It rebooted uncleanly and came back with its **system clock 674 s slow**, which is what made the remaining evidence invalid.
+- **It would not count even if GOOD.** The data was **delayed for the entire session** (11,222 delayed quotes, 0 realtime).
+
+## B2. Timeline
+
+All times are UTC, each taken from the named source. Times in quotes are the host's slow clock, which ran 674 s behind real time until 20:11:48.
+
+| Time | Event | Source |
+|---|---|---|
+| 11:48 | Laptop taken off AC before the session; back on AC at 14:55 with 20% left | battery report, Kernel-Power 105 |
+| 13:10 | Preflight: 30 of 31 AMBIGUOUS (IBKR lists foreign venues and returns no currency) | `MAPPED` event |
+| 13:22 | Fix `3f63152` deployed; restart; 31/31 RESOLVED | events, commit |
+| 13:28 | WARMED_UP (31) | event |
+| 13:30:00.2 | First tick; 31 requested | ticks |
+| 13:55:42 | Child stopped itself ("stop requested"), with no STOP file and the supervisor alive; back at 13:55:54 | log, events |
+| 16:26 | **Laptop taken off AC again, 94%** | Kernel-Power 105, battery report |
+| 16:38:48 | Same self-stop as 13:55; back at 16:39:05 | log, events |
+| 17:07:17 | AUTH_LOST (keepalive refused); re-authenticated 17:08:38 with no human action | events |
+| 19:23 | Battery at 3% | battery report |
+| 19:24:02 | Last tick of the session | ticks |
+| ~19:24 | **Unclean power loss** (Kernel-Power 41; EventLog 6008: "previous system shutdown … was unexpected") | System log |
+| boot, +1–5 min | TrustedInstaller (Windows Update) forces **three more reboots** (User32 1074 ×3) | System log |
+| boot | System time initialized from the RTC **674 s slow** | Kernel-General 1 at the correction |
+| "19:31" | New supervisor started by Task Scheduler with no human action | supervisor log |
+| "19:31–19:39" | New child refused 12 times: the dead instance's lease had not yet expired (exit 3) | capture log |
+| "19:39" | LEASE_TAKEOVER; gateway **not authenticated** after the reboot | events |
+| "19:52:25" = **20:03:39 real** | You logged in; capture resumed **after the close**, on the slow clock | events, lag −674 s |
+| "19:52–19:59" = 20:03–20:10 real | 8 ticks labelled in-session; bars placed by venue time at 20:03–20:10; **none archived, no features** | ticks, bars |
+| "20:00:03" = 20:11:17 real | Session finalized, DEGRADED | event |
+| 20:11:48 | Windows resyncs the clock (**Time Delta 674,488 ms**). The runner logged this as a 406 s "HOST_SUSPEND_GAP". | Kernel-General 1, event |
+
+## B3. Acceptance Record (`capture_report.py --acceptance`)
+
+**Scope and quality**
+
+| Field | Value |
+|---|---|
+| Evidence | **REAL** (all 4 ticking instances used `ClientPortalTransport`) |
+| Status / quality | finalized / DEGRADED |
+| Instances / takeovers | 4 / 1 |
+| Auth outages / waits / re-auths | 1 / 2 / 5 |
+| Resolved | 31/31 |
+
+**Coverage**
+
+| Field | Value |
+|---|---|
+| Captured minutes | 354 of 390 (0.908), all before the crash |
+| Instrument-minutes, observed / resolved | 9,820 / 12,090 (0.812). Before the crash: 9,820 of 10,974 (0.895) |
+| Cross-sectional ≥80% minutes | 328 |
+| Minutes with ≥1 / ≥3 / ≥5 instruments | 354 / 351 / 351 |
+| Median simultaneous | 28 of 31 |
+| 1-minute dispersion coverage | 0.975 |
+| Largest gap | 36 min, 19:24–20:00, all 31 instruments. Attributed "PROCESS RESTART"; **actually a host power loss.** |
+
+**Archive, features and requests**
+
+| Field | Value |
+|---|---|
+| Archive | 9,820 bars; 0 duplicates, 0 gap/incomplete archived, 0 unarchived complete, 0 OHLC mismatch, single source |
+| Features | 72 cutoffs computed, 0 failed, 0 non-finite, 37,715 values, v1 |
+| Requests | max 5 per minute (budget 50); 0 tick overruns; average tick 0.76 s, max 9.3 s |
+| Broker writes | **0** |
+
+**Checks (after this stage's audit corrections, §B6)**
+
+| Check | Result | Why |
+|---|---|---|
+| no mock session, write scope, broker writes, REAL, finalized | PASS | |
+| archive integrity | PASS | |
+| contract identity, universe mapped | PASS | |
+| request budget, tick overrun | PASS | |
+| features at every due cutoff | **FAIL** (19:50) | The window comes from the tick stamped "19:52:23", really taken at 20:03:37. That tick returned no quote (all unavailable just after re-login), so it carries no venue time and cannot be flagged as skewed by itself. No real due cutoff was missed. |
+| no venue timestamp in the future | **FAIL** (124 beyond 5 s) | All 124 are slow-clock ticks. 56 more, before the crash, were within 4.5 s: ordinary jitter. |
+| local clock agrees with venue time | **FAIL** (7 ticks, up to 674.7 s) | Host clock after the power loss |
+| no large gap | WARN (36) | Power loss |
+| realtime data | WARN | 0 realtime, 11,222 delayed |
+
+## B4. Real Market Data Findings (closes the Stage A PENDING items)
+
+| Stage A item | Evidence | Label |
+|---|---|---|
+| J. contract mapping | 31/31 RESOLVED to single US primary listings (e.g. AAPL 265598, SPY 756733 ARCA) after the 13:22 fix | VERIFIED REAL IBKR |
+| K. request budget | max 5/min; one batched snapshot per tick | VERIFIED REAL IBKR |
+| L–N. quote shape, delayed/realtime | Last, bid, ask and volume present. IBKR's marker says **delayed for every quote**: this paper account has no live subscription. The service caps delayed quotes at AGING, so `tradeable=0` and per-tick `health=failed` all day. That is a trading verdict, not a capture failure. | VERIFIED REAL IBKR |
+| O. timestamps | `_updated` tracks receipt within ~0.3 s on average (−4.5 to +2.8 s). **So venue "lag" measures gateway refresh, not data delay:** the delay shows only in the marker. The spread of venue times across instruments averages 52 s (max 1,020 s), because illiquid names do not update every minute. | VERIFIED REAL IBKR |
+| P. bars | 9,840 bars written before the crash. About 10% of instrument-minutes had no new quote inside the minute (a snapshot of an unchanged delayed quote). "Invalid" quotes (venue time ahead of receipt) still build bars, so no data was lost to that label. | VERIFIED REAL IBKR |
+| Q. gaps | 1 (the power loss); 17 gap markers, kept out of the archive | VERIFIED |
+| R. archive / provenance | Clean (B3) | VERIFIED |
+| S. features | Computed at every real cadence slot | VERIFIED |
+| T. auth stability | One IBKR-side reset (17:07), recovered in 81 s without a human. A reboot needs a human login. | VERIFIED REAL IBKR |
+| U. process stability | Two spurious self-stops of 12–17 s each; 0 minutes lost (every minute 13:30–19:23 has bars) | REAL HOST |
+| V. storage | 18.5 MB + 2.5 MB WAL after one session; `quick_check` ok; 26.1 GB free | REAL HOST |
+| W. EOD finalization | Ran, but 11 min late on the slow clock | REAL HOST |
+| X. keep-awake | Honoured every time; no idle sleep all session. It cannot prevent a power loss. | REAL HOST |
+
+## B5. Findings
+
+| ID | Severity | Finding | Evidence | Fix |
+|---|---|---|---|---|
+| B-01 | **HIGH** | The host ran on battery during market hours and died 36 min before the close | Kernel-Power 105/41; EventLog 6008; battery report 94% → 3% | **Operational: keep the laptop on AC from 16:10 to 23:10 local.** Code: the runner now reads the power source during a session and records `ON_BATTERY`, `BATTERY_LOW` (≤25%) and `AC_RESTORED`; `capture_status` shows ATTENTION while on battery. It cannot plug the laptop in. |
+| B-02 | **HIGH** | After the power loss the system clock ran 674 s slow until Windows resynced it 48 min later. The runner trusted it: 8 post-close ticks were labelled in-session, and finalization ran 11 min late. | lag −674 on every measured tick of `cap-94c2`; Kernel-General 1 | Runner: a tick whose venue time is >60 s ahead of the local clock gets `health=CLOCK_SKEW`, with one `CLOCK_SKEW`/`CLOCK_OK` event per episode; `capture_status` shows ATTENTION. Bars are placed by venue time and archived only inside the session window, so research data was not moved and cannot be (a test proves nothing past the close is archived). |
+| B-03 | MEDIUM | Windows Update (TrustedInstaller) restarted the machine three times at 22:25–22:29 local, during market hours | User32 1074 ×3 | **Operational:** set Windows Update active hours to cover 16:00–23:30 local (Settings → Windows Update → Advanced options). A system setting: yours to change, not the code's. |
+| B-04 | MEDIUM | The child stopped itself twice mid-session with the supervisor alive: `supervisor_gone()` treated one failed read of `supervisor.json` as a dead supervisor. The probable cause is a Windows sharing violation while the supervisor `os.replace`s the file. | "stop requested"; no STOP file; exit 0; same supervisor | `supervisor_gone` re-reads up to 3 times, 0.5 s apart. A missing or stale file still counts as gone (tests for both). **Cause inferred, not reproduced.** |
+| B-05 | MEDIUM | The acceptance audit counted ≤4.5 s of venue/host jitter as "future" timestamps, and derived feature windows from untrustworthy slow-clock ticks | 56 pre-crash samples within 4.5 s | Audit: 5 s tolerance, with the within-tolerance count still reported; new check "local clock agrees with venue time"; skewed ticks no longer create expected feature windows; negative controls added. **This session's verdict is unchanged: INVALID.** |
+| B-06 | MEDIUM | Research maturity would have counted a GOOD session of **delayed** data | 0 realtime all session | `quality.maturity` counts only REALTIME sessions (≥90% of observed quotes realtime). DELAYED and UNPROVEN sessions are listed under `excluded_not_realtime_sessions`. Test added. |
+| B-07 | LOW | After a crash, a new supervisor waits out the dead instance's 15-min lease (8 min here). No data was lost: the gateway needed a human login, which came after the close. | 12 × exit 3 | Documented; TTL unchanged. A takeover based on a dead PID is not worth its risk when no data was lost. |
+| B-08 | LOW | The gap cause reads "PROCESS RESTART" for what was a power loss, because the store cannot see boots | gaps | Documented; B-01's events make future cases attributable |
+| B-09 | INFO | Venue lag does not measure data delay (B4, row O) | samples | Documented; the marker is the evidence |
+| B-10 | INFO | Saturday's vanished processes (H-06) now have a likely sibling: today's disappearance was a hard power loss, not a Python crash | — | H-06 stays open; sleep plus battery is the prime suspect |
+
+## B6. Changes in This Stage
+
+| File | Change |
+|---|---|
+| `src/capture/host.py` | `power_status()` (read-only `GetSystemPowerStatus`) |
+| `src/capture/runner.py` | Power check during a session; clock-skew labelling and events; config `clock_skew_seconds=60`, `battery_low_percent=25` |
+| `scripts/run_capture.py` | `supervisor_gone` retries a failed read |
+| `scripts/capture_status.py` | ATTENTION on an open battery or clock-skew episode |
+| `src/capture/audit.py` | 5 s venue-clock tolerance; local-clock check; skewed ticks excluded from feature windows |
+| `src/capture/quality.py` | Only REALTIME sessions qualify |
+| tests | 5 runner (power, skew, recovery), 3 audit, 2 supervisor-read, status codes, 1 maturity; the harness fakes power and a venue clock offset |
+
+None of this touches the order path, the gateway guards or `ordering_enabled`.
+
+## B7. Isolation and Integrity (re-run, all read-only)
+
+| Audit | Result |
+|---|---|
+| research integrity | CLEAN, exit 0; ledger chain intact; D20 NOT_CONSUMED |
+| D20 readiness (status only) | NOT READY (before 2026-09-25; 213 pending) |
+| live safety | 16/16 PASS |
+| trading readiness | Order submission impossible; stop point unchanged |
+| capture write scope | PASS; execution tables empty |
+
+## B8. Research Data Maturity
+
+**INSUFFICIENT: 0 qualifying sessions.**
+
+- Today's session is DEGRADED. Under B-06 it would be excluded as DELAYED even if it were GOOD.
+- Until the account has a realtime subscription, **no session can qualify**, so progress toward the 20-session milestone has not started. For the paper account, that means IBKR market-data sharing from a funded live account.
+
+## B9. Phase 25.9G Closure
+
+**CLOSED: capture works against the real venue.** It mapped, polled, built bars, archived, computed features, recovered from an IBKR auth reset without a human, and finalized, with 0 broker writes. The session is invalid because of the host (power, clock, Windows Update), not the capture design.
+
+## B10. Next Evidence-Based Steps
+
+1. **You, before 16:10 local tomorrow:** keep the laptop on AC, set Windows Update active hours (B-03), and log in to the gateway.
+2. **Deploy:** these changes go live at a closed-market boundary (stop, then start); see the commit.
+3. **After tomorrow's close:** run `capture_report.py --acceptance`. Expected: without a power loss, a GOOD or DEGRADED grade on data quality alone, still not qualifying while data is delayed.
+4. **Realtime data** is the gate for maturity. When the live account is funded, add the paper-account (DU…) guard before any capture or trading is pointed at it.
+
+---
+
+PHASE 25.9H STAGE B:
+COMPLETE
+
+REAL SESSION:
+CAPTURED (DEGRADED; 354/390 minutes; host power loss)
+
+ACCEPTANCE VERDICT:
+REAL DATA CAPTURED BUT SESSION INVALID
+
+REAL IBKR MARKET DATA:
+VERIFIED (DELAYED)
+
+BROKER WRITES:
+0
+
+PHASE 25.9G:
+CLOSED
+
+RESEARCH MATURITY:
+INSUFFICIENT (0 qualifying; delayed sessions never count)
+
+D20 RESULT:
+UNSEEN
+
+D20 TEST:
+NOT EXECUTED
+
+REAL IBKR ORDER:
+NOT ATTEMPTED
+
+LIVE:
+DISABLED

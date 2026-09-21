@@ -140,6 +140,10 @@ class CaptureConfig:
     locked_retry_seconds: float = 5.0
     source_label: str = LIVE_CAPTURE_SOURCE
     bar_retention_days: int = 30
+    #: Venue time more than this far AHEAD of the local clock means the
+    #: local clock is wrong (2026-09-21: 674 s slow after a power loss).
+    clock_skew_seconds: float = 60.0
+    battery_low_percent: int = 25
 
 
 def _iso(moment: Optional[datetime]) -> Optional[str]:
@@ -159,7 +163,8 @@ class CaptureRunner:
                  calendar: Optional[USEquityCalendar] = None,
                  stop_requested: Callable[[], bool] = lambda: False,
                  instance_id: Optional[str] = None,
-                 keep_awake: Optional[Callable[[bool], bool]] = None):
+                 keep_awake: Optional[Callable[[bool], bool]] = None,
+                 power_status: Optional[Callable[[], Dict[str, Any]]] = None):
         if not getattr(gateway, "submission_forbidden", False) or not getattr(
                 getattr(gateway, "transport", None), "submission_forbidden", False):
             # Structural, not advisory: an unguarded gateway is refused
@@ -178,6 +183,12 @@ class CaptureRunner:
         #: Injectable so tests never touch the real power state.
         self._keep_awake_fn = keep_awake if keep_awake is not None else host.set_keep_awake
         self._awake = False
+        #: Stage B: read the power source during a session (injectable, as
+        #: above). A laptop off AC ran flat 36 minutes before the close.
+        self._power_status_fn = power_status if power_status is not None else host.power_status
+        self._on_battery = False
+        self._battery_low = False
+        self._clock_skewed = False
         #: Class name of the real transport under both guards. "Real" in
         #: every report means this was ClientPortalTransport.
         inner = getattr(gateway.transport, "inner", gateway.transport)
@@ -301,6 +312,27 @@ class CaptureRunner:
         self._awake = on
         self._event("KEEP_AWAKE", {"on": on, "honoured": bool(honoured)},
                     self.session_id)
+
+    def _check_power(self) -> None:
+        """Say so, once per episode, when a session runs on battery."""
+        try:
+            status = self._power_status_fn() or {}
+        except Exception:                                  # noqa: BLE001
+            return
+        on_ac, percent = status.get("on_ac"), status.get("battery_percent")
+        if on_ac is False:
+            if not self._on_battery:
+                self._on_battery = True
+                self._event("ON_BATTERY", {"battery_percent": percent}, self.session_id)
+                LOG.warning("capture host is on BATTERY (%s%%) during a session; "
+                            "plug it in or the session ends when it runs flat", percent)
+            if percent is not None and percent <= self.config.battery_low_percent                     and not self._battery_low:
+                self._battery_low = True
+                self._event("BATTERY_LOW", {"battery_percent": percent}, self.session_id)
+                LOG.warning("capture host battery LOW: %s%%", percent)
+        elif on_ac is True and self._on_battery:
+            self._on_battery = self._battery_low = False
+            self._event("AC_RESTORED", {"battery_percent": percent}, self.session_id)
 
     def shutdown(self, reason: str) -> None:
         now = self.clock.now()
@@ -472,6 +504,7 @@ class CaptureRunner:
 
     def _active(self, now: datetime, window: SessionWindow) -> float:
         self._hold_awake(True)
+        self._check_power()
         if not self._ensure_auth(now):
             if self.session_id is None:
                 self._open_session(now, window, mapped=False)
@@ -721,6 +754,22 @@ class CaptureRunner:
                                                "error": str(error)[:300]},
                             self.session_id)
         observed = self._observe_quotes(now)
+        # Bars are placed by venue time and archived inside the session
+        # window, so a wrong local clock cannot move research data -- but it
+        # moves the lifecycle (what counts as in-session, finalization,
+        # cutoffs). Label every such tick and say so once per episode.
+        lag = observed["lag"]
+        if lag is not None and lag < -self.config.clock_skew_seconds:
+            health = "CLOCK_SKEW"
+            if not self._clock_skewed:
+                self._clock_skewed = True
+                self._event("CLOCK_SKEW", {"venue_ahead_seconds": round(-lag, 1)},
+                            self.session_id)
+                LOG.warning("local clock is %.0fs behind venue time; ticks are "
+                            "labelled CLOCK_SKEW until it recovers", -lag)
+        elif lag is not None and self._clock_skewed:
+            self._clock_skewed = False
+            self._event("CLOCK_OK", {"venue_lag_seconds": lag}, self.session_id)
         self.conn.execute(
             "INSERT OR REPLACE INTO capture_ticks (session_id, tick_at, "
             "instance_id, requested_at, received_at, target_minute, requested, "

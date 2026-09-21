@@ -119,16 +119,30 @@ def open_store(path: str) -> sqlite3.Connection:
     return conn
 
 
-def supervisor_gone(state_path: str) -> bool:
+def supervisor_gone(state_path: str, attempts: int = 3,
+                    retry_seconds: float = 0.5) -> bool:
+    """
+    True when the supervisor's state file is missing, unreadable or stale.
+
+    One failed read is not proof: on Windows, opening the file while the
+    supervisor `os.replace`s it can fail with a sharing violation. On
+    2026-09-21 the child stopped itself twice mid-session ("stop
+    requested", no STOP file, supervisor alive), consistent with exactly
+    that. So an unreadable file is re-read before it counts.
+    """
     if not state_path:
         return False
-    try:
-        with open(state_path, encoding="utf-8") as handle:
-            state = json.load(handle)
-        stamp = datetime.fromisoformat(state["updated_at"])
-    except (OSError, ValueError, KeyError):
-        return True
-    return (datetime.now(timezone.utc) - stamp).total_seconds() > SUPERVISOR_STALE_SECONDS
+    for attempt in range(attempts):
+        try:
+            with open(state_path, encoding="utf-8") as handle:
+                state = json.load(handle)
+            stamp = datetime.fromisoformat(state["updated_at"])
+        except (OSError, ValueError, KeyError):
+            if attempt + 1 < attempts:
+                time.sleep(retry_seconds)
+            continue
+        return (datetime.now(timezone.utc) - stamp).total_seconds() > SUPERVISOR_STALE_SECONDS
+    return True
 
 
 def main(argv=None) -> int:

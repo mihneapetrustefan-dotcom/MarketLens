@@ -182,6 +182,25 @@ class TestLaunchGuards(_Supervised):
         self.assertTrue(supervisor_gone(self.args.state_file))
         self.assertFalse(supervisor_gone(""))       # unsupervised: never orphaned
 
+    def test_one_failed_read_is_not_a_dead_supervisor(self):
+        # 2026-09-21: the child stopped itself twice mid-session with the
+        # supervisor alive; a read racing os.replace fails on Windows.
+        capture_supervisor.write_state({"state": "RUNNING"}, self.args.state_file)
+        real_open, calls = open, {"n": 0}
+
+        def flaky(path, *args, **kwargs):
+            if path == self.args.state_file and calls["n"] == 0:
+                calls["n"] += 1
+                raise PermissionError(13, "sharing violation")
+            return real_open(path, *args, **kwargs)
+        with mock.patch("builtins.open", flaky):
+            self.assertFalse(supervisor_gone(self.args.state_file, retry_seconds=0))
+        self.assertEqual(calls["n"], 1)
+
+    def test_a_missing_state_file_is_still_a_dead_supervisor(self):
+        missing = self.args.state_file + ".absent"
+        self.assertTrue(supervisor_gone(missing, retry_seconds=0))
+
 
 class TestStatusVerdicts(unittest.TestCase):
 
@@ -213,6 +232,12 @@ class TestStatusVerdicts(unittest.TestCase):
                          capture_status.SAFETY)
         self.assertEqual(v(self.report(mappings={"RESOLVED": 29, "AMBIGUOUS": 2})),
                          capture_status.ATTENTION)
+        on_battery = self.report(power_alert={"kind": "ON_BATTERY", "battery_percent": 60})
+        self.assertEqual(v(on_battery), capture_status.ATTENTION)
+        self.assertIn("BATTERY", on_battery["reasons"][0])
+        skewed = self.report(clock_alert={"venue_ahead_seconds": 674.7})
+        self.assertEqual(v(skewed), capture_status.ATTENTION)
+        self.assertIn("674.7", skewed["reasons"][0])
         self.assertEqual(v(self.report(sessions=[{"session_id": "s", "status":
                                                   "finalized", "quality": "FAILED"}])),
                          capture_status.ATTENTION)

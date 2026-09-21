@@ -44,6 +44,12 @@ REAL_TRANSPORT = "ClientPortalTransport"
 FEATURE_EVERY_MINUTES = 5
 BOUNDARY_TOLERANCE = timedelta(minutes=5)
 LARGE_GAP_MINUTES = 15
+#: Venue and host clocks legitimately disagree by a few seconds (first real
+#: session: up to 4.5 s either way). Beyond this a venue time is "future".
+VENUE_CLOCK_TOLERANCE_SECONDS = 5.0
+#: Venue time this far ahead of the local clock means the LOCAL clock is
+#: wrong; such ticks' local times are not trusted (matches the runner).
+CLOCK_SKEW_SECONDS = 60.0
 EXECUTION_TABLES = ("execution_orders", "execution_fills", "order_intents",
                     "execution_events", "trained_models", "model_promotions",
                     "predictions", "signals", "risk_decisions")
@@ -160,8 +166,15 @@ def feature_coverage(conn: sqlite3.Connection, session_id: str,
     def window(moment: datetime) -> int:
         return int((moment - opens) // step)
 
+    # A tick taken while the local clock was wrong (venue time far ahead of
+    # it) has an untrustworthy tick_at: its window is not a real session
+    # window. First real session: 8 ticks stamped 19:52-19:59 were really
+    # taken at 20:03-20:10, after the close.
+    skew_filter = (" AND (venue_lag_seconds IS NULL OR venue_lag_seconds >= ?)"
+                   if _has_column(conn, "capture_ticks", "venue_lag_seconds") else "")
+    params = (session_id, -CLOCK_SKEW_SECONDS) if skew_filter else (session_id,)
     boundaries = [_parse(r[0]).replace(second=0, microsecond=0) for r in conn.execute(
-        "SELECT tick_at FROM capture_ticks WHERE session_id = ?", (session_id,))]
+        "SELECT tick_at FROM capture_ticks WHERE session_id = ?" + skew_filter, params)]
     # Eligible only once the session has a closed bar to compute from: a
     # cutoff before the first archived minute has nothing to describe.
     first_bar = conn.execute(
@@ -301,12 +314,16 @@ def quote_evidence(conn: sqlite3.Connection, session_id: str) -> Dict[str, Any]:
         "SUM(unavailable), MAX(venue_spread_seconds), AVG(venue_spread_seconds), "
         "AVG(venue_lag_seconds), MAX(venue_lag_seconds), MIN(venue_lag_seconds), "
         "MAX(requests_last_minute), AVG(duration_seconds), MAX(duration_seconds), "
-        "SUM(duration_seconds > 60) FROM capture_ticks WHERE session_id = ?",
-        (session_id,)).fetchone()
+        "SUM(duration_seconds > 60), SUM(venue_lag_seconds < ?) "
+        "FROM capture_ticks WHERE session_id = ?",
+        (-CLOCK_SKEW_SECONDS, session_id)).fetchone()
     samples = conn.execute(
         "SELECT COUNT(*), SUM(last IS NULL), SUM(bid IS NULL), SUM(ask IS NULL), "
-        "SUM(broker_at IS NULL), SUM(bid > ask), SUM(broker_at > received_at) "
-        "FROM capture_quote_samples WHERE session_id = ?", (session_id,)).fetchone()
+        "SUM(broker_at IS NULL), SUM(bid > ask), "
+        "SUM(julianday(broker_at) > julianday(received_at) + ? / 86400.0), "
+        "SUM(broker_at > received_at) "
+        "FROM capture_quote_samples WHERE session_id = ?",
+        (VENUE_CLOCK_TOLERANCE_SECONDS, session_id)).fetchone()
     first = conn.execute(
         "SELECT tick_at, tradeable, requested FROM capture_ticks WHERE session_id = ? "
         "ORDER BY tick_at LIMIT 1", (session_id,)).fetchone()
@@ -321,10 +338,12 @@ def quote_evidence(conn: sqlite3.Connection, session_id: str) -> Dict[str, Any]:
             "max_requests_last_minute": t[10],
             "avg_tick_seconds": round(t[11], 3) if t[11] is not None else None,
             "max_tick_seconds": t[12], "tick_overruns": t[13] or 0,
+            "clock_skewed_ticks": t[14] or 0,
             "samples": samples[0], "sample_missing_last": samples[1],
             "sample_missing_bid": samples[2], "sample_missing_ask": samples[3],
             "sample_missing_venue_time": samples[4], "sample_crossed": samples[5],
             "sample_future_venue_time": samples[6],
+            "sample_venue_time_ahead_within_tolerance": (samples[7] or 0) - (samples[6] or 0),
             "warm_up": bool(warmed),
             "first_tick": {"at": first[0], "tradeable": first[1],
                            "requested": first[2]} if first else None}
@@ -456,7 +475,14 @@ def acceptance(conn: sqlite3.Connection, session_id: Optional[str] = None,
           cov["largest_gap_minutes"])
     if quotes.get("available"):
         future = quotes["sample_future_venue_time"] or 0
-        check("no venue timestamp in the future", FAIL if future else PASS, future)
+        check("no venue timestamp in the future", FAIL if future else PASS,
+              {"beyond_tolerance": future, "tolerance_s": VENUE_CLOCK_TOLERANCE_SECONDS,
+               "within_tolerance": quotes["sample_venue_time_ahead_within_tolerance"]})
+        skewed = quotes["clock_skewed_ticks"]
+        check("local clock agrees with venue time", FAIL if skewed else PASS,
+              {"clock_skewed_ticks": skewed,
+               "max_venue_ahead_s": -quotes["min_venue_lag_s"]
+               if quotes["min_venue_lag_s"] is not None and skewed else 0})
         check("realtime data", WARN if (quotes["delayed"] or quotes["unknown"]) else PASS,
               {k: quotes[k] for k in ("realtime", "delayed", "unknown", "unavailable")})
         over = (quotes["max_requests_last_minute"] or 0) > budget_per_minute

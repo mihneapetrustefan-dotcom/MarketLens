@@ -61,6 +61,8 @@ class MovingVenue(MockIBKRTransport):
         self.silent = set()          # conids the venue says nothing about
         self.keepalive_calls = 0
         self.keep_awake_requests = []   # what the runner asked of the host
+        self.power = {"on_ac": True, "battery_percent": 100}   # the host's power, faked
+        self.clock_offset_seconds = 0   # >0: venue time runs AHEAD of the runner's clock
         self.auth_calls = 0
         self.stale_seconds = 0       # >0: quotes carry an old venue timestamp
         for i, ticker in enumerate(tickers):
@@ -87,8 +89,9 @@ class MovingVenue(MockIBKRTransport):
                 price = 100 + seed + 2 * math.sin(seconds / 900.0 + seed)
                 self.set_quote(conid, price, price - 0.01, price + 0.01)
         payloads = super().market_snapshot(conids, fields)
-        if self.stale_seconds:
-            stamp = int((now.timestamp() - self.stale_seconds) * 1000)
+        if self.stale_seconds or self.clock_offset_seconds:
+            stamp = int((now.timestamp() - self.stale_seconds
+                         + self.clock_offset_seconds) * 1000)
             payloads = [dict(p, _updated=stamp) for p in payloads]
         return [p for p in payloads if p["conid"] not in self.silent]
 
@@ -101,7 +104,8 @@ def make_runner(conn, clock, directory, tickers=TICKERS, owner="supervisor-test"
     runner = CaptureRunner(conn, gateway, definition, clock=clock,
                            lease_owner=owner, config=config or CaptureConfig(),
                            stop_requested=stop,
-                           keep_awake=lambda on: venue.keep_awake_requests.append(on) or True)
+                           keep_awake=lambda on: venue.keep_awake_requests.append(on) or True,
+                           power_status=lambda: dict(venue.power))
     return runner, venue
 
 
