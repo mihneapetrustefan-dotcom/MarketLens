@@ -473,3 +473,56 @@ class TestRealEvidenceFields(_Case):
         cols = {r[1] for r in old.execute("PRAGMA table_info(capture_ticks)")}
         self.assertTrue({"realtime", "delayed", "venue_lag_seconds"} <= cols)
         self.assertEqual(old.execute("SELECT COUNT(*) FROM capture_ticks").fetchone()[0], 1)
+
+
+class TestUSListingPolicy(_Case):
+    """Phase 25.9H: the real IBKR search shape, one symbol on many venues."""
+
+    def test_single_us_primary_listing_is_chosen_and_recorded(self):
+        from src.execution.adapters.ibkr.mock_transport import MockContract
+        clock = ReplayClock(at(13, 0))
+        venue = MovingVenue(clock, ("SPY",))
+        for conid, primary in (("3691937", "NASDAQ"), ("532497536", "TSE"),
+                               ("38708590", "MEXI"), ("305691292", "EBS")):
+            venue.add_contract(MockContract(conid=conid, symbol="AMZN",
+                                            primary_exchange=primary))
+        runner, _ = make_runner(self.conn, clock, self.dir, tickers=("SPY", "AMZN"),
+                                venue=venue, config=FAST)
+        runner.start()
+        run_until(runner, clock, at(13, 40))
+        outcome = runner.outcomes["us_and_intl-amzn"]
+        self.assertEqual(outcome.status.value, "RESOLVED")
+        self.assertEqual(outcome.conid, "3691937")
+        self.assertIn("US-listing policy", outcome.detail)
+        self.assertIn("NASDAQ", outcome.detail)
+        self.assertGreater(self.research_minutes(at(13, 30), at(13, 40)), 0)
+
+    def test_two_us_listings_stay_ambiguous(self):
+        from src.execution.adapters.ibkr.mock_transport import MockContract
+        clock = ReplayClock(at(13, 0))
+        venue = MovingVenue(clock, ("SPY",))
+        for conid, primary in (("1", "NASDAQ"), ("2", "NYSE"), ("3", "MEXI")):
+            venue.add_contract(MockContract(conid=conid, symbol="XYZ",
+                                            primary_exchange=primary))
+        runner, _ = make_runner(self.conn, clock, self.dir, tickers=("SPY", "XYZ"),
+                                venue=venue, config=FAST)
+        runner.start()
+        run_until(runner, clock, at(13, 20))
+        self.assertEqual(runner.outcomes["us_and_intl-xyz"].status.value, "AMBIGUOUS")
+
+    def test_pre_policy_ambiguity_is_reevaluated_once(self):
+        from src.execution.adapters.ibkr.mock_transport import MockContract
+        self.conn.execute("INSERT INTO capture_mappings (instrument_id, status, "
+                          "attempts, detail) VALUES ('us_and_intl-amzn', "
+                          "'AMBIGUOUS', 1, 'IBKR returned 6 contracts')")
+        self.conn.commit()
+        clock = ReplayClock(at(13, 0))
+        venue = MovingVenue(clock, ("SPY",))
+        for conid, primary in (("3691937", "NASDAQ"), ("38708590", "MEXI")):
+            venue.add_contract(MockContract(conid=conid, symbol="AMZN",
+                                            primary_exchange=primary))
+        runner, _ = make_runner(self.conn, clock, self.dir, tickers=("SPY", "AMZN"),
+                                venue=venue, config=FAST)
+        runner.start()
+        run_until(runner, clock, at(13, 20))
+        self.assertEqual(runner.outcomes["us_and_intl-amzn"].status.value, "RESOLVED")

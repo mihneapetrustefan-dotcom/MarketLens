@@ -63,6 +63,13 @@ FAILED_RETRY_CAP_SECONDS = 6 * 3600.0
 #: A venue that has no contract today is asked again tomorrow.
 UNSUPPORTED_RETRY_SECONDS = 24 * 3600.0
 
+#: US primary exchanges for the capture universe's US listings.
+US_PRIMARY_EXCHANGES = frozenset({"NASDAQ", "NYSE", "ARCA", "NYSE ARCA", "AMEX",
+                                  "NYSE AMERICAN", "BATS", "CBOE BZX", "IEX"})
+
+#: Marks a mapping decided by the US-listing rule (Phase 25.9H).
+US_LISTING_POLICY = "US-listing policy"
+
 #: Requests per minute kept back for the snapshot and the keepalive.
 RESERVED_PER_MINUTE = 2
 
@@ -312,7 +319,9 @@ def map_universe(conn: sqlite3.Connection, gateway: Any, repository: Any,
         row = conn.execute(
             "SELECT status, next_retry_at, detail, attempts FROM capture_mappings "
             "WHERE instrument_id = ?", (member.instrument_id,)).fetchone()
-        if row is not None and row[0] == MappingStatus.AMBIGUOUS.value:
+        # An AMBIGUOUS decided before the US-listing rule existed is
+        # re-evaluated once; after that it waits for a human, as before.
+        if row is not None and row[0] == MappingStatus.AMBIGUOUS.value and                 US_LISTING_POLICY in (row[2] or ""):
             outcomes[member.instrument_id] = MappingOutcome(
                 member.instrument_id, MappingStatus.AMBIGUOUS, "",
                 row[2] or "ambiguous; narrow it with run_ibkr.py --resolve")
@@ -344,7 +353,32 @@ def map_universe(conn: sqlite3.Connection, gateway: Any, repository: Any,
             status = _classify(resolution)
             outcome = MappingOutcome(member.instrument_id, status, "",
                                      resolution.explain(), True)
-            if status is MappingStatus.RESOLVED:
+            if status is MappingStatus.AMBIGUOUS:
+                # Real IBKR (2026-09-21): /secdef/search lists a US stock's
+                # listings on NASDAQ, TSE, MEXI, EBS, LSEETF... and does not
+                # return their currency, so the USD filter cannot separate
+                # them. This universe holds US-listed names, so the US
+                # PRIMARY listing is the discriminator. Exactly one must
+                # match; two US listings stay AMBIGUOUS for a human.
+                us = [c for c in resolution.candidates
+                      if (c.primary_exchange or "").strip().upper() in US_PRIMARY_EXCHANGES
+                      and c.sec_type.upper() == member.sec_type.upper()]
+                if len(us) == 1:
+                    chosen = us[0]
+                    mapping = chosen.as_mapping(member.instrument_id)
+                    gateway.registry.register(mapping)
+                    repository.save_mapping(mapping)
+                    from src.execution.adapters.ibkr.contracts import conid_of
+                    outcome = MappingOutcome(
+                        member.instrument_id, MappingStatus.RESOLVED,
+                        str(conid_of(mapping) or ""),
+                        f"{US_LISTING_POLICY}: {chosen.describe()} chosen from "
+                        f"{len(resolution.candidates)} listings", True)
+                    status = MappingStatus.RESOLVED
+                else:
+                    outcome.detail = (f"{resolution.explain()} [{US_LISTING_POLICY}: "
+                                      f"{len(us)} US primary listings]")
+            elif status is MappingStatus.RESOLVED:
                 mapping = resolution.contract.as_mapping(member.instrument_id)
                 repository.save_mapping(mapping)
                 from src.execution.adapters.ibkr.contracts import conid_of
