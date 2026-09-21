@@ -276,9 +276,16 @@ def maturity(conn: sqlite3.Connection, today: date,
     from scripts.audit_intraday_data import calendar_ceiling
 
     calendar = calendar or USEquityCalendar()
-    rows = conn.execute(
-        "SELECT session_date, quality, session_type FROM capture_sessions "
+    # Phase 25.9H: only sessions proven REAL (every ticking process used
+    # the real IBKR transport) count. Mock or unattributed sessions are
+    # reported, never counted toward research maturity.
+    from src.capture.audit import session_evidence
+    all_rows = conn.execute(
+        "SELECT session_id, session_date, quality, session_type FROM capture_sessions "
         "WHERE status = 'finalized' ORDER BY session_date").fetchall()
+    evidence = {r[0]: session_evidence(conn, r[0]) for r in all_rows}
+    rows = [r[1:] for r in all_rows if evidence[r[0]] == "REAL"]
+    excluded = {sid: ev for sid, ev in evidence.items() if ev != "REAL"}
     by_quality = {q: 0 for q in ("GOOD", "PARTIAL", "DEGRADED", "FAILED")}
     qualifying_dates: List[str] = []
     early_close = sum(1 for r in rows if r[2] == "early_close")
@@ -307,6 +314,8 @@ def maturity(conn: sqlite3.Connection, today: date,
                   - date.fromisoformat(qualifying_dates[0])).days + 1
                  if qualifying_dates else 0)
     return {
+        "evidence": "REAL sessions only",
+        "excluded_non_real_sessions": excluded,
         "finalized_sessions": len(rows),
         "by_quality": by_quality,
         "full_sessions": by_quality["GOOD"],

@@ -144,6 +144,11 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     configure_logging(args.log_dir)
+    # The gateway serves a self-signed certificate on localhost (TLS
+    # verification is only ever relaxed for a local host). urllib3 warns on
+    # every request, which grew child-stderr.log by ~250 KB a day: once.
+    import warnings
+    warnings.filterwarnings("once", message="Unverified HTTPS request")
     stop = {"signal": False}
 
     def on_signal(signum, frame):                          # noqa: ARG001

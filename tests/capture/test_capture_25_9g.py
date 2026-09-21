@@ -526,14 +526,26 @@ class TestQualityRules(unittest.TestCase):
         self.assertEqual(c(390, 30, 31, 20, 10, 200), "FAILED")
         self.assertEqual(c(390, 0, 31, 0, 0, 0), "FAILED")
 
-    def _sessions(self, conn, dates, grade="GOOD"):
+    def _sessions(self, conn, dates, grade="GOOD", transport="ClientPortalTransport"):
+        conn.execute("INSERT OR IGNORE INTO capture_instances (instance_id, "
+                     "lease_owner, started_at, state, transport) VALUES "
+                     "(?, 'o', 'x', 'IDLE', ?)", (f"i-{transport}", transport))
         for d in dates:
             conn.execute(
                 "INSERT INTO capture_sessions (session_id, session_date, "
                 "session_type, opens_at, closes_at, universe_version, status, "
                 "quality, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 (f"cap-{d}", d, "regular", "x", "x", "v1", "finalized", grade, "x"))
+            conn.execute("INSERT INTO capture_ticks (session_id, tick_at, instance_id) "
+                         "VALUES (?, ?, ?)", (f"cap-{d}", d, f"i-{transport}"))
         conn.commit()
+
+    def test_mock_sessions_never_count_toward_maturity(self):
+        conn = capture_db()
+        self._sessions(conn, ["2026-10-01", "2026-10-02"], transport="MovingVenue")
+        report = quality.maturity(conn, date(2026, 11, 1))
+        self.assertEqual(report["qualifying_sessions"], 0)
+        self.assertEqual(set(report["excluded_non_real_sessions"].values()), {"MOCK"})
 
     def test_maturity_counts_sessions_not_rows(self):
         conn = capture_db()

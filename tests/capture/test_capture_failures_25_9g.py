@@ -411,3 +411,65 @@ class TestIdleKeepalive(_Case):
         runner, venue, clock = self.start(at(10, 0, day=19))        # Saturday
         run_until(runner, clock, at(10, 0, day=20))
         self.assertEqual((venue.auth_calls, venue.keepalive_calls), (0, 0))
+
+
+class TestRealEvidenceFields(_Case):
+    """Phase 25.9H: what a real session must leave behind to be audited."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = capture_db()
+        cls.clock = ReplayClock(at(12, 0))
+        cls.runner, cls.venue = make_runner(cls.db, cls.clock, tempfile.mkdtemp(),
+                                            config=FAST)
+        cls.runner.start()
+        run_until(cls.runner, cls.clock, at(21, 0))
+
+    def test_transport_is_recorded_per_instance(self):
+        kinds = {r[0] for r in self.db.execute(
+            "SELECT transport FROM capture_instances")}
+        self.assertEqual(kinds, {"MovingVenue"})
+
+    def test_realtime_marker_counted_every_tick(self):
+        row = self.db.execute(
+            "SELECT MIN(realtime), MAX(delayed), MAX(unknown_availability), "
+            "COUNT(*) FROM capture_ticks").fetchone()
+        self.assertEqual(row, (len(TICKERS), 0, 0, 390))
+
+    def test_requests_per_minute_recorded_and_inside_budget(self):
+        worst = self.db.execute(
+            "SELECT MAX(requests_last_minute) FROM capture_ticks").fetchone()[0]
+        self.assertGreaterEqual(worst, 2)
+        self.assertLessEqual(worst, 10)
+
+    def test_quote_samples_are_bounded(self):
+        ticks = self.db.execute(
+            "SELECT COUNT(DISTINCT tick_at) FROM capture_quote_samples").fetchone()[0]
+        self.assertEqual(ticks, 5 + len(range(30, 390, 30)))
+        rows = self.db.execute(
+            "SELECT COUNT(*) FROM capture_quote_samples").fetchone()[0]
+        self.assertEqual(rows, ticks * len(TICKERS))
+
+    def test_host_kept_awake_only_for_the_session(self):
+        self.assertEqual(self.venue.keep_awake_requests, [True, False])
+        events = [json.loads(r[0]) for r in self.db.execute(
+            "SELECT detail FROM capture_events WHERE kind = 'KEEP_AWAKE' "
+            "ORDER BY event_id")]
+        self.assertEqual([e["on"] for e in events], [True, False])
+
+    def test_weekend_never_asks_to_stay_awake(self):
+        runner, venue, clock = self.start(at(10, 0, day=19))
+        run_until(runner, clock, at(10, 0, day=20))
+        self.assertEqual(venue.keep_awake_requests, [])
+
+    def test_existing_store_gains_the_new_columns(self):
+        old = sqlite3.connect(":memory:")
+        old.execute("CREATE TABLE capture_ticks (session_id TEXT, tick_at TEXT, "
+                    "instance_id TEXT, PRIMARY KEY (session_id, tick_at))")
+        old.execute("CREATE TABLE capture_instances (instance_id TEXT PRIMARY KEY, "
+                    "lease_owner TEXT, started_at TEXT, state TEXT)")
+        old.execute("INSERT INTO capture_ticks VALUES ('s', 't', 'i')")
+        initialize_capture_schema(old)
+        cols = {r[1] for r in old.execute("PRAGMA table_info(capture_ticks)")}
+        self.assertTrue({"realtime", "delayed", "venue_lag_seconds"} <= cols)
+        self.assertEqual(old.execute("SELECT COUNT(*) FROM capture_ticks").fetchone()[0], 1)

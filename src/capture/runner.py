@@ -76,6 +76,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from src.capture import features as capture_features
+from src.capture import host
 from src.capture import quality
 from src.capture import universe as capture_universe
 from src.capture.schema import initialize_capture_schema
@@ -157,7 +158,8 @@ class CaptureRunner:
                  config: Optional[CaptureConfig] = None,
                  calendar: Optional[USEquityCalendar] = None,
                  stop_requested: Callable[[], bool] = lambda: False,
-                 instance_id: Optional[str] = None):
+                 instance_id: Optional[str] = None,
+                 keep_awake: Optional[Callable[[bool], bool]] = None):
         if not getattr(gateway, "submission_forbidden", False) or not getattr(
                 getattr(gateway, "transport", None), "submission_forbidden", False):
             # Structural, not advisory: an unguarded gateway is refused
@@ -172,6 +174,14 @@ class CaptureRunner:
         self.config = config or CaptureConfig()
         self.calendar = calendar or USEquityCalendar()
         self.stop_requested = stop_requested
+        #: Phase 25.9H: ask the host not to idle-sleep during a session.
+        #: Injectable so tests never touch the real power state.
+        self._keep_awake_fn = keep_awake if keep_awake is not None else host.set_keep_awake
+        self._awake = False
+        #: Class name of the real transport under both guards. "Real" in
+        #: every report means this was ClientPortalTransport.
+        inner = getattr(gateway.transport, "inner", gateway.transport)
+        self.transport_kind = type(inner).__name__
         self.lease_owner = lease_owner
         self.instance_id = instance_id or f"cap-{uuid.uuid4().hex[:12]}"
 
@@ -217,9 +227,10 @@ class CaptureRunner:
                                     ttl_seconds=self.config.lease_ttl_seconds)
         self.conn.execute(
             "INSERT INTO capture_instances (instance_id, lease_owner, pid, host, "
-            "started_at, state) VALUES (?,?,?,?,?,?)",
+            "started_at, state, transport) VALUES (?,?,?,?,?,?,?)",
             (self.instance_id, self.lease_owner, os.getpid(),
-             socket.gethostname(), _iso(now), self.state.value))
+             socket.gethostname(), _iso(now), self.state.value,
+             self.transport_kind))
         self.conn.commit()
         self._event("STARTED", {"universe": self.definition.version,
                                 "members": len(self.definition.members),
@@ -283,8 +294,20 @@ class CaptureRunner:
         else:
             self.clock.sleep_until(target)
 
+    def _hold_awake(self, on: bool) -> None:
+        if on == self._awake:
+            return
+        honoured = self._keep_awake_fn(on)
+        self._awake = on
+        self._event("KEEP_AWAKE", {"on": on, "honoured": bool(honoured)},
+                    self.session_id)
+
     def shutdown(self, reason: str) -> None:
         now = self.clock.now()
+        try:
+            self._hold_awake(False)
+        except Exception:                                  # noqa: BLE001
+            pass
         try:
             if self.session_id and self.service.builder is not None:
                 # Complete minutes are kept; the minute in progress is
@@ -381,6 +404,7 @@ class CaptureRunner:
     def _off_hours(self, now: datetime) -> float:
         if self.session_id is not None:
             self._finalize(now)
+        self._hold_awake(False)
         self._set_state(CaptureState.IDLE)
         upcoming = self._next_pre_open(now)
         if upcoming is None:
@@ -430,6 +454,7 @@ class CaptureRunner:
         return False
 
     def _pre_open(self, now: datetime, window: SessionWindow) -> float:
+        self._hold_awake(True)
         if self.state not in (CaptureState.WAITING_FOR_MARKET,
                               CaptureState.WAITING_FOR_AUTH):
             self._set_state(CaptureState.PREFLIGHT)
@@ -446,6 +471,7 @@ class CaptureRunner:
         return max(1.0, min(self.config.interval_seconds, until_open))
 
     def _active(self, now: datetime, window: SessionWindow) -> float:
+        self._hold_awake(True)
         if not self._ensure_auth(now):
             if self.session_id is None:
                 self._open_session(now, window, mapped=False)
@@ -694,17 +720,73 @@ class CaptureRunner:
                 self._event("FEATURE_FAILED", {"cutoff": _iso(boundary),
                                                "error": str(error)[:300]},
                             self.session_id)
+        observed = self._observe_quotes(now)
         self.conn.execute(
             "INSERT OR REPLACE INTO capture_ticks (session_id, tick_at, "
             "instance_id, requested_at, received_at, target_minute, requested, "
             "tradeable, bars_written, archived, features, duration_seconds, "
-            "health) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "health, realtime, delayed, unknown_availability, unavailable, "
+            "venue_spread_seconds, venue_lag_seconds, requests_last_minute) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (self.session_id, _iso(now), self.instance_id, _iso(requested_at),
              _iso(received_at), _iso(boundary - timedelta(minutes=1)),
              cycle.requested, cycle.tradeable, cycle.bars_written, archived,
-             feature_count, round(time.monotonic() - started, 3), health))
+             feature_count, round(time.monotonic() - started, 3), health,
+             observed["realtime"], observed["delayed"], observed["unknown"],
+             observed["unavailable"], observed["spread"], observed["lag"],
+             self.budget.used(now)))
         self.conn.commit()
         self.ticks += 1
+
+    #: Ticks of a session whose every quote is kept as a sample, and the
+    #: stride after that: about 560 rows a day for 31 instruments.
+    SAMPLE_FIRST_TICKS = 5
+    SAMPLE_EVERY_TICKS = 30
+
+    def _observe_quotes(self, now: datetime) -> Dict[str, Any]:
+        """
+        Phase 25.9H evidence from the quotes this tick just stored.
+
+        Reads back what MarketDataService wrote to `market_data_state`
+        for this tick (evaluated_at == now), so the service is unchanged.
+        Counts IBKR's realtime/delayed marker (field 6509) per tick, the
+        spread of venue timestamps across instruments (how simultaneous
+        one batched snapshot really is) and the lag from the latest venue
+        time to receipt. Keeps a bounded sample of the normalized quotes.
+        """
+        out: Dict[str, Any] = {"realtime": 0, "delayed": 0, "unknown": 0,
+                               "unavailable": 0, "spread": None, "lag": None}
+        if not self.resolved:
+            return out
+        marks = ",".join("?" * len(self.resolved))
+        rows = self.conn.execute(
+            "SELECT instrument_id, conid, last, bid, ask, mid, volume, "
+            "availability, freshness, broker_at, received_at, note "
+            "FROM market_data_state WHERE evaluated_at = ? AND instrument_id IN ("
+            + marks + ")", [_iso(now)] + list(self.resolved)).fetchall()
+        stamps = []
+        for row in rows:
+            availability = (row[7] or "").lower()
+            key = {"available": "realtime", "delayed": "delayed",
+                   "unavailable": "unavailable"}.get(availability, "unknown")
+            out[key] += 1
+            if row[9]:
+                try:
+                    stamps.append(datetime.fromisoformat(row[9]))
+                except ValueError:
+                    pass
+        if stamps:
+            out["spread"] = round((max(stamps) - min(stamps)).total_seconds(), 3)
+            out["lag"] = round((now - max(stamps)).total_seconds(), 3)
+        index = self.ticks
+        if index < self.SAMPLE_FIRST_TICKS or index % self.SAMPLE_EVERY_TICKS == 0:
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO capture_quote_samples (session_id, tick_at, "
+                "instrument_id, conid, last, bid, ask, mid, volume, availability, "
+                "freshness, broker_at, received_at, note) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [(self.session_id, _iso(now)) + tuple(r) for r in rows])
+        return out
 
     def _archive(self, now: datetime) -> int:
         if self.session_id is None or self.window is None:

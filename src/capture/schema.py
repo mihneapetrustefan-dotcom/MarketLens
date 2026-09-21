@@ -46,7 +46,18 @@ CAPTURE_TABLES = (
     "capture_archive_log",
     "capture_mappings",
     "intraday_feature_values",
+    "capture_quote_samples",
 )
+
+#: Columns added after a store was first created (Phase 25.9H). Added in
+#: place, so a live store gains them on the next start and loses nothing.
+ADDED_COLUMNS = {
+    "capture_instances": {"transport": "TEXT"},
+    "capture_ticks": {"realtime": "INTEGER", "delayed": "INTEGER",
+                      "unknown_availability": "INTEGER", "unavailable": "INTEGER",
+                      "venue_spread_seconds": "REAL", "venue_lag_seconds": "REAL",
+                      "requests_last_minute": "INTEGER"},
+}
 
 
 def initialize_capture_schema(conn: sqlite3.Connection) -> None:
@@ -176,6 +187,24 @@ def initialize_capture_schema(conn: sqlite3.Connection) -> None:
             session_id       TEXT NOT NULL DEFAULT '',
             computed_at      TEXT NOT NULL,
             PRIMARY KEY (instrument_id, cutoff, feature_id, feature_version))""",
+        # A bounded sample of normalized real quotes (Phase 25.9H): the
+        # evidence for snapshot shape, realtime/delayed status and clocks.
+        """CREATE TABLE IF NOT EXISTS capture_quote_samples (
+            session_id       TEXT NOT NULL,
+            tick_at          TEXT NOT NULL,
+            instrument_id    TEXT NOT NULL,
+            conid            TEXT,
+            last             REAL,
+            bid              REAL,
+            ask              REAL,
+            mid              REAL,
+            volume           REAL,
+            availability     TEXT,
+            freshness        TEXT,
+            broker_at        TEXT,
+            received_at      TEXT,
+            note             TEXT,
+            PRIMARY KEY (session_id, tick_at, instrument_id))""",
         "CREATE INDEX IF NOT EXISTS idx_capture_features_cutoff "
         "ON intraday_feature_values (cutoff)",
         "CREATE INDEX IF NOT EXISTS idx_capture_events_at "
@@ -185,6 +214,11 @@ def initialize_capture_schema(conn: sqlite3.Connection) -> None:
     ]
     for statement in statements:
         conn.execute(statement)
+    for table, columns in ADDED_COLUMNS.items():
+        present = {r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')}
+        for name, kind in columns.items():
+            if name not in present:
+                conn.execute(f'ALTER TABLE "{table}" ADD COLUMN {name} {kind}')
     conn.commit()
 
 

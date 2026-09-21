@@ -76,11 +76,56 @@ def build(conn: sqlite3.Connection, limit: int) -> dict:
     }
 
 
+def print_acceptance(result: dict) -> None:
+    print("FIRST-SESSION ACCEPTANCE AUDIT (read-only)")
+    print("  sessions in store: %s" % (result["sessions_in_store"] or "none"))
+    rec = result.get("session")
+    if rec:
+        print("\nSESSION RECORD")
+        for key, value in rec.items():
+            print("  %-40s %s" % (key.upper().replace("_", " "), value))
+        f = result["features"]
+        print("\nFEATURES  expected cutoffs %s | computed %s | failed %s | recomputed %s "
+              "| coverage %s | values %s (non-null %s, non-finite %s) | versions %s"
+              % (f["expected_cutoffs"], f["computed_cutoffs"], f["failed_cutoffs"],
+                 f["recomputed_cutoffs"], f["coverage"], f["values"],
+                 f["non_null_values"], f["non_finite_values"], f["feature_versions"]))
+        q = result["quotes"]
+        if q.get("available"):
+            print("QUOTES    realtime %s | delayed %s | unknown %s | unavailable %s | "
+                  "venue spread avg/max %s/%s s | lag avg %s s | max req/min %s | "
+                  "tick avg/max %s/%s s, overruns %s | warm-up %s | first tick %s"
+                  % (q["realtime"], q["delayed"], q["unknown"], q["unavailable"],
+                     q["avg_venue_spread_s"], q["max_venue_spread_s"], q["avg_venue_lag_s"],
+                     q["max_requests_last_minute"], q["avg_tick_seconds"],
+                     q["max_tick_seconds"], q["tick_overruns"], q["warm_up"],
+                     q["first_tick"]))
+        print("\nMAPPING")
+        for m in result["mapping"]:
+            print("  %-22s %-6s %-11s conid %-10s %-5s %-4s %-8s %s" % (
+                m["instrument_id"], m["ticker"], m["status"], m["conid"],
+                m["sec_type"], m["currency"], m["exchange"],
+                "; ".join(m["problems"])))
+        print("\nGAPS")
+        for g in result["gaps"] or [{"start": "none"}]:
+            print("  %s" % g)
+    print("\nCHECKS")
+    for c in result["checks"]:
+        detail = c["detail"]
+        text = json.dumps(detail, default=str) if not isinstance(detail, str) else detail
+        print("  [%s] %-38s %s" % (c["status"], c["check"], text[:150]))
+    print("\nVERDICT: %s" % result["verdict"])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--db", default=DEFAULT_DB)
     parser.add_argument("--sessions", type=int, default=20)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--acceptance", nargs="?", const="", metavar="SESSION_ID",
+                        help="first-session acceptance audit (Phase 25.9H); default: "
+                             "the latest REAL session. Exit 0 pass, 1 a check "
+                             "failed, 2 no real session")
     parser.add_argument("--trace", nargs=2, metavar=("INSTRUMENT", "BAR_START"),
                         help="provenance of one archived minute")
     args = parser.parse_args(argv)
@@ -90,6 +135,16 @@ def main(argv=None) -> int:
     uri = "file:%s?mode=ro" % os.path.abspath(args.db).replace("\\", "/")
     conn = sqlite3.connect(uri, uri=True, timeout=10)
     try:
+        if args.acceptance is not None:
+            from src.capture import audit
+            result = audit.acceptance(conn, args.acceptance or None)
+            if args.json:
+                print(json.dumps(result, indent=2, sort_keys=True, default=str))
+            else:
+                print_acceptance(result)
+            if result["verdict"] == "NO REAL SESSION CAPTURED":
+                return 2
+            return 1 if any(c["status"] == "FAIL" for c in result["checks"]) else 0
         if args.trace:
             print(json.dumps(quality.trace(conn, *args.trace), indent=2, default=str))
             return 0

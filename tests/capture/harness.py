@@ -60,6 +60,7 @@ class MovingVenue(MockIBKRTransport):
         self.snapshot_calls = 0
         self.silent = set()          # conids the venue says nothing about
         self.keepalive_calls = 0
+        self.keep_awake_requests = []   # what the runner asked of the host
         self.auth_calls = 0
         self.stale_seconds = 0       # >0: quotes carry an old venue timestamp
         for i, ticker in enumerate(tickers):
@@ -99,7 +100,8 @@ def make_runner(conn, clock, directory, tickers=TICKERS, owner="supervisor-test"
     definition = load_definition(write_universe(directory, tickers))
     runner = CaptureRunner(conn, gateway, definition, clock=clock,
                            lease_owner=owner, config=config or CaptureConfig(),
-                           stop_requested=stop)
+                           stop_requested=stop,
+                           keep_awake=lambda on: venue.keep_awake_requests.append(on) or True)
     return runner, venue
 
 
