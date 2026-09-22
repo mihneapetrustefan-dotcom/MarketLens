@@ -460,3 +460,63 @@ NOT ATTEMPTED
 
 LIVE:
 DISABLED
+
+---
+
+# Stage B addendum — Second Session, 2026-09-22
+
+Read-only, from the same store. Stage B above is unchanged; this records the first session that passed.
+
+## C1. Verdict
+
+**FULL SESSION VERIFIED (`--acceptance` exit 0). Quality GOOD. Still not qualifying: delayed.**
+
+Every check passes. The only warning is the one that cannot be fixed from here: 12,028 delayed quotes, 0 realtime.
+
+## C2. What the Stage B fixes were meant to catch, and what happened
+
+| Stage B finding | Yesterday | Today |
+|---|---|---|
+| B-01 host on battery | Died at 19:24, 36 min lost | No `ON_BATTERY` event: the laptop stayed on AC all session |
+| B-02 clock skew | 674 s slow; 8 post-close ticks stamped in-session | 0 skewed ticks; 0 venue timestamps beyond the 5 s tolerance (1 within it) |
+| B-04 spurious self-stops | 2 restarts (13:55, 16:38) | 1 process instance, 0 restarts, 0 takeovers |
+| B-05 audit attribution | 2 FAILs from the clock | No FAILs |
+| B-06 delayed sessions | Would have counted if GOOD | GOOD, and correctly excluded as DELAYED |
+
+The guards stayed silent because there was nothing to report. They are not yet proven against a real recurrence — only the tests prove the detection itself.
+
+## C3. Record
+
+| Field | 2026-09-22 | 2026-09-21 |
+|---|---|---|
+| Verdict / quality | **FULL SESSION VERIFIED** / GOOD | INVALID / DEGRADED |
+| Captured minutes | 388 / 390 (0.995) | 354 (0.908) |
+| Instrument-minutes | 10,841 / 12,090 (0.897) | 9,820 (0.812) |
+| Cross-sectional ≥80% minutes | 354 | 328 |
+| Median simultaneous | 29 of 31 | 28 |
+| Largest gap | 1 min | 36 min |
+| Process instances / takeovers | 1 / 0 | 4 / 1 |
+| Auth outages / waits / re-auths | 2 / 1 / 1 | 1 / 2 / 5 |
+| Features | 78 cutoffs, 0 failed, 41,800 values, coverage 1.0 | 72 cutoffs, 37,715 values |
+| Archive | 10,841 bars; clean | 9,820 bars; clean |
+| Venue lag avg | +0.60 s | −12.6 s (clock) |
+| Venue spread avg / max | 44.8 s / 959.8 s | 52.4 s / 1,019.9 s |
+| Requests peak | 5/min (budget 50) | 5/min |
+| Broker writes | **0** | 0 |
+| Store | 42.9 MB total, 21.0 GB free | 18.5 MB |
+
+## C4. Notes
+
+- **Both IBKR auth resets healed themselves.** 17:08:06 AUTH_LOST → 17:10:22 AUTHENTICATED (2 min, the only 2 missing minutes of the day); 19:34:17 → 19:34:24 (7 s). No human acted. Three such resets in two sessions: an IBKR-side session reset is routine, not an incident.
+- **~10% of instrument-minutes still have no bar** (10,841 of 12,090), as on the first session. The cause is unchanged: a delayed snapshot of a thinly traded name does not update inside every minute. This should be re-measured on realtime data before it is treated as a property of the capture.
+- **Storage:** 42.9 MB after two sessions (~21 MB each), consistent with the ~5.3 GB/year estimate.
+
+## C5. Maturity
+
+**INSUFFICIENT, 0 qualifying sessions**, `excluded_not_realtime_sessions = {cap-2026-09-21: DELAYED, cap-2026-09-22: DELAYED}`. The count toward 20 starts on the first REALTIME session, not before.
+
+CAPTURE PIPELINE:
+VERIFIED END TO END AGAINST THE REAL VENUE
+
+REALTIME DATA:
+STILL ABSENT (the only blocker to maturity)
