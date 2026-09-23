@@ -589,6 +589,27 @@ So the watchdog closes the hole, but the **lease TTL now dominates recovery**: w
 | Windows Update hours (B-03) | Unverified: no forced reboot happened today |
 | Realtime data | Still absent. Three GOOD-grade sessions, 0 qualifying |
 
+## D5. The watchdog's first real save, 2026-09-23 evening (unattended)
+
+Three hours after it was installed, the watchdog recovered capture from the
+real failure mode, with no human involved. Market closed, so nothing was lost;
+the value is that this is the crash itself, not the simulation in D3.
+
+| Time (local) | Event | Source |
+|---|---|---|
+| 23:37 | GPU hang: four `LiveKernelEvent` records, the same signature as the morning crash | Application log |
+| 23:46:10 | Child exits "stop requested" — no STOP file, supervisor killed again; the orphan path, behaving correctly | capture.log |
+| 23:50:04 | **Watchdog fires, new supervisor starts**; capture IDLE and healthy | supervisor.log |
+
+**Recovery: under 4 minutes, unattended.** The same failure that morning required a
+human to notice and restart capture by hand, 24 seconds before the open.
+
+Note what this does and does not prove. The recovery is now evidenced twice, once
+simulated and once real. The GPU hangs are unchanged — four bursts on 2026-09-23
+alone (16:04, 16:09, 16:29, 23:37) — and remain the underlying defect; the watchdog
+only shortens each outage. In market hours this one would still have cost roughly
+4-14 minutes of the session, or more if the dead instance's lease had not yet expired.
+
 CAPTURE AFTER A HOST CRASH:
 SELF-HEALING, VERIFIED ON THE REAL HOST (12 min 41 s)
 
