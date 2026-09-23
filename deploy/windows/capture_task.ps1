@@ -9,8 +9,16 @@ Phase 25.9G -- run MarketLens intraday capture under Windows Task Scheduler.
 WHAT "install" REGISTERS
     Task      "MarketLens Intraday Capture" (current user only)
     Runs      pythonw.exe scripts\capture_supervisor.py, in the repository
-    Triggers  at log-on of this user, and daily at 08:00 local time
-              (a no-op when the supervisor is already running)
+    Triggers  at log-on of this user, daily at 08:00 local time, and a
+              watchdog every -WatchdogMinutes (default 10) around the
+              clock. Every trigger is a no-op when the supervisor is
+              already running (MultipleInstances IgnoreNew), so the
+              watchdog only ever does something when capture has died.
+              WHY: on 2026-09-23 a GPU driver hang (LiveKernelEvent 141)
+              killed the desktop app and both capture processes three
+              minutes before the open. Only log-on and 08:00 could start
+              it again, so capture would have missed the whole session.
+              A STOP file still blocks every trigger, including this one.
     Logon     Interactive: runs only while this user is logged on.
               NO PASSWORD IS STORED -- the task never asks for one and
               this script never passes one. That is deliberate: the
@@ -39,7 +47,8 @@ param(
     [ValidateSet("install", "start", "status", "stop", "remove")]
     [string]$Action,
     [string]$Python = "",
-    [string]$DailyAt = "08:00"
+    [string]$DailyAt = "08:00",
+    [int]$WatchdogMinutes = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,9 +81,26 @@ switch ($Action) {
         # would collide with the validated -Action parameter.
         $taskAction = New-ScheduledTaskAction -Execute $exe `
             -Argument "`"$Repo\scripts\capture_supervisor.py`"" -WorkingDirectory $Repo
+        # The watchdog: a repeating trigger that restarts capture after
+        # something outside it killed the process (a GPU driver hang took
+        # the app and capture with it on 2026-09-23). IgnoreNew makes every
+        # firing a no-op while capture runs, so it costs nothing; a STOP
+        # file still stops it starting.
+        # A daily trigger carrying a 24 h repetition: continuous cover, and
+        # every day renews it. ([TimeSpan]::MaxValue, the usual "indefinitely"
+        # trick, is rejected by this Windows build: "Duration:P99999999DT...
+        # incorrectly formatted or out of range".) -RepetitionInterval is only
+        # accepted on a -Once trigger, so the repetition is built there and
+        # moved onto the daily one.
+        $repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
+            -RepetitionInterval (New-TimeSpan -Minutes $WatchdogMinutes) `
+            -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
+        $watchdog = New-ScheduledTaskTrigger -Daily -At (Get-Date).Date
+        $watchdog.Repetition = $repetition
         $triggers = @(
             (New-ScheduledTaskTrigger -AtLogOn -User $user),
-            (New-ScheduledTaskTrigger -Daily -At $DailyAt)
+            (New-ScheduledTaskTrigger -Daily -At $DailyAt),
+            $watchdog
         )
         $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
         $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
@@ -86,6 +112,7 @@ switch ($Action) {
             -Description "MarketLens Phase 25.9G capture-only intraday market data. No orders; no stored credentials." | Out-Null
         Write-Output "Registered '$TaskName' for $user (interactive, no stored password)."
         Write-Output "Runs: $exe `"$Repo\scripts\capture_supervisor.py`""
+        Write-Output ("Watchdog: every {0} min (no-op while capture runs)." -f $WatchdogMinutes)
         Write-Output "Next: 'start', then log in to the IBKR Client Portal Gateway in a browser."
     }
     "start" {

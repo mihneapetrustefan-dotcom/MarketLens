@@ -520,3 +520,77 @@ VERIFIED END TO END AGAINST THE REAL VENUE
 
 REALTIME DATA:
 STILL ABSENT (the only blocker to maturity)
+
+---
+
+# Stage B addendum — Third Session, 2026-09-23, and the GPU-hang finding
+
+## D1. Verdict
+
+**FULL SESSION VERIFIED (exit 0). Quality GOOD, 390 of 390 minutes, coverage 1.000, largest gap 0.** Still not qualifying: 12,059 delayed quotes, 0 realtime.
+
+The best session so far, and it nearly did not happen: capture was dead three minutes before the open.
+
+| Field | 2026-09-23 | 2026-09-22 | 2026-09-21 |
+|---|---|---|---|
+| Verdict / quality | **VERIFIED** / GOOD | VERIFIED / GOOD | INVALID / DEGRADED |
+| Captured minutes | **390 / 390 (1.000)** | 388 (0.995) | 354 (0.908) |
+| Instrument-minutes | 10,889 (0.901) | 10,841 (0.897) | 9,820 (0.812) |
+| Cross-sectional ≥80% minutes | **362** | 354 | 328 |
+| Largest gap | **0** | 1 min | 36 min |
+| Process instances | 1 | 1 | 4 |
+| Auth outages | 1 | 2 | 1 |
+| Features | 78 cutoffs, 41,287 values, coverage 1.0 | 78, 41,800 | 72, 37,715 |
+| Venue timestamps ahead, within 5 s tolerance | 10 | 1 | 56 (plus 124 skewed) |
+| Broker writes | **0** | 0 | 0 |
+
+## D2. Finding B-11 (HIGH): a GPU driver hang kills capture, and only a log-on restarts it
+
+**What happened.** At about 16:26 local (13:26 UTC), four minutes before the open, the desktop app died and took its terminal with it. Both capture processes were terminated at the same moment. The child's last line is "capture stopped: stop requested" with **no STOP file and no Python error**: it noticed its supervisor was gone and exited cleanly, which is the orphan path behaving correctly. The IBKR gateway session went too, so a human had to log in again.
+
+**Cause.** Windows recorded bursts of `LiveKernelEvent 141` (video engine timeout: the GPU stopped responding and the driver was reset) at 16:04, 16:09 and 16:29 local. This is chronic, not new: **four events per burst, ~38 bursts in the seven days to 2026-09-23**, several a day since at least 09-16. Both display drivers are years old — Intel UHD 620 `27.20.100.8681` (2020-09-05) and NVIDIA MX150 `30.0.15.1169` (2022-02-01). The desktop app renders through the GPU, so a hang kills it.
+
+**Not proven:** that the hang is what killed the two Python processes. There is no crash record for `pythonw`; they were terminated without an exception, at the moment the app died. The timing is the evidence; the mechanism is not.
+
+**Why it mattered more than the crash.** The task's triggers were log-on and daily 08:00, and the supervisor only restarts *its own* child. With the supervisor itself dead mid-morning, **nothing would have started capture again**: the session would have been lost entirely. It was restarted by hand at 13:29:36 UTC, 24 seconds before the open, which is why the day still scored 390/390.
+
+This is also the likeliest explanation for **H-06** (the processes that vanished on Saturday 09-19 with no log line); bursts were recorded that afternoon. H-06 stays open: still not reproduced.
+
+## D3. The watchdog, and what it actually recovers
+
+`capture_task.ps1 install` now registers a third trigger: a daily trigger carrying a 24-hour repetition every `-WatchdogMinutes` (default 10). `MultipleInstances IgnoreNew` makes every firing a no-op while capture runs, so it costs nothing and only acts when capture has died. A STOP file still blocks it, so `stop` keeps working.
+
+Deployed after the close on 2026-09-23 (remove, install, start; the market was closed and capture idle).
+
+**Two things this stage got wrong before it worked, both recorded because the fix looked right both times:**
+
+1. `[TimeSpan]::MaxValue` — the usual "repeat indefinitely" idiom — is **rejected by this Windows build**: `Duration:P99999999DT23H59M59S … incorrectly formatted or out of range`. The install failed with the task already removed, so capture stayed down until it was fixed. A daily trigger with a 1-day repetition gives the same continuous cover and every day renews it. (`-RepetitionInterval` is only accepted on a `-Once` trigger, so the repetition is built there and moved onto the daily trigger.)
+2. An untested watchdog is worth little, so it was tested on the real host with the market closed: **both processes killed at 20:05:33 UTC**.
+
+**Measured recovery: 12 min 41 s.**
+
+| Step | Time | |
+|---|---|---|
+| Both processes killed | 20:05:33 | |
+| Watchdog fired, supervisor started | 20:10:01 | 4.5 min: the 10-minute cadence |
+| Child refused, exit 3, four times | 20:10:06 – 20:17:43 | the killed instance's lease ran to 20:17:49 |
+| New instance IDLE, new lease | 20:18:14 | recovered |
+
+So the watchdog closes the hole, but the **lease TTL now dominates recovery**: worst case is about 10 min of watchdog plus up to 15 min of a dead instance's lease — roughly **25 minutes of a session**, instead of all of it. B-07 judged a dead-PID takeover not worth the risk when the alternative was losing nothing; with the watchdog in place that trade has changed, and it is the obvious next improvement.
+
+## D4. What is now proven about the host, and what is still on you
+
+| | State |
+|---|---|
+| Battery (B-01) | Held: on AC all session, no `ON_BATTERY` event |
+| Clock (B-02) | Held: 0 skewed ticks, 0 timestamps beyond tolerance |
+| Self-stops (B-04) | Held: 1 process instance, 0 restarts |
+| GPU hangs (B-11) | **Open: needs a driver update.** The watchdog limits the damage; it does not stop the crashes |
+| Windows Update hours (B-03) | Unverified: no forced reboot happened today |
+| Realtime data | Still absent. Three GOOD-grade sessions, 0 qualifying |
+
+CAPTURE AFTER A HOST CRASH:
+SELF-HEALING, VERIFIED ON THE REAL HOST (12 min 41 s)
+
+GPU DRIVER HANGS:
+CHRONIC, UNFIXED (driver update is a human action)
