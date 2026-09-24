@@ -191,20 +191,29 @@ def reclaim_stale(conn: sqlite3.Connection, *,
           AND (started_at IS NULL OR started_at < ?)
     """, (cutoff,))]
 
+    # Conditional on the state AND start we read (Phase 25.9D, F2). The
+    # update used to match on queue_id alone, so an item its worker
+    # completed between the SELECT and here went back to QUEUED and ran
+    # a second time -- reproduced with two connections. Same pattern
+    # as `claim`: SQLite decides, and only rows still stale are moved.
+    reclaimed = []
     for item in stale:
-        conn.execute("""
+        cursor = conn.execute("""
             UPDATE autoresearch_queue
             SET state = ?, reason = ?, started_at = NULL
-            WHERE queue_id = ?
+            WHERE queue_id = ? AND state = 'running'
+              AND started_at IS ?
         """, (QueueState.QUEUED.value,
               "reclaimed: still marked running since %s, which is longer "
               "than a cycle can take. The worker that held it did not "
               "finish, so the item returns to the queue rather than "
               "disappearing." % (item["started_at"] or "an unknown time"),
-              item["queue_id"]))
+              item["queue_id"], item["started_at"]))
+        if cursor.rowcount == 1:
+            reclaimed.append(item)
     if stale:
         conn.commit()
-    return stale
+    return reclaimed
 
 
 # ======================================================================

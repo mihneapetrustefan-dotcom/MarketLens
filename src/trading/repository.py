@@ -418,6 +418,49 @@ class TradingLoopRepository:
                      ORDER BY p.instrument_id
                 """)]
 
+    # ---------------- reconciliation baseline (Phase 25.9E) ----------
+
+    def latest_baseline(self, broker_id: str, account_id: str
+                        ) -> Optional[Dict[str, Any]]:
+        """The book as of the last agreed reconciliation, or None."""
+        import json
+        row = self.conn.execute("""
+            SELECT baseline_id, cycle_id, positions_json, fill_ids_json,
+                   source, actor, reason, recorded_at
+              FROM reconciliation_baselines
+             WHERE broker_id = ? AND account_id = ?
+             ORDER BY recorded_at DESC, rowid DESC LIMIT 1
+        """, (broker_id, account_id)).fetchone()
+        if row is None:
+            return None
+        return {"baseline_id": row[0], "cycle_id": row[1],
+                "positions": json.loads(row[2] or "{}"),
+                "fill_ids": set(json.loads(row[3] or "[]")),
+                "source": row[4], "actor": row[5], "reason": row[6],
+                "recorded_at": row[7]}
+
+    def save_baseline(self, broker_id: str, account_id: str, cycle_id: str,
+                      positions: Dict[str, float], fill_ids: Sequence[str],
+                      *, source: str, actor: str, reason: str,
+                      at: datetime) -> str:
+        import json
+        import uuid
+        require_utc(at, "at")
+        if not actor or not reason:
+            raise ValueError("a reconciliation baseline needs an actor and a reason")
+        baseline_id = "rb-" + uuid.uuid4().hex[:16]
+        self.conn.execute("""
+            INSERT INTO reconciliation_baselines
+            (baseline_id, broker_id, account_id, cycle_id, positions_json,
+             fill_ids_json, source, actor, reason, method_version, recorded_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (baseline_id, broker_id, account_id, cycle_id,
+              json.dumps({k: v for k, v in sorted(positions.items())}),
+              json.dumps(sorted(set(fill_ids))), source, actor, reason,
+              self.method_version, at.isoformat()))
+        self.conn.commit()
+        return baseline_id
+
     def outstanding_deltas(self, cycle_id: str) -> List[Dict[str, Any]]:
         return [{"instrument_id": r[0], "target_quantity": r[1],
                  "actual_quantity": r[2], "outstanding": r[3], "action": r[4]}

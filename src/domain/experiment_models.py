@@ -698,6 +698,11 @@ class ExperimentRun:
     dataset_snapshot_id: str = ""
     code_version: str = ""
     fingerprint: str = ""
+    # What the cohort actually CONTAINED (Phase 25.9D). The fingerprint
+    # names the definition; this names the rows. A late outcome, a
+    # revised return or a quality reclassification behind the newest
+    # `available_at` changes this and leaves the fingerprint alone.
+    cohort_digest: str = ""
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
@@ -714,6 +719,7 @@ class ExperimentRun:
             "environment": self.environment,
             "dataset_snapshot_id": self.dataset_snapshot_id,
             "code_version": self.code_version, "fingerprint": self.fingerprint,
+            "cohort_digest": self.cohort_digest,
             "duration_seconds": self.duration_seconds,
             "rows_examined": self.rows_examined,
             "cache_hit": self.cache_hit, "cached_from_run": self.cached_from_run,

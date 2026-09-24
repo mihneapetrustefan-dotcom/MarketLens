@@ -134,10 +134,31 @@ def classify_agreement(contributions: List[ModelContribution]) -> AgreementState
     One contribution is INSUFFICIENT_EVIDENCE, not AGREEMENT: a single
     voice agreeing with itself is not corroboration, and calling it
     agreement would inflate confidence on the thinnest possible basis.
+
+    THE SAME APPLIES TO RETRAINS OF ONE SPECIFICATION, and counting
+    contributions alone did not catch it. Walk-forward training writes
+    a new `trained_model_id` on every pipeline run, so one observation
+    accumulates several predictions that are all the same model
+    specification refitted -- in production, four predictions of
+    `ridge_abnormal_return:v1`, three of them sharing an identical
+    training window. Those are not independent opinions. Counting them
+    as agreement lifts the multiplier from 0.6 to 1.0 and confidence
+    from 0.30 to 0.50, which happens to clear Phase 11's 0.40 floor --
+    a signal made tradeable by nothing more than having been predicted
+    more times. Corroboration is therefore counted in distinct model
+    SPECIFICATIONS, not in rows.
     """
     usable = [c for c in contributions
               if not c.is_abstention and c.predicted_value is not None]
     if len(usable) < 2:
+        return AgreementState.INSUFFICIENT_EVIDENCE
+
+    #: A specification with no identifier cannot be shown to be
+    #: distinct from any other, so it is not allowed to supply
+    #: corroboration it may not represent.
+    distinct_specifications = {c.model_qualified_id for c in usable
+                               if c.model_qualified_id}
+    if len(distinct_specifications) < 2:
         return AgreementState.INSUFFICIENT_EVIDENCE
 
     positive = sum(1 for c in usable if c.predicted_value > 0)

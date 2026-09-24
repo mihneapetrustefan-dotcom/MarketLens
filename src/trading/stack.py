@@ -85,6 +85,8 @@ class ExecutionStack:
         environment is not real money. `IBKRConfig.can_submit_orders`
         is the single place that rule lives.
         """
+        if getattr(self.gateway, "submission_forbidden", False):
+            return False
         return bool(self.config.can_submit_orders) and self.connected
 
 
@@ -94,7 +96,8 @@ def build_stack(conn: sqlite3.Connection, *,
                 account_id: Optional[str] = None,
                 allow_paper_orders: bool = False,
                 universe_limit: int = 25,
-                persist: bool = True) -> ExecutionStack:
+                persist: bool = True,
+                pre_submission_only: bool = False) -> ExecutionStack:
     """
     Build the IBKR paper stack and restore its state.
 
@@ -132,7 +135,15 @@ def build_stack(conn: sqlite3.Connection, *,
     if universe:
         calendar.load(universe)
 
-    gateway = IBKRGateway(config, transport, instruments, calendar=calendar)
+    from src.marketdata.calendar import USEquityCalendar
+    gateway = IBKRGateway(config, transport, instruments, calendar=calendar,
+                          exchange_calendar=USEquityCalendar())
+    if pre_submission_only:
+        # Phase 25.9E. Every read reaches the real gateway; every venue
+        # write raises. Registered below, so the orchestrator holds the
+        # guarded object and no path can reach the unguarded one.
+        from src.execution.adapters.submission_guard import PreSubmissionGateway
+        gateway = PreSubmissionGateway(gateway)
 
     connected = False
     detail = ""
