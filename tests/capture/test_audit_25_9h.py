@@ -196,6 +196,14 @@ class TestNegativeControls(unittest.TestCase):
         result = audit.acceptance(self.conn)
         self.assertEqual(status(result, "no venue timestamp in the future"), "FAIL")
 
+    def test_a_session_with_no_quotes_at_all_fails_the_realtime_check(self):
+        # 2026-09-24: the entitlement was missing, every instrument-minute
+        # came back unavailable, and the check used to read PASS.
+        self.conn.execute("UPDATE capture_ticks SET unavailable = realtime + delayed, "
+                          "realtime = 0, delayed = 0, unknown_availability = 0")
+        result = audit.acceptance(self.conn)
+        self.assertEqual(status(result, "realtime data"), "FAIL")
+
     def test_delayed_data_is_reported(self):
         self.conn.execute("UPDATE capture_ticks SET delayed = realtime, realtime = 0")
         result = audit.acceptance(self.conn)

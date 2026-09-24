@@ -615,3 +615,103 @@ SELF-HEALING, VERIFIED ON THE REAL HOST (12 min 41 s)
 
 GPU DRIVER HANGS:
 CHRONIC, UNFIXED (driver update is a human action)
+
+---
+
+# Stage B addendum — Fourth Session, 2026-09-24: the account switch, and a day with no data
+
+## E1. Verdict
+
+**NO REAL SESSION CAPTURED (`--acceptance` exit 2). Quality FAILED. 0 of 390 minutes.**
+
+Capture ran perfectly and received nothing: 390 ticks, all 31 members requested every minute, **12,090 instrument-minutes, every one `unavailable`**. Zero bars, zero features, zero broker writes. This was a **chosen** outcome, not a fault — see E3.
+
+| Field | Value |
+|---|---|
+| Evidence / status | REAL / finalized |
+| Ticks / instances / auth outages | 390 / 1 / 0 |
+| Instrument-minutes observed | **0** of 12,090 |
+| Quotes: realtime / delayed / unavailable | 0 / 0 / **12,090** |
+| Bars / features | 0 / 0 |
+| Largest gap | 390 min (the whole session) |
+| Broker writes | 0 |
+
+## E2. What happened: the account was never the one being funded
+
+The live account was funded on 2026-09-24 (USD 566.24, RON 2,649 via Wise, ~1% all-in). Market data was then configured: **API Acknowledgement signed, Non-Professional status set, "US Real-Time Non Consolidated Streaming Quotes" active at EUR 0** (IBKR's free Cboe One/IEX feed), and sharing to the paper account set to Yes.
+
+Quotes stayed delayed. The read-only probe then asked the gateway *which account it held*, and the answer explained everything:
+
+| | |
+|---|---|
+| Gateway was logged into | **`DUT101249`** (username `stefanmihnea09`) — a standalone paper account created before the live account existed |
+| Paper account of the funded live account | **`DUT168120`** (username `fogwto088`), per Client Portal |
+
+Sharing links `mihneastefan09` → `fogwto088` → `DUT168120`. Every session from 2026-09-21 to 09-23 was captured from an unrelated paper account, which no subscription could ever reach. Waiting for the next-business-day flag would never have fixed it.
+
+**This is exactly the case the paper-account guard (option a, §B5 follow-up) would have caught on day one:** recording the account per session would have shown `DUT101249` from the first tick. The guard is still an open decision, and remains the user's to make.
+
+After re-logging the gateway into `fogwto088`:
+
+- the session held `DUT168120` (verified by probe, read-only),
+- `is_authenticated` reported authenticated, connected, not competing,
+- `init_brokerage_session` returned True,
+- and market data returned **HTTP 503**, then rows with no fields at all — for two hours, up to the open.
+
+So the correct account has no market-data entitlement yet. IBKR's documented rule fits: *funded status … will not take effect until the next business day*.
+
+## E3. The choice, made before the open
+
+With the entitlement missing, the options were:
+
+- **A — stay on `DUT168120`:** risk an empty session; but if entitlements activated mid-day, capture would record realtime from that minute.
+- **B — fall back to `DUT101249`:** a normal delayed session, which by the REALTIME rule counts for nothing anyway.
+
+**A was chosen, deliberately.** Delayed sessions have no research value, so B's "success" was worth nothing, while A had upside. The entitlement did not arrive, so the day produced FAILED. Nothing of research value was lost: under the realtime rule, both outcomes count zero.
+
+## E4. What this session did prove
+
+**The battery guard (B-01) fired in production, and it mattered.**
+
+| Time (UTC) | Event | Battery |
+|---|---|---|
+| 13:30:00 | `ON_BATTERY` at the open | 90% |
+| 15:35:02 | `AC_RESTORED` | 48% |
+
+42 percentage points in 2 h 5 min — about 20%/hour. On that trajectory the host would have died around 17:45 UTC, **more than two hours before the close**, repeating 2026-09-21 exactly. The guard recorded it, `capture_status` showed ATTENTION, and the machine was plugged back in before it mattered. First production firing of that fix, and the failure it was written for did not recur.
+
+Also proved: one process for the whole session, no restarts, no auth outages, no clock skew, 31/31 mapped, and the request budget untouched (4/min against 50).
+
+## E5. Finding B-12 (MEDIUM, fixed): the audit passed a session that received no data
+
+The acceptance audit reported **`[PASS] realtime data`** for a session in which every one of 12,090 instrument-minutes was `unavailable`. The check asked "is anything delayed or unknown?", and with no quotes at all the answer was no — so it passed by having nothing to complain about.
+
+Fixed: zero usable quotes is now **FAIL**, delayed or unknown stays WARN, all-realtime is PASS. Negative-control test added (`test_a_session_with_no_quotes_at_all_fails_the_realtime_check`).
+
+The session verdict was correct throughout (`NO REAL SESSION CAPTURED`, exit 2) — the defect was in one check's status, not in the conclusion.
+
+## E6. Where the corpus stands
+
+| Session | Quality | Verdict | Counts? |
+|---|---|---|---|
+| 2026-09-21 | DEGRADED | REAL DATA CAPTURED BUT SESSION INVALID | No — delayed, host power loss |
+| 2026-09-22 | GOOD | FULL SESSION VERIFIED | No — delayed |
+| 2026-09-23 | GOOD | FULL SESSION VERIFIED | No — delayed |
+| 2026-09-24 | FAILED | NO REAL SESSION CAPTURED | No — no data; wrong account until mid-morning |
+
+**0 qualifying sessions.** Every session so far was captured from a paper account that could never have received realtime data. The corpus starts when `DUT168120` gets its entitlement.
+
+## E7. Next
+
+1. **2026-09-25, before 13:10 UTC:** probe `DUT168120`. Expect `R`. If quotes are still unavailable, the documented next-business-day window has passed and IBKR support is the next step — the specific question being whether market data sharing from `mihneastefan09` to `fogwto088` is active.
+2. Keep the gateway on `fogwto088`, and never open the live account's quotes while capture runs: only one of the two may hold a session.
+3. Keep the host on AC from the pre-open to the post-close.
+
+FOURTH SESSION:
+FAILED BY CHOICE (no entitlement on the correct account)
+
+BATTERY GUARD:
+FIRED IN PRODUCTION, 90% -> 48% ON BATTERY, RESOLVED
+
+CAPTURE CORPUS:
+0 QUALIFYING SESSIONS; THE CLOCK HAS NOT STARTED

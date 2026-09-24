@@ -483,7 +483,13 @@ def acceptance(conn: sqlite3.Connection, session_id: Optional[str] = None,
               {"clock_skewed_ticks": skewed,
                "max_venue_ahead_s": -quotes["min_venue_lag_s"]
                if quotes["min_venue_lag_s"] is not None and skewed else 0})
-        check("realtime data", WARN if (quotes["delayed"] or quotes["unknown"]) else PASS,
+        # A session that received NO quote at all must not pass this check by
+        # having nothing to complain about (2026-09-24: 12,090 instrument-
+        # minutes, every one unavailable, and "realtime data" read PASS).
+        got_quotes = (quotes["realtime"] or 0) + (quotes["delayed"] or 0)             + (quotes["unknown"] or 0)
+        check("realtime data",
+              FAIL if not got_quotes else
+              WARN if (quotes["delayed"] or quotes["unknown"]) else PASS,
               {k: quotes[k] for k in ("realtime", "delayed", "unknown", "unavailable")})
         over = (quotes["max_requests_last_minute"] or 0) > budget_per_minute
         check("request budget", FAIL if over else PASS, quotes["max_requests_last_minute"])
