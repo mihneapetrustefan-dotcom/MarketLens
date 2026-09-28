@@ -9,9 +9,19 @@ On 2026-09-24 IBKR's own assistant answered the same billing question
 two ways within an hour: first that ~250,000 monthly snapshot requests
 were covered by the subscription, then that each one is charged at USD
 0.01. Their subscription page carries the second reading in its fine
-print. At this project's polling rate the difference is roughly USD 15
-a month against roughly USD 2,500, and a human support ticket
-(#561227) was still open when this module was written.
+print, and a human support ticket (#561227) was still open when this
+module was written.
+
+The uncertainty is not about WHICH subscription. It is about whether a
+VARIABLE cost sits on top of a fixed one:
+
+    fixed    ~USD 14.50/month   two bundles, flat, volume-independent
+    variable ~USD 2,500/month   IF each API snapshot bills at USD 0.01,
+                                at ~250,000 requests a month
+
+That is why `MarketDataCostModel` splits the two rather than carrying a
+single price: `fixed_monthly_subscription_cost_usd` is knowable today,
+while `per_snapshot_cost_usd` stays None until someone confirms it.
 
 So no price is hard-coded here, and there is no default that quietly
 assumes the cheap answer. `MarketDataCostModel` is configuration, its

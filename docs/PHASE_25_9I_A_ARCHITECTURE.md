@@ -136,9 +136,24 @@ adaptive module imports `src.execution` or `src.trading` at all.
 On 2026-09-24 IBKR's own assistant answered the same billing question two ways inside an
 hour: first that ~250,000 monthly snapshot requests were covered by the subscription,
 then that each is charged at USD 0.01. Their subscription page carries the second
-reading in fine print. At this project's polling rate that is roughly **USD 15 a month
-against roughly USD 2,500**. Support ticket **#561227** was still open when this was
-written.
+reading in fine print. Support ticket **#561227** was still open when this was written.
+
+The two figures being compared are **not two prices for the same thing**. They are a
+fixed cost that is known, and a variable cost that may or may not exist on top of it:
+
+| Component | Amount | Depends on request volume? |
+|---|---|---|
+| Fixed subscription: US Securities Snapshot and Futures Value Bundle (NP) | USD 10.00 / month | No |
+| Fixed subscription: US Equity and Options Add-On Streaming Bundle (NP) | USD 4.50 / month | No |
+| **Fixed subtotal** | **≈ USD 14.50 / month** | **No** |
+| *Hypothetical* per-snapshot charge, IF each API snapshot is billed at USD 0.01 | ≈ USD 2,500 / month at ~250,000 requests | Yes, linearly |
+| **Worst case if the variable charge applies** | **≈ USD 2,515 / month** | — |
+
+So the open question is not which subscription to buy: it is whether a **variable
+per-request component exists at all** on top of the fixed one. At the project's polling
+rate — 31 instruments once a minute, ~12,000 requests a trading day — that component, if
+it exists, is ~170× the subscription it accompanies. Capture's polling design, not the
+subscription choice, is what that answer would force us to change.
 
 So `MarketDataCostModel` hard-codes no price. An unset price is **UNKNOWN, never zero**,
 and `MarketDataCostGovernor.assess` returns **BLOCK** for any plan it cannot price. The
