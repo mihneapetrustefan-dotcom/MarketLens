@@ -170,18 +170,87 @@ class OpportunityScore:
     with later: attribution in 25.9I-G needs to know WHICH part of the
     score was right, and a scalar throws that away at the moment it is
     computed.
+
+    `unavailable` names the components that could not be measured, which
+    is not the same as measuring zero. 25.9I-B added it because this
+    project has no qualified predictive model: an expected-return
+    component that silently defaulted to 0.0 would look like a measured
+    opinion of "no edge" rather than the absence of an opinion.
     """
     overall: float
     components: Dict[str, float] = field(default_factory=dict)
     method_version: str = ""
+    weights: Dict[str, float] = field(default_factory=dict)
+    unavailable: Tuple[str, ...] = ()
 
     def __post_init__(self):
         _require_finite(self.overall, "overall", allow_none=False)
         for name, value in self.components.items():
             _require_finite(value, f"components[{name}]", allow_none=False)
+        for name, value in self.weights.items():
+            _require_non_negative(value, f"weights[{name}]", allow_none=False)
+        overlap = set(self.components) & set(self.unavailable)
+        if overlap:
+            raise ValueError(
+                f"a component cannot be both measured and unavailable: "
+                f"{sorted(overlap)}")
 
     def component(self, name: str, default: Optional[float] = None) -> Optional[float]:
         return self.components.get(name, default)
+
+    @property
+    def completeness(self) -> float:
+        """Share of the components this scorer wanted that it actually got."""
+        wanted = len(self.components) + len(self.unavailable)
+        return round(len(self.components) / wanted, 6) if wanted else 0.0
+
+
+class EligibilityStatus(str, Enum):
+    """
+    Whether an instrument may be evaluated at all.
+
+    INSUFFICIENT_DATA is deliberately not a synonym for INELIGIBLE. One
+    says "we looked and it does not qualify", the other says "we could
+    not tell", and a system that merges them eventually treats silence
+    as approval.
+    """
+    ELIGIBLE = "eligible"
+    INELIGIBLE = "ineligible"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
+@dataclass(frozen=True)
+class EligibilityDecision:
+    """One instrument judged against the filters, with the numbers used."""
+    instrument_id: str
+    status: EligibilityStatus
+    as_of: datetime
+    reasons: Tuple[str, ...] = ()
+    measurements: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "as_of", require_utc(self.as_of, "as_of"))
+        if self.status is not EligibilityStatus.ELIGIBLE and not self.reasons:
+            raise ValueError(
+                f"a {self.status.value} decision must carry reasons")
+
+    @property
+    def is_eligible(self) -> bool:
+        return self.status is EligibilityStatus.ELIGIBLE
+
+
+class AdmissionVerdict(str, Enum):
+    """
+    What the admission layer decided, kept separate from the score.
+
+    A high score is not admission: thresholds, capacity, concentration
+    and data completeness all sit between them, and collapsing the two
+    would make "why is this in the session" unanswerable.
+    """
+    PASS = "pass"
+    WATCH = "watch"
+    REJECT = "reject"
+    INSUFFICIENT_DATA = "insufficient_data"
 
 
 @dataclass(frozen=True)

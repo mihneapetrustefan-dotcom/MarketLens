@@ -202,12 +202,17 @@ class TestLegacyBehaviourUnchanged(unittest.TestCase):
         after = os.path.getmtime(capture_db) if os.path.exists(capture_db) else None
         self.assertEqual(before, after, "the diagnostic must not touch the store")
 
-    def test_no_new_persistence_was_introduced_by_this_phase(self):
-        # §14 permits deferring persistence, and this phase does. If a
-        # later phase adds tables, it updates this test deliberately.
+    def test_persistence_is_added_only_where_a_phase_justified_it(self):
+        # 25.9I-A deferred persistence entirely and this test asserted
+        # that. 25.9I-B justified the session-universe tables and added
+        # exactly one schema module, so the assertion moved with it
+        # rather than being deleted: thesis persistence stays deferred
+        # to 25.9I-E, and a module appearing for it would fail here.
         data_access = os.path.join(ROOT, "src", "data_access")
+        adaptive_modules = sorted(name for name in os.listdir(data_access)
+                                  if "adaptive" in name.lower())
+        self.assertEqual(adaptive_modules, ["adaptive_universe_schema.py"])
         for name in os.listdir(data_access):
-            self.assertNotIn("adaptive", name.lower())
             self.assertNotIn("thesis", name.lower())
 
 
