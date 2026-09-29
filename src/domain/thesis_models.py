@@ -216,6 +216,98 @@ EVIDENCE_BEARING_REASONS = frozenset({
 })
 
 
+class ThesisStatus(str, Enum):
+    """
+    Where a thesis is in its life (25.9I-E).
+
+    PARTIALLY_EXITED is still an ACTIVE thesis: the remainder is held
+    for the same stated reason, and treating it as finished is how a
+    system forgets why it is still holding 60% of something.
+
+    INVALIDATED is not a synonym for "lost money". It means the reason
+    for holding stopped being true, which can happen at a profit.
+    EXPIRED means the time-based thesis ran out without new evidence,
+    which is also not a loss.
+    """
+    DRAFT = "draft"
+    ACTIVE = "active"
+    PARTIALLY_EXITED = "partially_exited"
+    EXIT_RECOMMENDED = "exit_recommended"
+    INVALIDATED = "invalidated"
+    EXPIRED = "expired"
+    CLOSED = "closed"
+
+
+#: Legal moves. CLOSED is terminal: re-entering the same instrument is a
+#: NEW thesis with a new id, because a reopened thesis would make
+#: "what did we believe, and when" unanswerable.
+LEGAL_THESIS_TRANSITIONS: Dict[ThesisStatus, Tuple[ThesisStatus, ...]] = {
+    ThesisStatus.DRAFT: (ThesisStatus.ACTIVE, ThesisStatus.CLOSED),
+    ThesisStatus.ACTIVE: (ThesisStatus.PARTIALLY_EXITED,
+                          ThesisStatus.EXIT_RECOMMENDED,
+                          ThesisStatus.INVALIDATED, ThesisStatus.EXPIRED,
+                          ThesisStatus.CLOSED),
+    ThesisStatus.PARTIALLY_EXITED: (ThesisStatus.PARTIALLY_EXITED,
+                                    ThesisStatus.EXIT_RECOMMENDED,
+                                    ThesisStatus.INVALIDATED,
+                                    ThesisStatus.EXPIRED, ThesisStatus.CLOSED),
+    ThesisStatus.EXIT_RECOMMENDED: (ThesisStatus.ACTIVE,
+                                    ThesisStatus.PARTIALLY_EXITED,
+                                    ThesisStatus.INVALIDATED,
+                                    ThesisStatus.EXPIRED, ThesisStatus.CLOSED),
+    ThesisStatus.INVALIDATED: (ThesisStatus.CLOSED,),
+    ThesisStatus.EXPIRED: (ThesisStatus.CLOSED, ThesisStatus.ACTIVE),
+    ThesisStatus.CLOSED: (),
+}
+
+
+def transition_allowed(current: ThesisStatus, new: ThesisStatus) -> bool:
+    """Whether one lifecycle move is legal. Unknown states are not."""
+    return new in LEGAL_THESIS_TRANSITIONS[current]
+
+
+class EvidenceDirection(str, Enum):
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    NEUTRAL = "neutral"
+
+
+@dataclass(frozen=True)
+class ThesisEvidence:
+    """
+    New information offered to a thesis, with its strength stated.
+
+    `materiality` separates news from noise, and the caller supplies it
+    rather than this module inferring it: 25.9I-F owns event
+    materiality, and inventing a number now would bake a guess into the
+    contract. Evidence whose materiality was never measured cannot clear
+    a materiality threshold, because unmeasured is not strong.
+    """
+    evidence_id: str
+    direction: EvidenceDirection
+    as_of: datetime
+    summary: str = ""
+    materiality: Optional[float] = None
+    confidence: Optional[float] = None
+    source: str = ""
+    invalidates_thesis: bool = False
+    references: Tuple[str, ...] = ()
+
+    def __post_init__(self):
+        if not self.evidence_id:
+            raise ValueError("evidence_id is required")
+        object.__setattr__(self, "as_of", require_utc(self.as_of, "as_of"))
+        for name in ("materiality", "confidence"):
+            value = getattr(self, name)
+            if value is not None and not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be between 0 and 1")
+
+    @property
+    def is_material_information(self) -> bool:
+        """True only when materiality was actually measured and is above zero."""
+        return self.materiality is not None and self.materiality > 0
+
+
 @dataclass(frozen=True)
 class PositionThesis:
     """
@@ -224,6 +316,13 @@ class PositionThesis:
     `revision` starts at 1 and increases; each revision is a new record
     rather than an edit, so the history of what was believed, and when,
     survives the position.
+
+    FRACTION CONVENTION (25.9I-E), stated once and applied everywhere:
+    `remaining_fraction` and `realized_fraction` are fractions OF THE
+    ORIGINAL position and always sum to 1.0. An exit of "40%" means 40%
+    of the original, never 40% of what is left. Two conventions in one
+    codebase eventually meet in one expression and quietly produce the
+    wrong size.
     """
     thesis_id: str
     instrument_id: str
@@ -245,6 +344,23 @@ class PositionThesis:
     updated_at: Optional[datetime] = None
     lineage_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    #: 25.9I-E additions. Every one has a default, so constructions
+    #: written against the 25.9I-A shape stay valid.
+    status: ThesisStatus = ThesisStatus.ACTIVE
+    remaining_fraction: float = 1.0
+    realized_fraction: float = 0.0
+    entry_notional: Optional[float] = None
+    initial_summary: str = ""
+    current_summary: str = ""
+    regime_assumptions: Tuple[str, ...] = ()
+    evidence_references: Tuple[str, ...] = ()
+    initial_horizon: Optional[ExpectedHorizon] = None
+    initial_confidence: Optional[float] = None
+    #: Lineage back through 25.9I-D and 25.9I-B.
+    session_snapshot_id: Optional[str] = None
+    admission_decision_id: Optional[str] = None
+    allocation_plan_id: Optional[str] = None
+    as_of: Optional[datetime] = None
 
     def __post_init__(self):
         if not self.thesis_id:
@@ -263,7 +379,46 @@ class PositionThesis:
             raise ValueError("revision starts at 1")
         if self.revision > 1 and not self.previous_thesis_id:
             raise ValueError("a revised thesis must name the thesis it replaced")
+        object.__setattr__(self, "as_of", require_utc(self.as_of, "as_of"))
+        for name in ("remaining_fraction", "realized_fraction"):
+            value = getattr(self, name)
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be between 0 and 1 (got {value})")
+        if abs(self.remaining_fraction + self.realized_fraction - 1.0) > 1e-9:
+            raise ValueError(
+                f"remaining ({self.remaining_fraction}) and realized "
+                f"({self.realized_fraction}) fractions must sum to 1.0")
+        if self.entry_notional is not None and self.entry_notional < 0:
+            raise ValueError("entry_notional must be >= 0")
+        if (self.initial_confidence is not None
+                and not 0.0 <= self.initial_confidence <= 1.0):
+            raise ValueError("initial_confidence must be between 0 and 1")
+        if self.status is ThesisStatus.CLOSED and self.remaining_fraction > 0:
+            raise ValueError("a CLOSED thesis cannot still hold exposure")
+        if (self.status is ThesisStatus.PARTIALLY_EXITED
+                and self.realized_fraction <= 0):
+            raise ValueError(
+                "a PARTIALLY_EXITED thesis must have realized something")
         self._check_zones()
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in (ThesisStatus.DRAFT, ThesisStatus.ACTIVE,
+                               ThesisStatus.PARTIALLY_EXITED,
+                               ThesisStatus.EXIT_RECOMMENDED)
+
+    @property
+    def remaining_notional(self) -> Optional[float]:
+        """None when no entry notional was recorded: unknown, not zero."""
+        if self.entry_notional is None:
+            return None
+        return round(self.entry_notional * self.remaining_fraction, 6)
+
+    @property
+    def realized_notional(self) -> Optional[float]:
+        if self.entry_notional is None:
+            return None
+        return round(self.entry_notional * self.realized_fraction, 6)
 
     def _check_zones(self) -> None:
         """
