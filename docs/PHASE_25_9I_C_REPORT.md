@@ -22,7 +22,10 @@ plan mode, and has never sent a billable request.
 |---|---|
 | Branch | `ibkr-paper-validation-fixes` |
 | Baseline HEAD | `1968a2c` (Phase 25.9I-E completion report) |
+| Final HEAD | `dc37c58` |
 | Working tree at start | clean |
+| Commits | 1 |
+| Diff | **19 files changed, 6702 insertions(+), 3 deletions(−)** |
 
 **Modified (3 files, +32 / −3):** documentation and a test list only — no
 behaviour change.
