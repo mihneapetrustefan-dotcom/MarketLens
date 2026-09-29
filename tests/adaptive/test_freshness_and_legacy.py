@@ -204,14 +204,16 @@ class TestLegacyBehaviourUnchanged(unittest.TestCase):
 
     def test_persistence_is_added_only_where_a_phase_justified_it(self):
         # 25.9I-A deferred persistence entirely and this test asserted
-        # that. 25.9I-B justified the session-universe tables and added
-        # exactly one schema module, so the assertion moved with it
-        # rather than being deleted: thesis persistence stays deferred
-        # to 25.9I-E, and a module appearing for it would fail here.
+        # that. Each later phase that justifies a schema module adds it
+        # here deliberately -- 25.9I-B the session universe, 25.9I-D the
+        # shadow allocation plans -- so the list is a record of what was
+        # argued for, not a rubber stamp. Thesis persistence stays
+        # deferred to 25.9I-E, and a module for it would fail this test.
         data_access = os.path.join(ROOT, "src", "data_access")
         adaptive_modules = sorted(name for name in os.listdir(data_access)
                                   if "adaptive" in name.lower())
-        self.assertEqual(adaptive_modules, ["adaptive_universe_schema.py"])
+        self.assertEqual(adaptive_modules, ["adaptive_allocation_schema.py",
+                                            "adaptive_universe_schema.py"])
         for name in os.listdir(data_access):
             self.assertNotIn("thesis", name.lower())
 
