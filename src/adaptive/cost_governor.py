@@ -12,6 +12,19 @@ were covered by the subscription, then that each one is charged at USD
 print, and a human support ticket (#561227) was still open when this
 module was written.
 
+SUPERSEDED IN PART, 2026-09-29 (ticket #561227)
+---------------------------------------------------
+IBKR Client Services has since stated that snapshot fees CAP at USD
+1.50 per exchange per calendar month after 150 requests. The ~USD
+2,500 figure below modelled an UNCAPPED charge and no longer describes
+the provider's stated terms; see `src/adaptive/billing.py`, which owns
+capped billing, and `docs/evidence/IBKR_MARKET_DATA_BILLING_561227.md`.
+
+This module is UNCHANGED and still correct for uncapped plans. The
+reasoning below is kept because it records why the question was open,
+and because the cap is a provider statement that this account has not
+yet been observed to obey.
+
 The uncertainty is not about WHICH subscription. It is about whether a
 VARIABLE cost sits on top of a fixed one:
 

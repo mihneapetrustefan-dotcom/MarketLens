@@ -206,13 +206,20 @@ class TestLegacyBehaviourUnchanged(unittest.TestCase):
         # 25.9I-A deferred persistence entirely and this test asserted
         # that. Each later phase that justifies a schema module adds it
         # here deliberately -- 25.9I-B the session universe, 25.9I-D the
-        # shadow allocation plans, 25.9I-E the position theses -- so the
-        # list is a record of what was argued for, not a rubber stamp. A
-        # module appearing without a phase behind it still fails here.
+        # shadow allocation plans, 25.9I-E the position theses, 25.9I-C
+        # the market-data request ledger -- so the list is a record of
+        # what was argued for, not a rubber stamp. A module appearing
+        # without a phase behind it still fails here.
+        #
+        # 25.9I-C's entry earns its place on one fact: IBKR updates its
+        # snapshot counter once per business day, so during a session
+        # the provider's meter reads zero and a local ledger is the only
+        # thing that can bound a spend.
         data_access = os.path.join(ROOT, "src", "data_access")
         adaptive_modules = sorted(name for name in os.listdir(data_access)
                                   if "adaptive" in name.lower())
         self.assertEqual(adaptive_modules, ["adaptive_allocation_schema.py",
+                                            "adaptive_market_data_schema.py",
                                             "adaptive_thesis_schema.py",
                                             "adaptive_universe_schema.py"])
 

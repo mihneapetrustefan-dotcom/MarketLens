@@ -138,6 +138,15 @@ hour: first that ~250,000 monthly snapshot requests were covered by the subscrip
 then that each is charged at USD 0.01. Their subscription page carries the second
 reading in fine print. Support ticket **#561227** was still open when this was written.
 
+> **SUPERSEDED 2026-09-29 by ticket #561227.** The variable figure below models an
+> **uncapped** per-request charge. IBKR Client Services has since stated that snapshot
+> fees cap at **USD 1.50 per exchange per calendar month** after 150 requests, which
+> bounds the variable term at **≈ USD 4.50/month** for this universe's three venues.
+> See `docs/evidence/IBKR_MARKET_DATA_BILLING_561227.md` and
+> `docs/PHASE_25_9I_C_ARCHITECTURE.md`. The text below is kept because it records why
+> the question was open, and because the cap is a **provider statement** that this
+> account has not yet been observed to obey.
+
 The two figures being compared are **not two prices for the same thing**. They are a
 fixed cost that is known, and a variable cost that may or may not exist on top of it:
 
