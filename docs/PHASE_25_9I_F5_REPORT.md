@@ -18,8 +18,11 @@ not a number to be improved by moving a threshold.
 |---|---|
 | Branch | `ibkr-paper-validation-fixes` |
 | Baseline HEAD | `3fb21c9` (Phase 25.9I-F completion report) |
+| Final HEAD | `128e9b5` |
 | Working tree at start | clean |
+| Commits | 1 |
 | **Modified files** | **0** |
+| Diff | **11 files changed, 4887 insertions(+), 0 deletions(-)** |
 
 Purely additive. 10 new files:
 
