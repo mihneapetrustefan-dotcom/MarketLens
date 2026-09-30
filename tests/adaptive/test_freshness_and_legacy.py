@@ -215,10 +215,18 @@ class TestLegacyBehaviourUnchanged(unittest.TestCase):
         # snapshot counter once per business day, so during a session
         # the provider's meter reads zero and a local ledger is the only
         # thing that can bound a spend.
+        #
+        # 25.9I-F's earns its place on a different one: novelty is the
+        # only part of that phase that CANNOT be recomputed. Relevance,
+        # direction, materiality and urgency are pure functions of the
+        # event and the thesis, but whether a thesis has already reacted
+        # to an event is a fact about history -- and unwritten, the
+        # system revises a position every time the crawler re-runs.
         data_access = os.path.join(ROOT, "src", "data_access")
         adaptive_modules = sorted(name for name in os.listdir(data_access)
                                   if "adaptive" in name.lower())
         self.assertEqual(adaptive_modules, ["adaptive_allocation_schema.py",
+                                            "adaptive_event_schema.py",
                                             "adaptive_market_data_schema.py",
                                             "adaptive_thesis_schema.py",
                                             "adaptive_universe_schema.py"])
