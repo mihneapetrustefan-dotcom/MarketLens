@@ -18,7 +18,10 @@ to carry them.
 |---|---|
 | Branch | `ibkr-paper-validation-fixes` |
 | Baseline HEAD | `05584db` (Phase 25.9I-C completion report) |
+| Final HEAD | `1d1e0df` |
 | Working tree at start | clean |
+| Commits | 1 |
+| Diff | **14 files changed, 6522 insertions(+), 0 deletions(-)** |
 
 **Modified: 1 file, +8 / −0.**
 
