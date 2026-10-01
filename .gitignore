@@ -3,6 +3,17 @@ __pycache__/
 .DS_Store
 *.egg-info/
 data/marketlens.db
+# Phase 25.9I-F.7. The recovered corpus (corpus v2 / snapshot v2) is a
+# ~196 MB sibling of the database above and is a Release asset for the
+# same reason: it exceeds GitHub's 100 MB file limit. Its identity,
+# manifest hashes and record counts are committed in
+# docs/PHASE_25_9I_F7_REPORT.md and docs/PHASE_25_9I_F6B_HANDOFF.json,
+# so the artifact is reproducible from the committed scripts without
+# the file itself being in git.
+data/marketlens_corpus_v2.db
+data/marketlens_corpus_v2.db-wal
+data/marketlens_corpus_v2.db-shm
+data/marketlens_corpus_v2_slice.db
 .venv/
 
 # Secrets (Phase 15). `.env.example` is committed and holds only

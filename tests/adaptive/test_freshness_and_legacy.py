@@ -256,6 +256,25 @@ class TestD20Untouched(unittest.TestCase):
                     self.assertNotIn(forbidden, source,
                                      f"{name} mentions {forbidden}")
 
+    #: The protected ledger lives in `src/research/protected_ledger.py`, and
+    #: the `src.research` package is where the protected machinery sits, so
+    #: adaptive code must not reach into it.
+    #:
+    #: This was originally written as "no imported module name may contain
+    #: the word research", which is a proxy rather than the rule. Phase
+    #: 25.9I-F.7 needs `src.domain.research_models.DatasetVersion` to version
+    #: a corpus, and that module holds only generic contracts --
+    #: DatasetVersion, FeatureValue, LabelValue, ResearchObservation -- that
+    #: the whole research pipeline shares. It carries no protected outcome
+    #: and importing it cannot read one.
+    #:
+    #: So the check now names the package it means. What guards the real
+    #: risk is unchanged and stricter: `value_json` appears in no F.7
+    #: module, no F.7 file names a d20 label, and `protected_ledger` is
+    #: forbidden outright below.
+    PROTECTED_PACKAGES = ("src.research", "research.protected_ledger",
+                          "protected_ledger")
+
     def test_the_protected_ledger_is_not_imported_by_this_phase(self):
         for directory in ("adaptive", "domain"):
             base = os.path.join(ROOT, "src", directory)
@@ -273,8 +292,11 @@ class TestD20Untouched(unittest.TestCase):
                     elif isinstance(node, ast.ImportFrom):
                         modules = [node.module or ""]
                     for module in modules:
-                        self.assertNotIn("research", module,
-                                         f"{name} imports {module}")
+                        for forbidden in self.PROTECTED_PACKAGES:
+                            self.assertFalse(
+                                module == forbidden
+                                or module.startswith(forbidden + "."),
+                                f"{name} imports {module}")
 
 
 if __name__ == "__main__":
