@@ -53,7 +53,7 @@ still references the data it actually used.
 |---|---|
 | Branch | `ibkr-paper-validation-fixes` |
 | Baseline HEAD | **`3dbfde7`** (F.6 documentation) |
-| Final HEAD | **`<F.7 commit>`** |
+| Final HEAD | **`8d03625`** |
 | Working tree at start | clean |
 | Commits | 1 (plus `3dbfde7` closing F.6 first) |
 | Diff | **15 files changed, 7,236 insertions(+), 2 deletions(-)** |
