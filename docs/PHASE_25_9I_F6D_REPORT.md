@@ -76,7 +76,7 @@ Verified by `preflight()` **before** the run, not assumed, and asserted by test:
 | Branch | `ibkr-paper-validation-fixes` |
 | Baseline HEAD | **`7914aee`** (F.6C completion report) |
 | Pre-registration commit | **`2e3cc2d`** — plan only, no harness/results/marker |
-| Final HEAD | **`<F.6D commit>`** |
+| Final HEAD | **`a8a8747`** |
 | Working tree at start | clean |
 | Commits | 2 |
 | **Files modified** | **0** |
