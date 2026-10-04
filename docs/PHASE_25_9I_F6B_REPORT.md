@@ -74,7 +74,7 @@ they name. Every check passed before anything was fitted.
 |---|---|
 | Branch | `ibkr-paper-validation-fixes` |
 | Baseline HEAD | **`209da23`** (F.7 completion report) |
-| Final HEAD | **`<F.6B commit>`** |
+| Final HEAD | **`1dc77b2`** |
 | Working tree at start | clean |
 | Commits | 1 |
 | Diff | **5 files changed, 4,957 insertions(+), 17 deletions(-)** |
