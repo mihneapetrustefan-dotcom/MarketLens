@@ -347,7 +347,26 @@ def _fit_scalar_logistic(x: Sequence[float], y: Sequence[int], *,
     if max(x) - min(x) < 1e-12:
         return None
 
-    slope, intercept = 1.0, 0.0
+    def negative_log_likelihood(slope: float, intercept: float) -> float:
+        total = 0.0
+        for xi, yi in zip(x, y):
+            z = max(-60.0, min(60.0, slope * xi + intercept))
+            # log(1 + exp(z)) computed stably, then the y*z term.
+            total += (z if z > 0 else 0.0) + math.log1p(math.exp(-abs(z)))
+            total -= yi * z
+        return total
+
+    # Start at the NULL MODEL: zero slope, intercept at the empirical
+    # log-odds. Starting from slope = 1 is what broke this: an input of
+    # logit(p) can reach +/-14, so a unit slope saturates every sigmoid
+    # on the first step, the IRLS weights p*(1-p) underflow, and the
+    # Hessian goes singular -- the fit then reports "degenerate" on data
+    # that converges in three iterations from a sane start.
+    mean_y = sum(y) / len(y)
+    slope = 0.0
+    intercept = logit(min(1.0 - EPSILON, max(EPSILON, mean_y)))
+    current = negative_log_likelihood(slope, intercept)
+
     for _ in range(iterations):
         g_slope = g_intercept = 0.0
         h_ss = h_si = h_ii = 0.0
@@ -362,13 +381,34 @@ def _fit_scalar_logistic(x: Sequence[float], y: Sequence[int], *,
             h_ii += weight
         determinant = h_ss * h_ii - h_si * h_si
         if abs(determinant) < 1e-14:
-            return None
+            break
         step_slope = (h_ii * g_slope - h_si * g_intercept) / determinant
         step_intercept = (h_ss * g_intercept - h_si * g_slope) / determinant
-        slope -= step_slope
-        intercept -= step_intercept
-        if abs(step_slope) < tolerance and abs(step_intercept) < tolerance:
+
+        # Damped Newton: halve the step until the likelihood actually
+        # improves. Undamped Newton on a logistic likelihood can
+        # overshoot into saturation and never come back.
+        scale = 1.0
+        for _attempt in range(20):
+            trial_slope = slope - scale * step_slope
+            trial_intercept = intercept - scale * step_intercept
+            if not (math.isfinite(trial_slope) and math.isfinite(trial_intercept)):
+                scale *= 0.5
+                continue
+            trial = negative_log_likelihood(trial_slope, trial_intercept)
+            if trial <= current:
+                slope, intercept, improvement = (trial_slope, trial_intercept,
+                                                 current - trial)
+                current = trial
+                break
+            scale *= 0.5
+        else:
             break
+
+        if (abs(scale * step_slope) < tolerance
+                and abs(scale * step_intercept) < tolerance):
+            break
+
     if not (math.isfinite(slope) and math.isfinite(intercept)):
         return None
     return slope, intercept
