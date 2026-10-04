@@ -80,7 +80,7 @@ refuses to run if any of it moved. A test asserts the same.
 | Branch | `ibkr-paper-validation-fixes` |
 | Baseline HEAD | **`83948af`** (F.6B completion report) |
 | Pre-registration commit | **`2f1977f`** — contains the plan and **no** harness, results or marker |
-| Final HEAD | **`<F.6C commit>`** |
+| Final HEAD | **`cc96927`** |
 | Working tree at start | clean |
 | Commits | 2 (`2f1977f` plan, then the implementation) |
 | Diff against baseline | **6 files changed, 9,667 insertions(+), 0 deletions(-)** |
