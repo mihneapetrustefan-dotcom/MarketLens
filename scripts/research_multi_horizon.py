@@ -102,30 +102,42 @@ class ProtectedHorizonRequested(RuntimeError):
     """Someone pointed the researcher at a sealed horizon."""
 
 
-def build_folds(cutoffs: Sequence[datetime], purge_days: float
+def build_folds(cutoffs: Sequence[datetime], purge_days: float, *,
+                holdout_start: Optional[datetime] = None,
+                embargo_days: float = EMBARGO_DAYS,
+                test_days: int = TEST_DAYS,
+                step_days: int = STEP_DAYS,
+                min_train_rows: int = MIN_TRAIN_ROWS,
+                min_test_rows: int = MIN_TEST_ROWS
                 ) -> List[Dict[str, Any]]:
     """
     Expanding day-granular folds INSIDE the research region only.
 
     Structurally identical to `research_model_quality.build_folds`; the
     only difference is that the purge horizon is a parameter, because
-    d1 and d10 protect very different spans. The research-region bound
-    is the same frozen instant.
+    d1 and d10 protect very different spans.
+
+    `holdout_start` defaults to this module's frozen F.6 instant, so
+    every existing caller behaves exactly as before. Phase 25.9I-F.6B
+    passes the boundary from its own frozen handoff rather than
+    reimplementing fold construction -- the policy differs between the
+    two experiments, the mechanics must not.
     """
-    research = [i for i, c in enumerate(cutoffs) if c < HOLDOUT_START]
+    boundary = holdout_start or HOLDOUT_START
+    research = [i for i, c in enumerate(cutoffs) if c < boundary]
     if not research:
         return []
     start = min(cutoffs[i] for i in research)
     folds: List[Dict[str, Any]] = []
-    test_start = start + timedelta(days=purge_days + EMBARGO_DAYS + TEST_DAYS)
-    while test_start < HOLDOUT_START:
-        test_end = min(test_start + timedelta(days=TEST_DAYS), HOLDOUT_START)
+    test_start = start + timedelta(days=purge_days + embargo_days + test_days)
+    while test_start < boundary:
+        test_end = min(test_start + timedelta(days=test_days), boundary)
 
         candidate_train = [i for i in research if cutoffs[i] < test_start]
         kept, purged = purge(candidate_train, test_start,
                              lambda i: cutoffs[i], purge_days)
         kept, embargoed = embargo(kept, test_start,
-                                  lambda i: cutoffs[i], EMBARGO_DAYS)
+                                  lambda i: cutoffs[i], embargo_days)
         test_idx = [i for i in research if test_start <= cutoffs[i] < test_end]
 
         folds.append({
@@ -133,14 +145,15 @@ def build_folds(cutoffs: Sequence[datetime], purge_days: float
             "train_idx": kept, "test_idx": test_idx,
             "test_start": test_start, "test_end": test_end,
             "purged": len(purged), "embargoed": len(embargoed),
-            "valid": len(kept) >= MIN_TRAIN_ROWS
-            and len(test_idx) >= MIN_TEST_ROWS,
+            "valid": len(kept) >= min_train_rows
+            and len(test_idx) >= min_test_rows,
         })
-        test_start = test_start + timedelta(days=STEP_DAYS)
+        test_start = test_start + timedelta(days=step_days)
     return folds
 
 
-def span_requirement(cutoffs: Sequence[datetime], horizon_id: str
+def span_requirement(cutoffs: Sequence[datetime], horizon_id: str, *,
+                     holdout_start: Optional[datetime] = None
                      ) -> Dict[str, Any]:
     """
     How much more research-region CALENDAR SPAN a horizon needs.
@@ -155,11 +168,12 @@ def span_requirement(cutoffs: Sequence[datetime], horizon_id: str
     Reaching the span only buys a FAIR TEST. It promises nothing about
     whether an edge exists.
     """
-    research = [c for c in cutoffs if c < HOLDOUT_START]
+    boundary = holdout_start or HOLDOUT_START
+    research = [c for c in cutoffs if c < boundary]
     if not research:
         return {"research_span_days": 0, "days_for_first_fold": None,
                 "days_for_three_folds": None, "shortfall_days": None}
-    span = (HOLDOUT_START - min(research)).days
+    span = (boundary - min(research)).days
     first = PURGE_DAYS[horizon_id] + EMBARGO_DAYS + TEST_DAYS
     three = first + 2 * STEP_DAYS
     return {
@@ -259,10 +273,25 @@ def research_horizon(conn: sqlite3.Connection, horizon_id: str,
             print("    %-3s %-14s %s" % (candidate, outcome.get("verdict"),
                                          "; ".join(outcome.get("reasons", []))[:96]))
 
-    qualified = [c for c in candidates if c.get("qualified")]
+    # DEFECT FIXED 2026-10-04 (Phase 25.9I-F.6B pre-flight).
+    #
+    # This read `c.get("qualified")`, but `rmq.verdict()` returns
+    # `status`, never a `qualified` key -- so the list was ALWAYS empty
+    # and this function would have reported NONE QUALIFIED whatever the
+    # candidates did. F.6's recorded result is unaffected: zero folds
+    # formed on every horizon, so the INSUFFICIENT DATA return above
+    # fired first and no candidate was ever scored. A test pins that.
+    #
+    # Surviving the research region is also not qualification -- the
+    # pre-registration reserves one holdout evaluation for survivors.
+    # That stage lives in `scripts/research_f6b.py`, so this harness
+    # reports survival and does not claim more.
+    survivors = [c for c in candidates
+                 if c.get("status") == "SURVIVES RESEARCH REGION"]
     return {**header,
-            "verdict": ("QUALIFIED" if qualified else "NONE QUALIFIED"),
-            "qualified_candidates": [c["candidate"] for c in qualified],
+            "verdict": ("SURVIVORS IN RESEARCH REGION" if survivors
+                        else "NONE SURVIVED"),
+            "survivor_candidates": [c["candidate"] for c in survivors],
             "candidates": candidates}
 
 
