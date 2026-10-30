@@ -17,10 +17,13 @@ import json
 import os
 import sqlite3
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+from tests.adaptive import market_fixture
 
 from src.adaptive.admission import (
     AdmissionConfig, CandidateAssessment, ChurnPolicy, OpportunityAdmitter,
@@ -146,11 +149,21 @@ class TestParentUniverseArtifact(unittest.TestCase):
 
     def test_the_capture_universe_artifact_is_untouched(self):
         # Byte-identical to what was registered on 2026-09-19.
+        #
+        # The digest is of the COMMITTED bytes, which `.gitattributes`
+        # now pins to LF on every platform. The previous value was taken
+        # from a Windows working copy, where git had checked the file out
+        # with CRLF: identical content, 319 bytes longer, a different
+        # hash. That pin could only ever pass on Windows, and CI reported
+        # the artifact as changed when nothing had changed.
+        #
+        # Still a strict byte comparison -- any real edit to the artifact
+        # fails this, as intended.
         import hashlib
         path = os.path.join(ROOT, "config", "capture_universe_v1.json")
         with open(path, "rb") as handle:
             digest = hashlib.sha256(handle.read()).hexdigest()
-        self.assertTrue(digest.startswith("66b2c3098f3c93a7"),
+        self.assertTrue(digest.startswith("149dc5149522fb89"),
                         "capture_universe_v1.json changed: %s" % digest[:16])
 
     def test_a_benchmark_may_not_also_be_a_candidate(self):
@@ -166,19 +179,35 @@ class TestParentUniverseArtifact(unittest.TestCase):
 
     def test_parent_universe_selection_is_deterministic(self):
         # The builder's own functions, run twice over one database.
+        #
+        # Against the fixture rather than data/marketlens.db: determinism
+        # is a property of the builder, not of the corpus, and a 196 MB
+        # gitignored file cannot be read on a clean checkout. The fixture
+        # is built so the sector cap actually cuts -- 12 members in each
+        # of 4 sectors, capped at 10 -- so the ordering under test is a
+        # real ordering rather than a pass-through.
         sys.path.insert(0, os.path.join(ROOT, "scripts"))
         import build_parent_universe as builder
-        conn = sqlite3.connect("file:%s?mode=ro"
-                               % os.path.join(ROOT, "data", "marketlens.db")
-                               .replace("\\", "/"), uri=True)
-        try:
-            first, _ = builder.candidates(conn, "2026-08-27T23:59:59+00:00", 150, 60)
-            second, _ = builder.candidates(conn, "2026-08-27T23:59:59+00:00", 150, 60)
-        finally:
-            conn.close()
+        with tempfile.TemporaryDirectory() as directory:
+            database = market_fixture.build(
+                os.path.join(directory, "market.db"))
+            conn = sqlite3.connect("file:%s?mode=ro"
+                                   % database.replace("\\", "/"), uri=True)
+            try:
+                first, _ = builder.candidates(
+                    conn, "2026-08-27T23:59:59+00:00", 150, 60)
+                second, _ = builder.candidates(
+                    conn, "2026-08-27T23:59:59+00:00", 150, 60)
+            finally:
+                conn.close()
+        self.assertTrue(first, "the fixture produced no candidates at all")
         self.assertEqual(first, second)
-        self.assertEqual([m["instrument_id"] for m in builder.apply_sector_cap(first, 10)[0]],
-                         [m["instrument_id"] for m in builder.apply_sector_cap(second, 10)[0]])
+        capped_first, dropped = builder.apply_sector_cap(first, 10)
+        capped_second, _ = builder.apply_sector_cap(second, 10)
+        self.assertEqual([m["instrument_id"] for m in capped_first],
+                         [m["instrument_id"] for m in capped_second])
+        self.assertTrue(dropped, "the per-sector cap dropped nothing, so the "
+                                 "ordering it imposes was never exercised")
 
 
 class TestCapacityIsACeiling(_Case):
@@ -566,11 +595,19 @@ class TestBenchmarkSemantics(_Case):
         self.assertNotIn("benchmark-spy", selection.universe.members)
         self.assertIn("benchmark-spy", selection.benchmarks)
 
+    @unittest.skipUnless(
+        market_fixture.has_real_corpus(ROOT),
+        "needs data/marketlens.db, the local research corpus (gitignored, "
+        "~196 MB); this test is evidence ABOUT that corpus, so a fixture "
+        "cannot stand in for it -- asserting that a database this suite "
+        "wrote contains no benchmark rows would prove only that the suite "
+        "did not write any")
     def test_the_repository_treats_spy_as_a_reference_instrument(self):
         # Evidence, not assertion: SPY is absent from the instrument
         # master, which is why it cannot be a trade candidate here.
-        conn = sqlite3.connect("file:%s?mode=ro" % os.path.join(
-            ROOT, "data", "marketlens.db").replace("\\", "/"), uri=True)
+        conn = sqlite3.connect("file:%s?mode=ro" % market_fixture
+                               .real_corpus_path(ROOT)
+                               .replace("\\", "/"), uri=True)
         try:
             count = conn.execute(
                 "SELECT COUNT(*) FROM instruments WHERE instrument_id LIKE "

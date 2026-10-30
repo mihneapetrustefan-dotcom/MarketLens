@@ -22,6 +22,8 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from tests.adaptive import market_fixture
+
 from src.adaptive.admission import AdmissionConfig
 from src.adaptive.repository import AdaptiveUniverseRepository
 from src.adaptive.selector import SessionUniverseSelector
@@ -240,20 +242,31 @@ class TestNoProductionReach(unittest.TestCase):
         self.assertFalse(adaptive_flags.AdaptiveFlags().adaptive_universe_enabled)
 
     def test_the_cli_is_dry_run_by_default_and_writes_nothing(self):
-        market_db = os.path.join(ROOT, "data", "marketlens.db")
-        before = os.path.getmtime(market_db)
-        environment = dict(os.environ)
-        environment["PYTHONPATH"] = os.path.abspath(ROOT)
-        result = subprocess.run(
-            [sys.executable, os.path.join(ROOT, "scripts", "adaptive_universe.py"),
-             "--as-of", "2026-08-27T13:25:00+00:00", "--json"],
-            capture_output=True, text=True, env=environment, timeout=600)
-        self.assertEqual(result.returncode, 0, result.stderr[-800:])
-        report = json.loads(result.stdout)
-        self.assertEqual(report["mode"], "dry-run")
-        self.assertFalse(report["flag_adaptive_universe_enabled"])
-        self.assertEqual(os.path.getmtime(market_db), before,
-                         "a dry run must not write to the database")
+        # Against a fixture database passed with --db; see the twin test
+        # in test_allocation_boundary.py. data/marketlens.db is gitignored,
+        # so reaching for it made this test unrunnable on a clean checkout
+        # for reasons that had nothing to do with dry-run behaviour.
+        with tempfile.TemporaryDirectory() as directory:
+            market_db = market_fixture.build_for(
+                ParentUniverse.load().instrument_ids,
+                os.path.join(directory, "market.db"))
+            before = (os.path.getmtime(market_db),
+                      os.path.getsize(market_db))
+            environment = dict(os.environ)
+            environment["PYTHONPATH"] = os.path.abspath(ROOT)
+            result = subprocess.run(
+                [sys.executable,
+                 os.path.join(ROOT, "scripts", "adaptive_universe.py"),
+                 "--db", market_db,
+                 "--as-of", "2026-08-27T13:25:00+00:00", "--json"],
+                capture_output=True, text=True, env=environment, timeout=600)
+            self.assertEqual(result.returncode, 0, result.stderr[-800:])
+            report = json.loads(result.stdout)
+            self.assertEqual(report["mode"], "dry-run")
+            self.assertFalse(report["flag_adaptive_universe_enabled"])
+            self.assertEqual((os.path.getmtime(market_db),
+                              os.path.getsize(market_db)), before,
+                             "a dry run must not write to the database")
 
     def test_the_capture_universe_file_is_not_written_by_this_phase(self):
         # The selector reads it for the shadow comparison and nothing else.

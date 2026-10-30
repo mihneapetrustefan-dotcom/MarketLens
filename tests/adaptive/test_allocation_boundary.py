@@ -20,12 +20,14 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from tests.adaptive import market_fixture
+
 from src.adaptive.allocation_repository import AdaptiveAllocationRepository
 from src.adaptive.allocator import AllocationConfig, SmartCapitalAllocator
 from src.adaptive.correlation import AsOfCorrelationProvider
 from src.adaptive.desirability import DesirabilityEngine
 from src.adaptive.risk_budget import PositionRiskEstimator, RiskConfig
-from src.adaptive.universe import MarketHistory
+from src.adaptive.universe import MarketHistory, ParentUniverse
 from src.data_access.adaptive_allocation_schema import (
     ADAPTIVE_ALLOCATION_TABLES, initialize_adaptive_allocation_schema,
 )
@@ -318,21 +320,35 @@ class TestPersistence(unittest.TestCase):
 class TestShadowCli(unittest.TestCase):
 
     def test_the_cli_is_dry_run_by_default_and_writes_nothing(self):
-        market_db = os.path.join(ROOT, "data", "marketlens.db")
-        before = os.path.getmtime(market_db)
-        environment = dict(os.environ)
-        environment["PYTHONPATH"] = os.path.abspath(ROOT)
-        result = subprocess.run(
-            [sys.executable, os.path.join(ROOT, "scripts", "adaptive_allocation.py"),
-             "--as-of", "2026-08-27", "--equity", "250", "--cash", "250",
-             "--account-risk-budget", "8", "--json"],
-            capture_output=True, text=True, env=environment, timeout=900)
-        self.assertEqual(result.returncode, 0, result.stderr[-800:])
-        report = json.loads(result.stdout)
-        self.assertEqual(report["mode"], "dry-run")
-        self.assertFalse(report["flag_smart_capital_allocation_enabled"])
-        self.assertTrue(report["identity_reconciles"])
-        self.assertEqual(os.path.getmtime(market_db), before)
+        # Against a fixture database passed with --db, not the developer's
+        # data/marketlens.db: that corpus is gitignored, so on a clean
+        # checkout this test used to die in getmtime() before the CLI ran
+        # at all. The claim under test -- a dry run writes nothing to the
+        # database it was given -- is if anything stronger here, because
+        # the fixture is a database the CLI has never seen.
+        with tempfile.TemporaryDirectory() as directory:
+            market_db = market_fixture.build_for(
+                ParentUniverse.load().instrument_ids,
+                os.path.join(directory, "market.db"))
+            before = (os.path.getmtime(market_db),
+                      os.path.getsize(market_db))
+            environment = dict(os.environ)
+            environment["PYTHONPATH"] = os.path.abspath(ROOT)
+            result = subprocess.run(
+                [sys.executable,
+                 os.path.join(ROOT, "scripts", "adaptive_allocation.py"),
+                 "--db", market_db,
+                 "--as-of", "2026-08-27", "--equity", "250", "--cash", "250",
+                 "--account-risk-budget", "8", "--json"],
+                capture_output=True, text=True, env=environment, timeout=900)
+            self.assertEqual(result.returncode, 0, result.stderr[-800:])
+            report = json.loads(result.stdout)
+            self.assertEqual(report["mode"], "dry-run")
+            self.assertFalse(report["flag_smart_capital_allocation_enabled"])
+            self.assertTrue(report["identity_reconciles"])
+            self.assertEqual((os.path.getmtime(market_db),
+                              os.path.getsize(market_db)), before,
+                             "a dry run must not write to the database")
 
 
 if __name__ == "__main__":
