@@ -35,6 +35,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
+from typing import Optional
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -120,7 +121,8 @@ def open_store(path: str) -> sqlite3.Connection:
 
 
 def supervisor_gone(state_path: str, attempts: int = 3,
-                    retry_seconds: float = 0.5) -> bool:
+                    retry_seconds: float = 0.5,
+                    owner: Optional[str] = None) -> bool:
     """
     True when the supervisor's state file is missing, unreadable or stale.
 
@@ -129,6 +131,23 @@ def supervisor_gone(state_path: str, attempts: int = 3,
     2026-09-21 the child stopped itself twice mid-session ("stop
     requested", no STOP file, supervisor alive), consistent with exactly
     that. So an unreadable file is re-read before it counts.
+
+    Freshness alone is not enough, because the state file is shared by
+    every supervisor that ever runs against this store. When a
+    supervisor dies but leaves its child behind, the next supervisor
+    acquires the OS lock and starts refreshing that same file. The
+    orphan then reads a timestamp seconds old and concludes its own
+    supervisor is alive -- while it still holds the capture lease under
+    the dead supervisor's identity. Every child the new supervisor
+    spawns exits 3 ("duplicate runner"), and after ten minutes of that
+    the new supervisor latches MANUAL_ATTENTION, which stops capture
+    until a human runs --clear-attention. That is what happened on
+    2026-10-23 and again on 2026-10-27: 21 refused children, then five
+    and three days of no capture respectively.
+
+    So the owner recorded in the file must still be the owner that
+    spawned this child. A file with no owner recorded cannot answer the
+    question and is judged on freshness alone, as before.
     """
     if not state_path:
         return False
@@ -141,11 +160,15 @@ def supervisor_gone(state_path: str, attempts: int = 3,
             if attempt + 1 < attempts:
                 time.sleep(retry_seconds)
             continue
+        recorded = state.get("owner")
+        if owner and recorded and recorded != owner:
+            return True
         return (datetime.now(timezone.utc) - stamp).total_seconds() > SUPERVISOR_STALE_SECONDS
     return True
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The child's command line, as the supervisor must spell it."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--db", default=DEFAULT_DB)
     parser.add_argument("--universe", default=os.path.join(ROOT, DEFAULT_UNIVERSE_PATH))
@@ -155,7 +178,11 @@ def main(argv=None) -> int:
     parser.add_argument("--supervisor-state", default="",
                         help="exit cleanly if this file stops being refreshed")
     parser.add_argument("--log-dir", default=DEFAULT_LOG_DIR)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
 
     configure_logging(args.log_dir)
     # The gateway serves a self-signed certificate on localhost (TLS
@@ -179,7 +206,8 @@ def main(argv=None) -> int:
         now = time.monotonic()
         if now - last_check["at"] >= 10:
             last_check["at"] = now
-            last_check["gone"] = supervisor_gone(args.supervisor_state)
+            last_check["gone"] = supervisor_gone(args.supervisor_state,
+                                                 owner=args.owner)
         return last_check["gone"]
 
     try:

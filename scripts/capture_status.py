@@ -42,6 +42,22 @@ STOP_FILE = os.path.join(CAPTURE_DIR, "STOP")
 #: plus slack before it counts as gone.
 HEARTBEAT_STALE_SECONDS = 720.0
 
+#: The supervisor rewrites its state file every tick (5s) for as long as
+#: it lives, so a state file older than this means the supervisor died
+#: without saying so. Matches run_capture.SUPERVISOR_STALE_SECONDS: the
+#: child applies the same rule to the same file, and two different
+#: answers to one question would be worse than either.
+SUPERVISOR_STALE_SECONDS = 90.0
+
+#: A supervised child records the lease owner its supervisor gave it
+#: (capture_supervisor.Supervisor.owner); a hand-started one records
+#: `capture-manual-...` (run_capture: `args.owner or
+#: leases.new_owner("capture-manual")`). Spelled here rather than
+#: imported, for the reason above: status reads the capture system and
+#: does not depend on it. test_supervisor_25_9g.py asserts that a real
+#: supervisor's owner still starts with this.
+SUPERVISOR_OWNER_PREFIX = "capture-supervisor-"
+
 #: Below this, status asks for attention (measured: ~21 MB per session
 #: for the 31-member v1 universe, so 2 GB is roughly three months).
 DISK_FREE_FLOOR = 2 * 1024 ** 3
@@ -198,6 +214,39 @@ def verdict(report: dict) -> int:
                        % (age, inst.get("state")))
         return NOT_RUNNING
     code = OK
+    # The child is alive (checked above). If its supervisor stopped
+    # refreshing the state file, that child is an orphan: it keeps
+    # capturing, so nothing here looks wrong, but nothing will restart
+    # it when it stops and nothing holds the OS lock that keeps a second
+    # supervisor out. `age_seconds` was already computed in collect()
+    # and then never consulted, so this read as OK on 2026-10-23 and
+    # 2026-10-27 while capture was in exactly that state.
+    #
+    # Whether a supervisor is expected at all is the child's own answer,
+    # not the state file's: asking the file would invert the test, since
+    # a file that cannot be read would read as "no supervisor expected"
+    # -- the one case that most needs saying out loud. The live child
+    # recorded which identity it runs under when it took the lease.
+    if str(inst.get("lease_owner") or "").startswith(SUPERVISOR_OWNER_PREFIX):
+        sup_age = sup.get("age_seconds")
+        if not sup:
+            # Not named here: verdict() is handed the parsed report, not
+            # the path collect() read, and --state-file can move it.
+            reasons.append("capture is running under a supervisor, but its "
+                           "state file is missing, unreadable or not valid "
+                           "JSON: whether anything is still supervising this "
+                           "child cannot be verified")
+            code = ATTENTION
+        elif sup_age is None:
+            reasons.append("capture is running under a supervisor, but its state "
+                           "file carries no readable timestamp: whether the "
+                           "supervisor is still alive cannot be verified")
+            code = ATTENTION
+        elif sup_age > SUPERVISOR_STALE_SECONDS:
+            reasons.append("capture is running but its supervisor is not: the "
+                           "state file was last written %.1f s ago, so no one "
+                           "will restart the child when it stops" % sup_age)
+            code = ATTENTION
     if inst.get("state") == "WAITING_FOR_AUTH":
         reasons.append("IBKR gateway is not logged in: log in to the Client "
                        "Portal Gateway in a browser; capture resumes by itself")
