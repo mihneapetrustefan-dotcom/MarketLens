@@ -239,7 +239,15 @@ def persist(conn: sqlite3.Connection, model, evaluation) -> None:
         evaluation.evaluation_id, evaluation.trained_model_id, evaluation.model_qualified_id,
         evaluation.window_label, evaluation.sample_size, evaluation.cluster_count,
         evaluation.effective_sample_size, int(evaluation.small_sample),
-        int(evaluation.beats_all_baselines), evaluation.abstention_rate,
+        # Three states, not two. `beats_all_baselines` is
+        # Optional[bool] and is None when no baseline comparison was
+        # usable -- which is NOT losing to the baselines. `int(None)`
+        # raised TypeError here, and `or 0` would have recorded a loss
+        # that src/autoresearch/observations.py then reports as fact.
+        # Same convention as src/modeling/promotion.py.
+        None if evaluation.beats_all_baselines is None
+        else int(evaluation.beats_all_baselines),
+        evaluation.abstention_rate,
         json.dumps(evaluation.metrics), json.dumps(evaluation.notes), _iso(evaluation.evaluated_at),
     ))
 

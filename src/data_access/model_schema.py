@@ -48,10 +48,141 @@ into a trade needs risk limits and portfolio context that belong to a
 later phase and are not modelled here.
 
 SAFE TO RUN REPEATEDLY: every statement is CREATE TABLE / CREATE INDEX
-IF NOT EXISTS.
+IF NOT EXISTS, plus one guarded migration that is a no-op once applied
+(see `_relax_beats_all_baselines`).
 """
 
 import sqlite3
+
+#: The one definition of `model_evaluations`, used both to create the
+#: table and to rebuild it in the migration below, so a rebuilt table
+#: cannot drift from the declared one. `%s` is the table name: the
+#: migration builds a copy under a temporary name before renaming it
+#: into place.
+#:
+#: `beats_all_baselines` is deliberately NULLABLE and carries no
+#: default. `ModelEvaluation.beats_all_baselines` is `Optional[bool]`
+#: and is None when no baseline comparison was usable -- which is not
+#: the same as having lost to the baselines, and
+#: `src/autoresearch/observations.py` reads `beats_all_baselines = 0`
+#: as exactly that loss. A default of 0 would make an insert that
+#: omits the column assert a loss nobody measured, so there is none.
+_MODEL_EVALUATIONS_DDL = """
+    CREATE TABLE IF NOT EXISTS %s (
+        evaluation_id        TEXT PRIMARY KEY,
+        trained_model_id     TEXT NOT NULL,
+        model_qualified_id   TEXT NOT NULL,
+        window_label         TEXT NOT NULL DEFAULT '',
+        sample_size          INTEGER NOT NULL DEFAULT 0,
+        cluster_count        INTEGER,
+        effective_sample_size INTEGER,
+        small_sample         INTEGER NOT NULL DEFAULT 0,
+        beats_all_baselines  INTEGER,
+        abstention_rate      REAL,
+        metrics_json         TEXT NOT NULL DEFAULT '{}',
+        notes_json           TEXT NOT NULL DEFAULT '[]',
+        evaluated_at         TEXT
+    )
+"""
+
+#: The name the migration rebuilds under. Dropped first, so a crash
+#: part-way through a previous attempt cannot leave stale rows behind
+#: to be copied forward.
+_REBUILD_TABLE = "model_evaluations_rebuild"
+
+
+def _create_model_evaluation_indexes(conn: sqlite3.Connection) -> None:
+    """
+    The indexes on `model_evaluations`, in one place.
+
+    Dropping a table drops its indexes with it, so the migration has to
+    recreate exactly these -- and calling the same function from both
+    places is what guarantees "exactly".
+    """
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evals_model ON model_evaluations(trained_model_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_evals_beats ON model_evaluations(beats_all_baselines)")
+
+
+def _relax_beats_all_baselines(conn: sqlite3.Connection) -> bool:
+    """
+    Drop the NOT NULL on `model_evaluations.beats_all_baselines`.
+
+    WHY A REBUILD. The column was `INTEGER NOT NULL DEFAULT 0`, which
+    forced a three-state value into two: an evaluation with no usable
+    baseline comparison could only be recorded as having LOST. The
+    declaration above fixes databases created from now on, but
+    `CREATE TABLE IF NOT EXISTS` leaves an existing table exactly as it
+    was, and SQLite cannot drop a NOT NULL constraint with
+    `ALTER TABLE`. An existing database therefore needs the documented
+    table rebuild.
+
+    Returns True when it migrated, False when there was nothing to do.
+    Safe to call repeatedly: once the column is nullable it returns at
+    the first check without touching the database.
+    """
+    columns = {row[1]: row for row in
+               conn.execute("PRAGMA table_info(model_evaluations)")}
+    target = columns.get("beats_all_baselines")
+    if target is None:
+        # No table, or a shape this migration does not know. Either way
+        # there is nothing here to relax.
+        return False
+    if not target[3]:                       # row[3] is `notnull`
+        return False
+
+    # `PRAGMA foreign_keys` is a no-op inside a transaction, so it has
+    # to be set before the rebuild opens one -- and restored afterwards
+    # to whatever the caller had, not to a guessed default.
+    foreign_keys_were_on = bool(
+        conn.execute("PRAGMA foreign_keys").fetchone()[0])
+    conn.commit()
+    if foreign_keys_were_on:
+        conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DROP TABLE IF EXISTS %s" % _REBUILD_TABLE)
+        conn.execute(_MODEL_EVALUATIONS_DDL % _REBUILD_TABLE)
+
+        # The copied column list is read back from the two tables rather
+        # than written out here, so it cannot disagree with either of
+        # them. A column the old table never had keeps its new default.
+        shared = [name for name in
+                  (row[1] for row in conn.execute(
+                      "PRAGMA table_info(%s)" % _REBUILD_TABLE))
+                  if name in columns]
+        joined = ", ".join(shared)
+        before = conn.execute(
+            "SELECT COUNT(*) FROM model_evaluations").fetchone()[0]
+        conn.execute("INSERT INTO %s (%s) SELECT %s FROM model_evaluations"
+                     % (_REBUILD_TABLE, joined, joined))
+        copied = conn.execute(
+            "SELECT COUNT(*) FROM %s" % _REBUILD_TABLE).fetchone()[0]
+        if copied != before:
+            raise sqlite3.IntegrityError(
+                "model_evaluations rebuild copied %d of %d rows; rolling back"
+                % (copied, before))
+
+        conn.execute("DROP TABLE model_evaluations")
+        conn.execute("ALTER TABLE %s RENAME TO model_evaluations"
+                     % _REBUILD_TABLE)
+        _create_model_evaluation_indexes(conn)
+
+        # Scoped to this table on purpose: an unrelated pre-existing
+        # violation elsewhere in the database must not abort a rebuild
+        # that is itself correct.
+        problems = conn.execute(
+            "PRAGMA foreign_key_check(model_evaluations)").fetchall()
+        if problems:
+            raise sqlite3.IntegrityError(
+                "foreign key check failed after rebuild: %r" % (problems,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        if foreign_keys_were_on:
+            conn.execute("PRAGMA foreign_keys=ON")
+    return True
 
 
 def initialize_model_schema(conn: sqlite3.Connection) -> None:
@@ -84,23 +215,10 @@ def initialize_model_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS model_evaluations (
-            evaluation_id        TEXT PRIMARY KEY,
-            trained_model_id     TEXT NOT NULL,
-            model_qualified_id   TEXT NOT NULL,
-            window_label         TEXT NOT NULL DEFAULT '',
-            sample_size          INTEGER NOT NULL DEFAULT 0,
-            cluster_count        INTEGER,
-            effective_sample_size INTEGER,
-            small_sample         INTEGER NOT NULL DEFAULT 0,
-            beats_all_baselines  INTEGER NOT NULL DEFAULT 0,
-            abstention_rate      REAL,
-            metrics_json         TEXT NOT NULL DEFAULT '{}',
-            notes_json           TEXT NOT NULL DEFAULT '[]',
-            evaluated_at         TEXT
-        )
-    """)
+    conn.execute(_MODEL_EVALUATIONS_DDL % "model_evaluations")
+    # Only does anything on a database that predates the nullable
+    # column; see `_relax_beats_all_baselines`.
+    _relax_beats_all_baselines(conn)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS model_baseline_comparisons (
@@ -136,8 +254,7 @@ def initialize_model_schema(conn: sqlite3.Connection) -> None:
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_models_qualified ON trained_models(model_qualified_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_models_label ON trained_models(label_name)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_evals_model ON model_evaluations(trained_model_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_evals_beats ON model_evaluations(beats_all_baselines)")
+    _create_model_evaluation_indexes(conn)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_baseline_eval ON model_baseline_comparisons(evaluation_id)")
     # A Signal looks its prediction up by id; replay and evaluation
     # scan by model or by observation.
