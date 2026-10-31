@@ -22,12 +22,20 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from scripts.train_models import (
-    load_dataset, chronological_split, main, DEFAULT_LABEL,
+    load_dataset, chronological_split, main, persist, DEFAULT_LABEL,
 )
 from src.data_access.research_schema import initialize_research_schema
 from src.data_access.model_schema import initialize_model_schema
+from src.domain.model_models import (
+    BaselineComparison, ModelEvaluation, ModelFamily, ModelSpecification,
+    PredictionTask, TrainedModel,
+)
 
 START = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+#: Sentinel for "work it out from the comparisons", so a test can still
+#: ask for `abstention_rate=None` explicitly.
+DERIVE = object()
 
 
 def seed(path, n=200, quality="high", with_labels=True):
@@ -247,6 +255,199 @@ class TestTrainEndToEnd(unittest.TestCase):
         # a distinct act of prediction with its own timestamp. What
         # must NOT happen is silent loss of the earlier ones.
         self.assertGreaterEqual(second, first)
+
+
+class TestPersistedBaselineVerdict(unittest.TestCase):
+    """
+    What `persist()` writes for `beats_all_baselines`, which is
+    `Optional[bool]` and has THREE states.
+
+    An evaluation whose baselines could not be compared is not an
+    evaluation that lost: `src/autoresearch/observations.py` selects
+    `WHERE beats_all_baselines = 0` and reports those rows as models
+    that lost, so writing 0 for "unavailable" would be a fabricated
+    measurement. `int(None)` used to raise TypeError here instead
+    (`scripts/train_models.py:242`), which is how the Train models
+    stage failed on 2026-10-28.
+
+    These tests build the evaluation directly rather than training a
+    model: the three states are properties of `ModelEvaluation`, and
+    constructing one is enough to pin what persistence does with it.
+    """
+
+    def setUp(self):
+        handle, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(handle)
+        self.conn = sqlite3.connect(self.db_path)
+        initialize_model_schema(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        os.remove(self.db_path)
+
+    def model(self):
+        specification = ModelSpecification(
+            model_id="ridge_abnormal_return",
+            name="Ridge regression on abnormal return",
+            task=PredictionTask.ABNORMAL_RETURN,
+            family=ModelFamily.RIDGE_REGRESSION,
+            version="v1", label_name=DEFAULT_LABEL,
+            feature_set_id="all_numeric_v1", feature_set_version="v1",
+            dataset_version="v1", hyperparameters={"alpha": 1.0})
+        return TrainedModel(
+            trained_model_id="tm-fixture", specification=specification,
+            parameters={"intercept": 0.0}, feature_names=["market.return_5d"],
+            train_start=START, train_end=START + timedelta(days=30),
+            train_sample_size=100, train_cluster_count=40,
+            trained_at=START + timedelta(days=31))
+
+    def evaluation(self, comparisons, notes=(), abstention_rate=DERIVE):
+        """
+        An evaluation shaped like the engine's output.
+
+        `metrics` follows the comparisons rather than being passed in:
+        the primary metric is what gives a comparison its `model_score`,
+        so a comparison with no model score can only come from an
+        evaluation that computed no metrics. Defaulting these two
+        independently would let a test assert a state the engine cannot
+        produce.
+        """
+        comparisons = list(comparisons)
+        usable = any(c.model_score is not None for c in comparisons)
+        if abstention_rate is DERIVE:
+            abstention_rate = 0.0 if usable else 1.0
+        return ModelEvaluation(
+            evaluation_id="ev-fixture", trained_model_id="tm-fixture",
+            model_qualified_id="ridge_abnormal_return:v1",
+            window_label="single_chronological_split",
+            sample_size=100, cluster_count=40,
+            metrics={"mae": 0.01} if usable else {},
+            baseline_comparisons=comparisons, notes=list(notes),
+            abstention_rate=abstention_rate,
+            evaluated_at=START + timedelta(days=31))
+
+    def comparison(self, model_score, baseline_score=0.50):
+        # directional_accuracy: higher is better, so a model score above
+        # the baseline score means the model won.
+        return BaselineComparison(
+            baseline_name="baseline_historical_mean",
+            metric_name="directional_accuracy",
+            baseline_score=baseline_score, model_score=model_score)
+
+    def stored(self):
+        return self.conn.execute(
+            "SELECT beats_all_baselines FROM model_evaluations "
+            "WHERE evaluation_id = 'ev-fixture'").fetchone()[0]
+
+    def test_true_is_stored_as_one(self):
+        evaluation = self.evaluation([self.comparison(0.55)])
+        self.assertIs(evaluation.beats_all_baselines, True)
+        persist(self.conn, self.model(), evaluation)
+        self.conn.commit()
+        self.assertEqual(self.stored(), 1)
+
+    def test_false_is_stored_as_zero(self):
+        evaluation = self.evaluation([self.comparison(0.45)])
+        self.assertIs(evaluation.beats_all_baselines, False)
+        persist(self.conn, self.model(), evaluation)
+        self.conn.commit()
+        self.assertEqual(self.stored(), 0)
+
+    def test_none_is_stored_as_sql_null(self):
+        evaluation = self.evaluation([])
+        self.assertIsNone(evaluation.beats_all_baselines)
+        persist(self.conn, self.model(), evaluation)
+        self.conn.commit()
+        self.assertIsNone(self.stored(), "unavailable must be NULL, not 0")
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM model_evaluations "
+            "WHERE beats_all_baselines IS NULL").fetchone()[0], 1)
+
+    def test_no_usable_baseline_comparison_stores_null(self):
+        """
+        The 2026-10-28 shape: the model abstained on every test row, so
+        `metrics` was empty, so every comparison carried
+        `model_score=None` and none of them could be read either way.
+        """
+        evaluation = self.evaluation(
+            [self.comparison(None), self.comparison(None, baseline_score=0.49)])
+        self.assertEqual(evaluation.metrics, {})
+        self.assertEqual(evaluation.abstention_rate, 1.0)
+        self.assertTrue(evaluation.baseline_comparisons,
+                        "the comparisons exist; it is their values that do not")
+        self.assertIsNone(evaluation.beats_all_baselines)
+        persist(self.conn, self.model(), evaluation)
+        self.conn.commit()
+        self.assertIsNone(self.stored())
+
+    def test_no_usable_test_observations_stores_null(self):
+        """
+        The other route to None: `train_and_evaluate` returns early with
+        no comparisons at all when nothing in the test set is usable.
+        """
+        # The early return happens before the abstention calculation,
+        # so the rate stays None on that route.
+        evaluation = self.evaluation([], notes=["no usable test observations"],
+                                     abstention_rate=None)
+        self.assertIsNone(evaluation.abstention_rate)
+        self.assertEqual(evaluation.baseline_comparisons, [])
+        self.assertIsNone(evaluation.beats_all_baselines)
+        persist(self.conn, self.model(), evaluation)
+        self.conn.commit()
+        self.assertIsNone(self.stored())
+        self.assertIn("no usable test observations",
+                      json.loads(self.conn.execute(
+                          "SELECT notes_json FROM model_evaluations").fetchone()[0]))
+
+    def test_an_unavailable_verdict_is_not_reported_as_a_loss(self):
+        # The query src/autoresearch/observations.py runs to find models
+        # that lost to their baselines must not pick this row up.
+        persist(self.conn, self.model(), self.evaluation([]))
+        self.conn.commit()
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM model_evaluations "
+            "WHERE beats_all_baselines = 0").fetchone()[0], 0)
+
+    def test_a_real_loss_is_still_reported_as_a_loss(self):
+        # The counterpart: NULL must not swallow a measured defeat.
+        persist(self.conn, self.model(), self.evaluation([self.comparison(0.45)]))
+        self.conn.commit()
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM model_evaluations "
+            "WHERE beats_all_baselines = 0").fetchone()[0], 1)
+
+    def test_persisting_an_unjudgeable_evaluation_does_not_raise(self):
+        # The regression itself: this call used to raise TypeError from
+        # int(None), and then IntegrityError once None was passed to a
+        # NOT NULL column.
+        try:
+            persist(self.conn, self.model(), self.evaluation([]))
+        except (TypeError, sqlite3.IntegrityError) as error:
+            self.fail("persist() still refuses an unjudgeable "
+                      "evaluation: %r" % (error,))
+
+    def test_the_model_row_is_written_alongside(self):
+        # A run that could not be judged still happened, and the record
+        # of the attempt must survive.
+        persist(self.conn, self.model(), self.evaluation([]))
+        self.conn.commit()
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM trained_models "
+            "WHERE trained_model_id = 'tm-fixture'").fetchone()[0], 1)
+
+    def test_small_sample_is_still_written_as_an_integer(self):
+        # `small_sample` is a plain bool property and keeps its int()
+        # conversion; this pins that the fix did not disturb it.
+        evaluation = ModelEvaluation(
+            evaluation_id="ev-fixture", trained_model_id="tm-fixture",
+            model_qualified_id="ridge_abnormal_return:v1",
+            sample_size=10, cluster_count=4,
+            evaluated_at=START + timedelta(days=31))
+        self.assertTrue(evaluation.small_sample)
+        persist(self.conn, self.model(), evaluation)
+        self.conn.commit()
+        self.assertEqual(self.conn.execute(
+            "SELECT small_sample FROM model_evaluations").fetchone()[0], 1)
 
 
 if __name__ == "__main__":
