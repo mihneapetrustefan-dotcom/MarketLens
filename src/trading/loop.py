@@ -77,10 +77,12 @@ from src.domain.trading_loop_models import (
     cycle_id_for, require_utc,
 )
 from src.execution import intake
+from src.execution.adapters.ibkr.errors import IBKRError, IBKRErrorCategory
 from src.execution.intake import LineageIncomplete, RiskNotApproved
 from src.portfolio.service import PortfolioService
 from src.portfolio.sizing import FixedFractionSizing
 from src.trading import accounts as account_state
+from src.trading import pricing
 from src.trading import outcomes as loop_outcomes
 from src.trading import targets as target_math
 from src.trading.eligibility import (
@@ -149,6 +151,17 @@ class LoopConfig:
     #: part of `as_dict()`, so it is in the session fingerprint.
     max_anchor_drift_seconds: float = MAX_ANCHOR_DRIFT_SECONDS
     dry_run: bool = True
+    #: Which prices decisions use (Phase 25.9E). Only honoured against
+    #: the mock transport; a real venue is always OPERATIONAL -- see
+    #: `src/trading/pricing.py` for why that is not configurable.
+    price_source: str = "research"
+    #: The session runner that owns this account, when one does. Not
+    #: part of the fingerprint: it identifies a process, not a policy.
+    lease_owner: str = ""
+    #: Phase 25.9E: run every gate, validate every request, and stop at
+    #: the broker boundary with READY_TO_SUBMIT. Nothing is sent. Part of
+    #: the fingerprint, because it changes what a session may do.
+    pre_submission_only: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return {"broker_id": self.broker_id, "account_id": self.account_id,
@@ -161,6 +174,8 @@ class LoopConfig:
                 "experimental": self.experimental,
                 "max_price_age_days": self.max_price_age_days,
                 "max_anchor_drift_seconds": self.max_anchor_drift_seconds,
+                "price_source": self.price_source,
+                "pre_submission_only": self.pre_submission_only,
                 "eligibility": json.dumps(self.eligibility.as_dict(),
                                           sort_keys=True)}
 
@@ -309,6 +324,17 @@ class TradingLoop:
             result.detail = "not claimed"
             return result
 
+        # -- one operator per account (Phase 25.9E) ------------------
+        from src.trading import leases
+        holder = leases.holder(self.conn, leases.lease_scope(
+            self.config.broker_id,
+            self.config.account_id or self.stack.account_id), now)
+        if holder and holder != self.config.lease_owner:
+            result.block(BlockReason.RUNNER_NOT_OWNER,
+                         f"runner {holder} operates this account; this "
+                         f"process may observe but not trade")
+
+        self._context = {}
         try:
             self._advance(result, session, now, anchor)
         except Exception as error:                          # noqa: BLE001
@@ -329,6 +355,13 @@ class TradingLoop:
                 result.status = CycleStatus.COMPLETED
 
         finished = datetime.now(timezone.utc)
+        # After the status is final, so a crashed cycle is classified too.
+        try:
+            self._assess_readiness(result, getattr(self, "_context", {}) or {},
+                                   now)
+        except Exception as error:                          # noqa: BLE001
+            self.repository.audit(self.config.actor, "readiness_failed", now,
+                                  cycle_id=cycle_id, detail=str(error))
         self.repository.save_cycle(result, finished)
         return result
 
@@ -420,6 +453,18 @@ class TradingLoop:
                 beat = self.stack.gateway.heartbeat()
             except Exception as error:                      # noqa: BLE001
                 entry.detail = f"heartbeat failed: {error}; "
+            # Re-read every cycle (Phase 25.9E). `stack.connected` is set
+            # once, when the process builds the stack, so a session that
+            # lapsed mid-day still reported a usable broker to the health
+            # verdict and to submission. Both must hold now: the build
+            # connected AND the gateway says it can carry an order.
+            try:
+                live = bool(self.stack.gateway.connection_state().can_submit)
+            except Exception as error:                      # noqa: BLE001
+                live = False
+                entry.detail = (entry.detail or "") + \
+                    f"connection state unreadable: {error}; "
+            context["broker_usable"] = bool(self.stack.connected) and live
             account, broker_positions, open_orders = account_state.read_account_state(
                 self.stack.gateway, self.stack.broker_id,
                 self.config.account_id or self.stack.account_id,
@@ -435,6 +480,7 @@ class TradingLoop:
                 + f"{len(broker_positions)} position(s), "
                 + f"{len(open_orders)} open order(s)")
 
+        self._context = context
         self._observe(result, context, now, anchor)
         self._decide_and_submit(result, session, context, now, anchor)
         self._persist(result, context, now)
@@ -463,16 +509,33 @@ class TradingLoop:
         prices: Dict[str, float] = {}
         price_ages: Dict[str, float] = {}
         newest_age: Optional[float] = None
+        source = self.price_source()
+        context["price_source"] = source
         with self._stage(result, LoopStage.MARKET_DATA) as entry:
-            newest_age = self._newest_bar_age_days(anchor)
-            entry.detail = ("no bars" if newest_age is None
-                            else f"newest bar {newest_age:.1f} days old")
+            if source == pricing.OPERATIONAL:
+                newest_age = pricing.freshest_operational_age_days(self.conn, now)
+                entry.detail = (
+                    "operational: no tradeable quote" if newest_age is None
+                    else f"operational: freshest tradeable quote "
+                         f"{newest_age * 86400.0:.0f}s old")
+            else:
+                newest_age = self._newest_bar_age_days(anchor)
+                entry.detail = ("research cache (mock only): no bars"
+                                if newest_age is None
+                                else f"research cache (mock only): newest bar "
+                                     f"{newest_age:.1f} days old")
 
         # ---- 4. signals ---------------------------------------------
         service = PortfolioService(
             self.conn,
             **({"constraint_version": self.config.constraint_version}
                if self.config.constraint_version else {}))
+        if source == pricing.OPERATIONAL:
+            # One swap, and every Phase 11 consumer -- valuation, sizing,
+            # risk inputs -- reads the same current quotes as the loop.
+            service.prices = pricing.OperationalPriceRepository(
+                self.conn, evaluated_at=now, history=service.prices)
+            service.valuator.prices = service.prices
         signals: List[Signal] = []
         with self._stage(result, LoopStage.SIGNALS) as entry:
             signals = self._signals_at(service, anchor)
@@ -491,12 +554,23 @@ class TradingLoop:
         report = account_state.assess_health(
             result.cycle_id, now,
             mode=self.modes.resolve(now), kill_switch=kill, account=account,
-            connection_healthy=self.stack.connected,
+            connection_healthy=context.get("broker_usable", self.stack.connected),
             market_data_age_days=newest_age,
             signals_available=len(signals),
             portfolio_known=account is not None and account.is_known,
             risk_known=True,
-            execution_ready=self.stack.may_submit,
+            # Readiness is not permission (Phase 25.9E, §77). A cycle
+            # that cannot send -- dry run, pre-submission mode -- needs a
+            # usable broker to reach the boundary, not an open ordering
+            # gate; requiring the gate here blocked every such cycle
+            # before portfolio and risk had run. A cycle that CAN send
+            # still requires both, and the submission stage re-checks.
+            execution_ready=(context.get("broker_usable", True)
+                             and (self.stack.may_submit
+                                  or self.config.dry_run
+                                  or self.config.pre_submission_only
+                                  or getattr(self.stack.gateway,
+                                             "submission_forbidden", False))),
             reconciliation_clean=context.get("reconciliation_clean"),
             database_ok=True,
             scheduler_age_seconds=((now - last_finished).total_seconds()
@@ -509,6 +583,7 @@ class TradingLoop:
         eligible: List[Signal] = []
         with self._stage(result, LoopStage.ELIGIBILITY) as entry:
             deployable, statuses, governance_detail = self._model_governance()
+            context["deployable_models"] = deployable
             if governance_detail:
                 # A gate that could not answer is not a gate that said
                 # no. Recorded on the stage so an operator sees it,
@@ -605,6 +680,12 @@ class TradingLoop:
                       if floor is not None else "")
                    if dropped else ""))
 
+        if not evaluation.intents:
+            portfolio_detail = next((st.detail for st in reversed(result.stages)
+                                     if st.stage is LoopStage.PORTFOLIO), "")
+            context["no_trade_reason"] = ("the portfolio layer sized no "
+                                          "position: " + portfolio_detail)
+
         with self._stage(result, LoopStage.RISK) as entry:
             decision = evaluation.decision
             result.timestamps.risk_time = anchor
@@ -616,6 +697,7 @@ class TradingLoop:
                 # recording it as a block would make a correct refusal
                 # look like an outage on the health page.
                 entry.outcome = StageOutcome.SKIPPED
+                context["no_trade_reason"] = "risk declined: " + entry.detail
                 return context
 
         # ---- 8. targets and deltas (§7, §16) ------------------------
@@ -643,6 +725,9 @@ class TradingLoop:
                             f"{len(deltas.rejected)} rejected")
 
         if not deltas.quantities:
+            context["no_trade_reason"] = context.get("no_trade_reason") or (
+                "no change required: targets already met by actual and "
+                "pending positions")
             return context
 
         # ---- 9. intents -> execution requests (§8, the Phase 17 joint)
@@ -710,14 +795,34 @@ class TradingLoop:
                         for b in result.blocks[:3]))
                 return context
 
+            # ---- PHASE 25.9E: THE STRUCTURAL STOP --------------------
+            # Everything above has run for real: mode, broker, account,
+            # prices, eligibility, portfolio, risk, targets, intents. Here
+            # each request is validated by the SAME `_prepare` the real
+            # submission uses, and held. `submit` is not called; behind
+            # this the pre-submission gateway raises if anything tries.
+            if (self.config.pre_submission_only
+                    or getattr(self.stack.gateway, "submission_forbidden", False)):
+                ready = [r for r in requests
+                         if self.stack.service.dry_run(self.caller, r).would_submit]
+                context["reached_boundary"] = True
+                context["requests_ready"] = len(ready)
+                entry.outcome = StageOutcome.SKIPPED
+                entry.detail = (f"PHASE 25.9E STRUCTURAL STOP: {len(ready)} of "
+                                f"{len(requests)} request(s) READY_TO_SUBMIT; "
+                                f"nothing was sent")
+                return context
+
             if self.config.dry_run:
                 entry.outcome = StageOutcome.SKIPPED
                 entry.detail = (f"dry run: {len(requests)} request(s) were "
                                 f"validated and not sent")
-                for request in requests:
-                    self.stack.service.dry_run(self.caller, request)
+                ready = [r for r in requests
+                         if self.stack.service.dry_run(self.caller, r).would_submit]
+                context["reached_boundary"] = True
+                context["requests_ready"] = len(ready)
                 return context
-            if not self.stack.may_submit:
+            if not (self.stack.may_submit and context.get("broker_usable", True)):
                 self._blocked(
                     result, entry, BlockReason.BROKER_UNHEALTHY,
                     "the gateway is connected but paper ordering is not "
@@ -785,10 +890,36 @@ class TradingLoop:
         # ---- 13. positions, reconciled (§16) ------------------------
         with self._stage(result, LoopStage.POSITIONS) as entry:
             entry.detail = ""
-            fresh = list(self.stack.gateway.get_positions(
-                self.config.account_id or self.stack.account_id, now))
+            # A broker that cannot answer is a BLOCK with a reason, not a
+            # crashed cycle (Phase 25.9E): a lapsed Client Portal session
+            # used to raise here and end the cycle FAILED with no block
+            # recorded -- safe, since nothing was sent, but it read as a
+            # system error rather than "the broker session is gone".
+            # Reconciliation, P&L and outcomes all need the broker, so the
+            # observation half stops; the decision half then blocks.
+            try:
+                fresh = list(self.stack.gateway.get_positions(
+                    self.config.account_id or self.stack.account_id, now))
+            except IBKRError as error:
+                # Session and transport failures only. A programming error
+                # still raises and fails the stage, so a bug is never
+                # converted into a tidy block.
+                if error.category not in (IBKRErrorCategory.CONNECTION_ERROR,
+                                          IBKRErrorCategory.AUTHENTICATION_ERROR,
+                                          IBKRErrorCategory.TIMEOUT,
+                                          IBKRErrorCategory.RATE_LIMIT_ERROR):
+                    raise
+                self._blocked(result, entry, BlockReason.BROKER_DISCONNECTED,
+                              f"positions unreadable: {type(error).__name__}: "
+                              f"{error}")
+                context["reconciliation_clean"] = False
+                context["broker_usable"] = False
+                return
+            # Observed, NOT yet reconciled (Phase 25.9E): these rows were
+            # labelled BROKER_RECONCILED before reconciliation had run.
+            # They are promoted below only if reconciliation agrees.
             self.repository.save_actuals(target_math.actuals_from_broker(
-                fresh, result.cycle_id, now, reconciled=True))
+                fresh, result.cycle_id, now, reconciled=False))
             result.positions_reconciled = len(fresh)
             result.timestamps.position_time = now
             context["positions"] = fresh
@@ -815,13 +946,20 @@ class TradingLoop:
             # therefore records no reason at all. Found exactly that
             # way: stubbing `get_account` to raise produced a FAILED
             # cycle with an empty `blocks` list.
+            # OUR book, not the broker's (Phase 25.9E). The positions
+            # compared used to be `fresh` -- the gateway's own answer --
+            # against the gateway's own answer, so a position we never
+            # traded could not be a mismatch. Cash was compared the same
+            # way. Expected positions are now the last agreed baseline
+            # plus our fills since; cash has no local projection, so it
+            # is left unmeasured rather than compared with itself.
+            account_id = self.config.account_id or self.stack.account_id
             try:
+                expected, baseline = self.expected_positions(account_id)
                 record = self.stack.orchestrator.reconcile(
-                    self.stack.broker_id,
-                    self.config.account_id or self.stack.account_id, now,
-                    internal_positions={p.instrument_id: p.quantity
-                                        for p in fresh},
-                    internal_cash=account.cash if account else None)
+                    self.stack.broker_id, account_id, now,
+                    internal_positions=expected,
+                    internal_cash=None)
             except Exception as error:                      # noqa: BLE001
                 self._blocked(result, entry,
                               BlockReason.RECONCILIATION_FAILED,
@@ -838,6 +976,19 @@ class TradingLoop:
                 entry.detail = (f"{len(record.mismatches)} mismatch(es)"
                                 if record.mismatches else "clean")
                 context["reconciliation_clean"] = not record.mismatches
+                if not record.mismatches:
+                    self.repository.save_actuals(target_math.actuals_from_broker(
+                        fresh, result.cycle_id, now, reconciled=True))
+                    self.repository.save_baseline(
+                        self.stack.broker_id, account_id, result.cycle_id,
+                        {p.instrument_id: float(p.quantity) for p in fresh
+                         if abs(float(p.quantity)) > 1e-9},
+                        [f.fill_id for f in self.stack.orchestrator.fills
+                         if f.broker_id == self.stack.broker_id],
+                        source="clean_reconciliation", actor=self.config.actor,
+                        reason="the broker agreed with our book", at=now)
+                    if baseline is None:
+                        entry.detail += "; first baseline recorded"
                 if record.mismatches:
                     # ASK the broker about the ones it can answer for
                     # before calling them unresolved. §12 forbids
@@ -1142,6 +1293,94 @@ class TradingLoop:
         constraint = constraint_set.first(ConstraintScope.MIN_SIGNAL_CONFIDENCE)
         return constraint.min_value if constraint else None
 
+    def _assess_readiness(self, result: CycleResult, context: Dict[str, Any],
+                          now: datetime) -> None:
+        """Phase 25.9E: one readiness verdict per cycle, recorded."""
+        from src.trading import readiness as readiness_module
+        verdict = readiness_module.assess(
+            result, context,
+            allow_paper_orders=self.config.allow_paper_orders,
+            dry_run=self.config.dry_run,
+            pre_submission_only=(self.config.pre_submission_only or getattr(
+                self.stack.gateway, "submission_forbidden", False)),
+            may_submit=bool(self.stack.may_submit
+                            and context.get("broker_usable", True)))
+        result.readiness = verdict
+        self.repository.audit(
+            self.config.actor, "cycle_readiness", now,
+            session_id=self.config.session_id, cycle_id=result.cycle_id,
+            detail=json.dumps(verdict.as_dict(), sort_keys=True, default=str))
+
+    def expected_positions(self, account_id: str
+                           ) -> Tuple[Dict[str, float], Optional[Dict[str, Any]]]:
+        """
+        What our own record says the account holds (Phase 25.9E).
+
+        The last agreed baseline plus every fill of ours not already in
+        it. With no baseline at all the book starts flat, so an account
+        that already holds something at first contact is a discrepancy
+        an operator must accept -- broker reality wins, but not silently.
+        """
+        baseline = self.repository.latest_baseline(self.stack.broker_id,
+                                                   account_id)
+        expected: Dict[str, float] = dict(
+            (baseline or {}).get("positions") or {})
+        known = (baseline or {}).get("fill_ids") or set()
+        for fill in self.stack.orchestrator.fills:
+            if fill.broker_id != self.stack.broker_id or fill.fill_id in known:
+                continue
+            if fill.account_id and account_id and fill.account_id != account_id:
+                continue
+            sign = 1.0 if getattr(fill.side, "value", str(fill.side)) == "buy" else -1.0
+            expected[fill.instrument_id] = (
+                expected.get(fill.instrument_id, 0.0) + sign * fill.quantity)
+        return ({k: v for k, v in expected.items() if abs(v) > 1e-9},
+                baseline)
+
+    def accept_broker_positions(self, *, actor: str, reason: str,
+                                now: datetime) -> str:
+        """
+        An operator adopts the broker's current book as the baseline.
+
+        The resolution path for an unexplained position. Requires a
+        named person and a reason, reads the broker at the moment of
+        acceptance, and never touches an order.
+        """
+        require_utc(now, "now")
+        account_id = self.config.account_id or self.stack.account_id
+        positions = list(self.stack.gateway.get_positions(account_id, now))
+        baseline_id = self.repository.save_baseline(
+            self.stack.broker_id, account_id, "",
+            {p.instrument_id: float(p.quantity) for p in positions
+             if abs(float(p.quantity)) > 1e-9},
+            [f.fill_id for f in self.stack.orchestrator.fills
+             if f.broker_id == self.stack.broker_id],
+            source="operator_acceptance", actor=actor, reason=reason, at=now)
+        self.repository.audit(actor, "broker_positions_accepted", now,
+                              session_id=self.config.session_id,
+                              detail=f"{baseline_id}: {reason}")
+        return baseline_id
+
+    def deployable_models(self) -> Dict[str, bool]:
+        """
+        The canonical model gate's answer, for observers (Phase 25.9E).
+
+        The session runner called this method and it did not exist: the
+        AttributeError was swallowed and every tick reported "no deployable
+        model" whatever the gate said. It now asks the same
+        `_model_governance` the cycle uses, and raises if the gate cannot
+        answer, so an unreadable gate is not reported as an empty one.
+        """
+        deployable, _statuses, detail = self._model_governance()
+        if detail:
+            raise RuntimeError(detail)
+        return deployable
+
+    def price_source(self) -> str:
+        """OPERATIONAL against any real venue; see `src/trading/pricing.py`."""
+        return pricing.resolve_price_source(
+            getattr(self.stack.transport, "name", ""), self.config.price_source)
+
     def _newest_bar_age_days(self, anchor: datetime) -> Optional[float]:
         """
         Age of the newest cached bar at or before the anchor.
@@ -1196,7 +1435,7 @@ class TradingLoop:
         for instrument_id, point in points.items():
             if point.price is not None and point.price > 0:
                 prices[instrument_id] = float(point.price)
-                ages[instrument_id] = point.age_days(anchor)
+                ages[instrument_id] = max(0.0, point.age_days(anchor))
         return prices, ages
 
     def _model_governance(self) -> Tuple[Dict[str, bool], Dict[str, str], str]:

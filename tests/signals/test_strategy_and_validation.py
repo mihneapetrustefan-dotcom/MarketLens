@@ -107,9 +107,27 @@ class TestComputeConfidence(unittest.TestCase):
 
 
 class TestClassifyAgreement(unittest.TestCase):
-    def _contribution(self, value, abstain=False):
+    def setUp(self):
+        self._specification_count = 0
+
+    def _contribution(self, value, abstain=False, specification=None):
+        """
+        Distinct specifications by default.
+
+        These cases exercise the SIGN logic. Corroboration is counted
+        in distinct model specifications -- retrains of one are not
+        second opinions -- so reusing a single identifier here would
+        return INSUFFICIENT_EVIDENCE every time and hide whatever the
+        case was actually asserting. Pass `specification` explicitly to
+        test that rule instead; it is covered in
+        tests/signals/test_confidence_semantics.py.
+        """
+        if specification is None:
+            self._specification_count += 1
+            specification = f"model_{self._specification_count}:v1"
         return ModelContribution(prediction_id="p", trained_model_id="t",
-                                 model_qualified_id="m", predicted_value=value,
+                                 model_qualified_id=specification,
+                                 predicted_value=value,
                                  is_abstention=abstain)
 
     def test_single_model_is_insufficient_evidence_not_agreement(self):

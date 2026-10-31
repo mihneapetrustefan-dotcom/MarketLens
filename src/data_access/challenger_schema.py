@@ -55,6 +55,11 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
         "challengers": [
             ("experimental_basis", "INTEGER NOT NULL DEFAULT 1"),
         ],
+        # Phase 25.9D: what the run read. '' on older runs, which can
+        # therefore never be a cache source.
+        "challenger_runs": [
+            ("cohort_digest", "TEXT NOT NULL DEFAULT ''"),
+        ],
     }
     for table, columns in wanted.items():
         have = {row[1] for row in conn.execute("PRAGMA table_info(%s)" % table)}
@@ -146,6 +151,7 @@ def initialize_challenger_schema(conn: sqlite3.Connection) -> None:
             -- moved after the numbers existed (§10).
             fingerprint         TEXT NOT NULL DEFAULT '',
             dataset_cutoff      TEXT NOT NULL DEFAULT '',
+            cohort_digest       TEXT NOT NULL DEFAULT '',
             code_version        TEXT NOT NULL DEFAULT '',
             rows_examined       INTEGER NOT NULL DEFAULT 0,
             cache_hit           INTEGER NOT NULL DEFAULT 0,

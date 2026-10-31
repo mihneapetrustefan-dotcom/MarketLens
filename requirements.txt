@@ -32,3 +32,14 @@
 feedparser==6.0.14
 pandas==3.0.5
 yfinance==1.7.0
+
+# Added 2026-09-11, during the first real IBKR paper validation session.
+# `transport.py`'s `_ensure_session` claimed requests "is already
+# present through an existing dependency" -- true only if yfinance is
+# installed, and this file's own header says yfinance is NOT installed
+# in the development environment. Untrue here: `import requests` failed
+# outright, so `is_authenticated()` reported `auth_failed` with a
+# misleading message ("the requests library is required") that reads
+# like an IBKR problem rather than a local one. Pinned to what resolved
+# today.
+requests==2.34.2

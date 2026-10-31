@@ -1,0 +1,2590 @@
+{
+  "broker_writes": 0,
+  "cells": [
+    {
+      "candidate": "C0",
+      "cell_id": "d1:C0",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d1",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 3.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C1",
+      "cell_id": "d1:C1",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d1",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 3.0,
+      "task": "direction"
+    },
+    {
+      "candidate": "C2",
+      "cell_id": "d1:C2",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d1",
+      "hyperparameters": {
+        "alpha": 10.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 3.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C3",
+      "cell_id": "d1:C3",
+      "embargo_days": 6.0,
+      "feature_config": "dense_only",
+      "horizon_id": "d1",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 3.0,
+      "task": "direction"
+    },
+    {
+      "candidate": "C0",
+      "cell_id": "d3:C0",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d3",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 5.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C1",
+      "cell_id": "d3:C1",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d3",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 5.0,
+      "task": "direction"
+    },
+    {
+      "candidate": "C2",
+      "cell_id": "d3:C2",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d3",
+      "hyperparameters": {
+        "alpha": 10.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 5.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C3",
+      "cell_id": "d3:C3",
+      "embargo_days": 6.0,
+      "feature_config": "dense_only",
+      "horizon_id": "d3",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 5.0,
+      "task": "direction"
+    },
+    {
+      "candidate": "C0",
+      "cell_id": "d5:C0",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d5",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 7.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C1",
+      "cell_id": "d5:C1",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d5",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 7.0,
+      "task": "direction"
+    },
+    {
+      "candidate": "C2",
+      "cell_id": "d5:C2",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d5",
+      "hyperparameters": {
+        "alpha": 10.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 7.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C3",
+      "cell_id": "d5:C3",
+      "embargo_days": 6.0,
+      "feature_config": "dense_only",
+      "horizon_id": "d5",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 7.0,
+      "task": "direction"
+    },
+    {
+      "candidate": "C0",
+      "cell_id": "d10:C0",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d10",
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 14.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C1",
+      "cell_id": "d10:C1",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d10",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 14.0,
+      "task": "direction"
+    },
+    {
+      "candidate": "C2",
+      "cell_id": "d10:C2",
+      "embargo_days": 6.0,
+      "feature_config": "all_numeric",
+      "horizon_id": "d10",
+      "hyperparameters": {
+        "alpha": 10.0
+      },
+      "model_family": "ridge_regression",
+      "purge_days": 14.0,
+      "task": "abnormal_return"
+    },
+    {
+      "candidate": "C3",
+      "cell_id": "d10:C3",
+      "embargo_days": 6.0,
+      "feature_config": "dense_only",
+      "horizon_id": "d10",
+      "hyperparameters": {
+        "iterations": 300,
+        "l2": 0.01,
+        "learning_rate": 0.1,
+        "threshold": 0.0
+      },
+      "model_family": "logistic_regression",
+      "purge_days": 14.0,
+      "task": "direction"
+    }
+  ],
+  "cells_evaluated": [
+    "d1:C0",
+    "d1:C1",
+    "d1:C2",
+    "d1:C3",
+    "d3:C0",
+    "d3:C1",
+    "d3:C2",
+    "d3:C3",
+    "d5:C0",
+    "d5:C1",
+    "d5:C2",
+    "d5:C3",
+    "d10:C0",
+    "d10:C1",
+    "d10:C2",
+    "d10:C3"
+  ],
+  "cells_unevaluated": [],
+  "completed_at": "2026-10-04T13:50:15.688813+00:00",
+  "errors": [],
+  "execution_id": "f6b-647dd37b65e14046",
+  "frozen_plan": {
+    "candidate_budget": 16,
+    "code_commit": "209da230d40139813a234d57d2773d82f56d6233",
+    "corpus_version_id": "canonical_corpus_v2",
+    "deferred_horizons": [
+      "intraday_5m",
+      "intraday_15m",
+      "intraday_30m",
+      "intraday_60m"
+    ],
+    "eligible_horizons": [
+      "d1",
+      "d3",
+      "d5",
+      "d10"
+    ],
+    "embargo_days": 6.0,
+    "holdout_boundary": "2026-08-18T00:00:00+00:00",
+    "holdout_rule": "The holdout is the final 20% of the snapshot's information-time span, floored to the start of the UTC day. The fraction is Phase 25.9's, carried over unchanged so that it predates this dataset. The boundary is computed from the information range alone and is never adjusted after any fold count or model outcome is observed.",
+    "preregistration_hash": "9150b988993dcac3789b99140eaec782df60e816c8fa77fd25be0d4f18087625",
+    "preregistration_path": "docs\\PHASE_25_9I_F6B_PREREGISTRATION.md",
+    "purge_days": {
+      "d1": 3.0,
+      "d10": 14.0,
+      "d3": 5.0,
+      "d5": 7.0
+    },
+    "qualification_gate": "src.domain.model_models.ModelEvaluation.is_deployable",
+    "snapshot_hash": "4ccab384d37a9eb249ce2bd61b44692c77a0df3dc7121dc79c3ed6940e66b0bc",
+    "snapshot_id": "research_snapshot_v2"
+  },
+  "horizons": [
+    {
+      "as_of_cutoff": "2026-08-30T14:35:00+00:00",
+      "candidates": [
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C0",
+          "cell_id": "d1:C0",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.0106,
+              "baselines": {
+                "baseline_historical_mean": -0.026762,
+                "baseline_majority_class": -0.990122
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.037266,
+              "test_clusters": 75,
+              "test_rows": 94,
+              "train_rows": 75
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.038567,
+                "baseline_majority_class": -1.006918
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.047963,
+              "test_clusters": 100,
+              "test_rows": 143,
+              "train_rows": 152
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.028276,
+                "baseline_majority_class": -1.003417
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.035037,
+              "test_clusters": 113,
+              "test_rows": 166,
+              "train_rows": 252
+            },
+            {
+              "abstention_rate": 0.0075,
+              "baselines": {
+                "baseline_historical_mean": -0.019117,
+                "baseline_majority_class": -1.001288
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "mae",
+              "model_score": 0.021506,
+              "test_clusters": 102,
+              "test_rows": 133,
+              "train_rows": 403
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.021727,
+                "baseline_majority_class": -0.021863
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "mae",
+              "model_score": 0.023507,
+              "test_clusters": 50,
+              "test_rows": 52,
+              "train_rows": 568
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d1",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 440,
+          "qualified": false,
+          "runtime_seconds": 0.797,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 0,
+            "best": 0.047963,
+            "folds": 5,
+            "mean": 0.033056,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.026457,
+            "stdev": 0.009679,
+            "worst": 0.021506
+          },
+          "survival_reasons": [
+            "beats baselines in 0/5 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.026457,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 5,
+            "folds_worse_than_base_rate": 5,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C1",
+          "cell_id": "d1:C1",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE",
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 2,
+          "folds": [
+            {
+              "abstention_rate": 0.0106,
+              "baselines": {
+                "baseline_historical_mean": 0.62766,
+                "baseline_majority_class": 0.62766
+              },
+              "beats_all_baselines": false,
+              "brier": 0.301488,
+              "brier_base_rate": 0.235383,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.602151,
+              "test_clusters": 75,
+              "test_rows": 94,
+              "train_rows": 75
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.370629,
+                "baseline_majority_class": 0.370629
+              },
+              "beats_all_baselines": true,
+              "brier": 0.382628,
+              "brier_base_rate": 0.273962,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.405594,
+              "test_clusters": 100,
+              "test_rows": 143,
+              "train_rows": 152
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.445783,
+                "baseline_majority_class": 0.445783
+              },
+              "beats_all_baselines": true,
+              "brier": 0.301701,
+              "brier_base_rate": 0.268227,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.487952,
+              "test_clusters": 113,
+              "test_rows": 166,
+              "train_rows": 252
+            },
+            {
+              "abstention_rate": 0.0075,
+              "baselines": {
+                "baseline_historical_mean": 0.488722,
+                "baseline_majority_class": 0.488722
+              },
+              "beats_all_baselines": false,
+              "brier": 0.256551,
+              "brier_base_rate": 0.250098,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "directional_accuracy",
+              "model_score": 0.44697,
+              "test_clusters": 102,
+              "test_rows": 133,
+              "train_rows": 403
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.634615,
+                "baseline_majority_class": 0.365385
+              },
+              "beats_all_baselines": false,
+              "brier": 0.254335,
+              "brier_base_rate": 0.25347,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "directional_accuracy",
+              "model_score": 0.538462,
+              "test_clusters": 50,
+              "test_rows": 52,
+              "train_rows": 568
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d1",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 440,
+          "qualified": false,
+          "runtime_seconds": 7.072,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 2,
+            "best": 0.602151,
+            "folds": 5,
+            "mean": 0.496226,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.196557,
+            "stdev": 0.068866,
+            "worst": 0.405594
+          },
+          "survival_reasons": [
+            "beats baselines in 2/5 folds; a strict majority is required",
+            "Brier not below base rate in 5/5 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.196557,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C2",
+          "cell_id": "d1:C2",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.0106,
+              "baselines": {
+                "baseline_historical_mean": -0.026762,
+                "baseline_majority_class": -0.990122
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.030745,
+              "test_clusters": 75,
+              "test_rows": 94,
+              "train_rows": 75
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.038567,
+                "baseline_majority_class": -1.006918
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.046511,
+              "test_clusters": 100,
+              "test_rows": 143,
+              "train_rows": 152
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.028276,
+                "baseline_majority_class": -1.003417
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.034346,
+              "test_clusters": 113,
+              "test_rows": 166,
+              "train_rows": 252
+            },
+            {
+              "abstention_rate": 0.0075,
+              "baselines": {
+                "baseline_historical_mean": -0.019117,
+                "baseline_majority_class": -1.001288
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "mae",
+              "model_score": 0.020704,
+              "test_clusters": 102,
+              "test_rows": 133,
+              "train_rows": 403
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.021727,
+                "baseline_majority_class": -0.021863
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "mae",
+              "model_score": 0.02314,
+              "test_clusters": 50,
+              "test_rows": 52,
+              "train_rows": 568
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d1",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 440,
+          "qualified": false,
+          "runtime_seconds": 0.86,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 0,
+            "best": 0.046511,
+            "folds": 5,
+            "mean": 0.031089,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.025807,
+            "stdev": 0.009161,
+            "worst": 0.020704
+          },
+          "survival_reasons": [
+            "beats baselines in 0/5 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.025807,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 5,
+            "folds_worse_than_base_rate": 5,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C3",
+          "cell_id": "d1:C3",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE",
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "dense_only",
+          "fold_wins": 2,
+          "folds": [
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.62766,
+                "baseline_majority_class": 0.62766
+              },
+              "beats_all_baselines": false,
+              "brier": 0.286119,
+              "brier_base_rate": 0.235383,
+              "candidate": "C3",
+              "features": 25,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.62766,
+              "test_clusters": 75,
+              "test_rows": 94,
+              "train_rows": 75
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.370629,
+                "baseline_majority_class": 0.370629
+              },
+              "beats_all_baselines": true,
+              "brier": 0.382628,
+              "brier_base_rate": 0.273962,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.405594,
+              "test_clusters": 100,
+              "test_rows": 143,
+              "train_rows": 152
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.445783,
+                "baseline_majority_class": 0.445783
+              },
+              "beats_all_baselines": true,
+              "brier": 0.301701,
+              "brier_base_rate": 0.268227,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.487952,
+              "test_clusters": 113,
+              "test_rows": 166,
+              "train_rows": 252
+            },
+            {
+              "abstention_rate": 0.0075,
+              "baselines": {
+                "baseline_historical_mean": 0.488722,
+                "baseline_majority_class": 0.488722
+              },
+              "beats_all_baselines": false,
+              "brier": 0.256551,
+              "brier_base_rate": 0.250098,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "directional_accuracy",
+              "model_score": 0.44697,
+              "test_clusters": 102,
+              "test_rows": 133,
+              "train_rows": 403
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.634615,
+                "baseline_majority_class": 0.365385
+              },
+              "beats_all_baselines": false,
+              "brier": 0.254335,
+              "brier_base_rate": 0.25347,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "directional_accuracy",
+              "model_score": 0.538462,
+              "test_clusters": 50,
+              "test_rows": 52,
+              "train_rows": 568
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d1",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 440,
+          "qualified": false,
+          "runtime_seconds": 8.016,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 2,
+            "best": 0.62766,
+            "folds": 5,
+            "mean": 0.501328,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.222066,
+            "stdev": 0.07699,
+            "worst": 0.405594
+          },
+          "survival_reasons": [
+            "beats baselines in 2/5 folds; a strict majority is required",
+            "Brier not below base rate in 5/5 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.222066,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        }
+      ],
+      "clusters": 237,
+      "code_commit": "209da230d40139813a234d57d2773d82f56d6233",
+      "corpus_version_id": "canonical_corpus_v2",
+      "embargo_days": 6.0,
+      "feature_version": "v1|v1|v1|v1|v1|v1|v1",
+      "features": 26,
+      "fold_detail": [
+        {
+          "embargoed": 53,
+          "label": "wf1",
+          "purged": 21,
+          "test_clusters": 75,
+          "test_end": "2026-07-25T07:00:00+00:00",
+          "test_rows": 94,
+          "test_start": "2026-07-18T07:00:00+00:00",
+          "train_end": "2026-07-12T07:00:00+00:00",
+          "train_rows": 75,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 57,
+          "label": "wf2",
+          "purged": 34,
+          "test_clusters": 100,
+          "test_end": "2026-08-01T07:00:00+00:00",
+          "test_rows": 143,
+          "test_start": "2026-07-25T07:00:00+00:00",
+          "train_end": "2026-07-19T07:00:00+00:00",
+          "train_rows": 152,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 79,
+          "label": "wf3",
+          "purged": 55,
+          "test_clusters": 113,
+          "test_end": "2026-08-08T07:00:00+00:00",
+          "test_rows": 166,
+          "test_start": "2026-08-01T07:00:00+00:00",
+          "train_end": "2026-07-26T07:00:00+00:00",
+          "train_rows": 252,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 91,
+          "label": "wf4",
+          "purged": 58,
+          "test_clusters": 102,
+          "test_end": "2026-08-15T07:00:00+00:00",
+          "test_rows": 133,
+          "test_start": "2026-08-08T07:00:00+00:00",
+          "train_end": "2026-08-02T07:00:00+00:00",
+          "train_rows": 403,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 52,
+          "label": "wf5",
+          "purged": 65,
+          "test_clusters": 50,
+          "test_end": "2026-08-18T00:00:00+00:00",
+          "test_rows": 52,
+          "test_start": "2026-08-15T07:00:00+00:00",
+          "train_end": "2026-08-09T07:00:00+00:00",
+          "train_rows": 568,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        }
+      ],
+      "folds_built": 5,
+      "folds_valid": 5,
+      "holdout_clusters": 109,
+      "holdout_rows": 154,
+      "horizon": "d1",
+      "instruments": 237,
+      "label": "d1.abnormal_return",
+      "preregistration_hash": "9150b988993dcac3789b99140eaec782df60e816c8fa77fd25be0d4f18087625",
+      "purge_days": 3.0,
+      "qualified_candidates": [],
+      "quality": {
+        "high": 915,
+        "invalid": 141
+      },
+      "research_region_clusters": 227,
+      "research_region_rows": 737,
+      "rows": 891,
+      "sessions": 55,
+      "snapshot_hash": "4ccab384d37a9eb249ce2bd61b44692c77a0df3dc7121dc79c3ed6940e66b0bc",
+      "snapshot_id": "research_snapshot_v2",
+      "survivor_candidates": [],
+      "verdict": "NONE QUALIFIED"
+    },
+    {
+      "as_of_cutoff": "2026-08-30T14:35:00+00:00",
+      "candidates": [
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C0",
+          "cell_id": "d3:C0",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.01,
+              "baselines": {
+                "baseline_historical_mean": -0.043193,
+                "baseline_majority_class": -0.987235
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.057661,
+              "test_clusters": 79,
+              "test_rows": 100,
+              "train_rows": 112
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.051035,
+                "baseline_majority_class": -1.023608
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.062112,
+              "test_clusters": 108,
+              "test_rows": 154,
+              "train_rows": 184
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.035929,
+                "baseline_majority_class": -0.998454
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.044417,
+              "test_clusters": 116,
+              "test_rows": 163,
+              "train_rows": 297
+            },
+            {
+              "abstention_rate": 0.0072,
+              "baselines": {
+                "baseline_historical_mean": -0.029229,
+                "baseline_majority_class": -0.028931
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "mae",
+              "model_score": 0.034355,
+              "test_clusters": 105,
+              "test_rows": 138,
+              "train_rows": 456
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.038848,
+                "baseline_majority_class": -0.038247
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "mae",
+              "model_score": 0.040874,
+              "test_clusters": 28,
+              "test_rows": 28,
+              "train_rows": 602
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d3",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 436,
+          "qualified": false,
+          "runtime_seconds": 1.005,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 0,
+            "best": 0.062112,
+            "folds": 5,
+            "mean": 0.047884,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.027757,
+            "stdev": 0.010414,
+            "worst": 0.034355
+          },
+          "survival_reasons": [
+            "beats baselines in 0/5 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.027757,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 5,
+            "folds_worse_than_base_rate": 4,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C1",
+          "cell_id": "d3:C1",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 3,
+          "folds": [
+            {
+              "abstention_rate": 0.01,
+              "baselines": {
+                "baseline_historical_mean": 0.61,
+                "baseline_majority_class": 0.61
+              },
+              "beats_all_baselines": false,
+              "brier": 0.274281,
+              "brier_base_rate": 0.238329,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.575758,
+              "test_clusters": 79,
+              "test_rows": 100,
+              "train_rows": 112
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.25974,
+                "baseline_majority_class": 0.25974
+              },
+              "beats_all_baselines": true,
+              "brier": 0.416641,
+              "brier_base_rate": 0.29235,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.311688,
+              "test_clusters": 108,
+              "test_rows": 154,
+              "train_rows": 184
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.472393,
+                "baseline_majority_class": 0.472393
+              },
+              "beats_all_baselines": true,
+              "brier": 0.29292,
+              "brier_base_rate": 0.254576,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.527607,
+              "test_clusters": 116,
+              "test_rows": 163,
+              "train_rows": 297
+            },
+            {
+              "abstention_rate": 0.0072,
+              "baselines": {
+                "baseline_historical_mean": 0.463768,
+                "baseline_majority_class": 0.463768
+              },
+              "beats_all_baselines": false,
+              "brier": 0.278026,
+              "brier_base_rate": 0.254755,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "directional_accuracy",
+              "model_score": 0.437956,
+              "test_clusters": 105,
+              "test_rows": 138,
+              "train_rows": 456
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.285714,
+                "baseline_majority_class": 0.285714
+              },
+              "beats_all_baselines": true,
+              "brier": 0.26292,
+              "brier_base_rate": 0.263708,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "directional_accuracy",
+              "model_score": 0.357143,
+              "test_clusters": 28,
+              "test_rows": 28,
+              "train_rows": 602
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d3",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 436,
+          "qualified": false,
+          "runtime_seconds": 9.076,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 3,
+            "best": 0.575758,
+            "folds": 5,
+            "mean": 0.44203,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.26407,
+            "stdev": 0.099416,
+            "worst": 0.311688
+          },
+          "survival_reasons": [
+            "Brier not below base rate in 4/5 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.26407,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_CALIBRATION"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C2",
+          "cell_id": "d3:C2",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.01,
+              "baselines": {
+                "baseline_historical_mean": -0.043193,
+                "baseline_majority_class": -0.987235
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.049874,
+              "test_clusters": 79,
+              "test_rows": 100,
+              "train_rows": 112
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.051035,
+                "baseline_majority_class": -1.023608
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.057905,
+              "test_clusters": 108,
+              "test_rows": 154,
+              "train_rows": 184
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.035929,
+                "baseline_majority_class": -0.998454
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.043591,
+              "test_clusters": 116,
+              "test_rows": 163,
+              "train_rows": 297
+            },
+            {
+              "abstention_rate": 0.0072,
+              "baselines": {
+                "baseline_historical_mean": -0.029229,
+                "baseline_majority_class": -0.028931
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "mae",
+              "model_score": 0.032666,
+              "test_clusters": 105,
+              "test_rows": 138,
+              "train_rows": 456
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.038848,
+                "baseline_majority_class": -0.038247
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "mae",
+              "model_score": 0.040949,
+              "test_clusters": 28,
+              "test_rows": 28,
+              "train_rows": 602
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d3",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 436,
+          "qualified": false,
+          "runtime_seconds": 0.852,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 0,
+            "best": 0.057905,
+            "folds": 5,
+            "mean": 0.044997,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.025239,
+            "stdev": 0.008495,
+            "worst": 0.032666
+          },
+          "survival_reasons": [
+            "beats baselines in 0/5 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.025239,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 5,
+            "folds_worse_than_base_rate": 4,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C3",
+          "cell_id": "d3:C3",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "dense_only",
+          "fold_wins": 3,
+          "folds": [
+            {
+              "abstention_rate": 0.01,
+              "baselines": {
+                "baseline_historical_mean": 0.61,
+                "baseline_majority_class": 0.61
+              },
+              "beats_all_baselines": false,
+              "brier": 0.274281,
+              "brier_base_rate": 0.238329,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.575758,
+              "test_clusters": 79,
+              "test_rows": 100,
+              "train_rows": 112
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.25974,
+                "baseline_majority_class": 0.25974
+              },
+              "beats_all_baselines": true,
+              "brier": 0.416641,
+              "brier_base_rate": 0.29235,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.311688,
+              "test_clusters": 108,
+              "test_rows": 154,
+              "train_rows": 184
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.472393,
+                "baseline_majority_class": 0.472393
+              },
+              "beats_all_baselines": true,
+              "brier": 0.29292,
+              "brier_base_rate": 0.254576,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.527607,
+              "test_clusters": 116,
+              "test_rows": 163,
+              "train_rows": 297
+            },
+            {
+              "abstention_rate": 0.0072,
+              "baselines": {
+                "baseline_historical_mean": 0.463768,
+                "baseline_majority_class": 0.463768
+              },
+              "beats_all_baselines": false,
+              "brier": 0.278026,
+              "brier_base_rate": 0.254755,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "directional_accuracy",
+              "model_score": 0.437956,
+              "test_clusters": 105,
+              "test_rows": 138,
+              "train_rows": 456
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.285714,
+                "baseline_majority_class": 0.285714
+              },
+              "beats_all_baselines": true,
+              "brier": 0.26292,
+              "brier_base_rate": 0.263708,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf5",
+              "metric": "directional_accuracy",
+              "model_score": 0.357143,
+              "test_clusters": 28,
+              "test_rows": 28,
+              "train_rows": 602
+            }
+          ],
+          "folds_judged": 5,
+          "holdout": null,
+          "horizon": "d3",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 436,
+          "qualified": false,
+          "runtime_seconds": 9.052,
+          "stability": {
+            "baseline_judged": 5,
+            "baseline_wins": 3,
+            "best": 0.575758,
+            "folds": 5,
+            "mean": 0.44203,
+            "scored_folds": 5,
+            "sign_consistent": true,
+            "spread": 0.26407,
+            "stdev": 0.099416,
+            "worst": 0.311688
+          },
+          "survival_reasons": [
+            "Brier not below base rate in 4/5 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.26407,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_CALIBRATION"
+        }
+      ],
+      "clusters": 237,
+      "code_commit": "209da230d40139813a234d57d2773d82f56d6233",
+      "corpus_version_id": "canonical_corpus_v2",
+      "embargo_days": 6.0,
+      "feature_version": "v1|v1|v1|v1|v1|v1|v1",
+      "features": 26,
+      "fold_detail": [
+        {
+          "embargoed": 16,
+          "label": "wf1",
+          "purged": 24,
+          "test_clusters": 79,
+          "test_end": "2026-07-27T07:00:00+00:00",
+          "test_rows": 100,
+          "test_start": "2026-07-20T07:00:00+00:00",
+          "train_end": "2026-07-14T07:00:00+00:00",
+          "train_rows": 112,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 25,
+          "label": "wf2",
+          "purged": 43,
+          "test_clusters": 108,
+          "test_end": "2026-08-03T07:00:00+00:00",
+          "test_rows": 154,
+          "test_start": "2026-07-27T07:00:00+00:00",
+          "train_end": "2026-07-21T07:00:00+00:00",
+          "train_rows": 184,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 34,
+          "label": "wf3",
+          "purged": 75,
+          "test_clusters": 116,
+          "test_end": "2026-08-10T07:00:00+00:00",
+          "test_rows": 163,
+          "test_start": "2026-08-03T07:00:00+00:00",
+          "train_end": "2026-07-28T07:00:00+00:00",
+          "train_rows": 297,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 38,
+          "label": "wf4",
+          "purged": 75,
+          "test_clusters": 105,
+          "test_end": "2026-08-17T07:00:00+00:00",
+          "test_rows": 138,
+          "test_start": "2026-08-10T07:00:00+00:00",
+          "train_end": "2026-08-04T07:00:00+00:00",
+          "train_rows": 456,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 18,
+          "label": "wf5",
+          "purged": 87,
+          "test_clusters": 28,
+          "test_end": "2026-08-18T00:00:00+00:00",
+          "test_rows": 28,
+          "test_start": "2026-08-17T07:00:00+00:00",
+          "train_end": "2026-08-11T07:00:00+00:00",
+          "train_rows": 602,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        }
+      ],
+      "folds_built": 5,
+      "folds_valid": 5,
+      "holdout_clusters": 107,
+      "holdout_rows": 143,
+      "horizon": "d3",
+      "instruments": 237,
+      "label": "d3.abnormal_return",
+      "preregistration_hash": "9150b988993dcac3789b99140eaec782df60e816c8fa77fd25be0d4f18087625",
+      "purge_days": 5.0,
+      "qualified_candidates": [],
+      "quality": {
+        "high": 915,
+        "invalid": 141
+      },
+      "research_region_clusters": 227,
+      "research_region_rows": 735,
+      "rows": 878,
+      "sessions": 53,
+      "snapshot_hash": "4ccab384d37a9eb249ce2bd61b44692c77a0df3dc7121dc79c3ed6940e66b0bc",
+      "snapshot_id": "research_snapshot_v2",
+      "survivor_candidates": [],
+      "verdict": "NONE QUALIFIED"
+    },
+    {
+      "as_of_cutoff": "2026-08-30T14:35:00+00:00",
+      "candidates": [
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C0",
+          "cell_id": "d5:C0",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.0079,
+              "baselines": {
+                "baseline_historical_mean": -0.052667,
+                "baseline_majority_class": -1.014323
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.078862,
+              "test_clusters": 92,
+              "test_rows": 126,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.054336,
+                "baseline_majority_class": -1.01198
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.068289,
+              "test_clusters": 111,
+              "test_rows": 159,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.036285,
+                "baseline_majority_class": -0.035777
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.042428,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 331
+            },
+            {
+              "abstention_rate": 0.0082,
+              "baselines": {
+                "baseline_historical_mean": -0.048151,
+                "baseline_majority_class": -0.046721
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "mae",
+              "model_score": 0.050979,
+              "test_clusters": 96,
+              "test_rows": 122,
+              "train_rows": 494
+            }
+          ],
+          "folds_judged": 4,
+          "holdout": null,
+          "horizon": "d5",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 400,
+          "qualified": false,
+          "runtime_seconds": 0.784,
+          "stability": {
+            "baseline_judged": 4,
+            "baseline_wins": 0,
+            "best": 0.078862,
+            "folds": 4,
+            "mean": 0.060139,
+            "scored_folds": 4,
+            "sign_consistent": true,
+            "spread": 0.036434,
+            "stdev": 0.01427,
+            "worst": 0.042428
+          },
+          "survival_reasons": [
+            "beats baselines in 0/4 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.036434,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 4,
+            "folds_worse_than_base_rate": 3,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C1",
+          "cell_id": "d5:C1",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 3,
+          "folds": [
+            {
+              "abstention_rate": 0.0079,
+              "baselines": {
+                "baseline_historical_mean": 0.365079,
+                "baseline_majority_class": 0.365079
+              },
+              "beats_all_baselines": true,
+              "brier": 0.24232,
+              "brier_base_rate": 0.273917,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.592,
+              "test_clusters": 92,
+              "test_rows": 126,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.377358,
+                "baseline_majority_class": 0.377358
+              },
+              "beats_all_baselines": true,
+              "brier": 0.318805,
+              "brier_base_rate": 0.273691,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.490566,
+              "test_clusters": 111,
+              "test_rows": 159,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.475524,
+                "baseline_majority_class": 0.475524
+              },
+              "beats_all_baselines": false,
+              "brier": 0.332455,
+              "brier_base_rate": 0.252229,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.468531,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 331
+            },
+            {
+              "abstention_rate": 0.0082,
+              "baselines": {
+                "baseline_historical_mean": 0.385246,
+                "baseline_majority_class": 0.385246
+              },
+              "beats_all_baselines": true,
+              "brier": 0.298019,
+              "brier_base_rate": 0.263511,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "directional_accuracy",
+              "model_score": 0.487603,
+              "test_clusters": 96,
+              "test_rows": 122,
+              "train_rows": 494
+            }
+          ],
+          "folds_judged": 4,
+          "holdout": null,
+          "horizon": "d5",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 400,
+          "qualified": false,
+          "runtime_seconds": 5.822,
+          "stability": {
+            "baseline_judged": 4,
+            "baseline_wins": 3,
+            "best": 0.592,
+            "folds": 4,
+            "mean": 0.509675,
+            "scored_folds": 4,
+            "sign_consistent": true,
+            "spread": 0.123469,
+            "stdev": 0.048277,
+            "worst": 0.468531
+          },
+          "survival_reasons": [
+            "Brier not below base rate in 3/4 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.123469,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_CALIBRATION"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C2",
+          "cell_id": "d5:C2",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.0079,
+              "baselines": {
+                "baseline_historical_mean": -0.052667,
+                "baseline_majority_class": -1.014323
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.064779,
+              "test_clusters": 92,
+              "test_rows": 126,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.054336,
+                "baseline_majority_class": -1.01198
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.063566,
+              "test_clusters": 111,
+              "test_rows": 159,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.036285,
+                "baseline_majority_class": -0.035777
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.041591,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 331
+            },
+            {
+              "abstention_rate": 0.0082,
+              "baselines": {
+                "baseline_historical_mean": -0.048151,
+                "baseline_majority_class": -0.046721
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "mae",
+              "model_score": 0.050423,
+              "test_clusters": 96,
+              "test_rows": 122,
+              "train_rows": 494
+            }
+          ],
+          "folds_judged": 4,
+          "holdout": null,
+          "horizon": "d5",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 400,
+          "qualified": false,
+          "runtime_seconds": 0.615,
+          "stability": {
+            "baseline_judged": 4,
+            "baseline_wins": 0,
+            "best": 0.064779,
+            "folds": 4,
+            "mean": 0.05509,
+            "scored_folds": 4,
+            "sign_consistent": true,
+            "spread": 0.023188,
+            "stdev": 0.009614,
+            "worst": 0.041591
+          },
+          "survival_reasons": [
+            "beats baselines in 0/4 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.023188,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 4,
+            "folds_worse_than_base_rate": 3,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C3",
+          "cell_id": "d5:C3",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "dense_only",
+          "fold_wins": 3,
+          "folds": [
+            {
+              "abstention_rate": 0.0079,
+              "baselines": {
+                "baseline_historical_mean": 0.365079,
+                "baseline_majority_class": 0.365079
+              },
+              "beats_all_baselines": true,
+              "brier": 0.24232,
+              "brier_base_rate": 0.273917,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.592,
+              "test_clusters": 92,
+              "test_rows": 126,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.377358,
+                "baseline_majority_class": 0.377358
+              },
+              "beats_all_baselines": true,
+              "brier": 0.318805,
+              "brier_base_rate": 0.273691,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.490566,
+              "test_clusters": 111,
+              "test_rows": 159,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.475524,
+                "baseline_majority_class": 0.475524
+              },
+              "beats_all_baselines": false,
+              "brier": 0.332455,
+              "brier_base_rate": 0.252229,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.468531,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 331
+            },
+            {
+              "abstention_rate": 0.0082,
+              "baselines": {
+                "baseline_historical_mean": 0.385246,
+                "baseline_majority_class": 0.385246
+              },
+              "beats_all_baselines": true,
+              "brier": 0.298019,
+              "brier_base_rate": 0.263511,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf4",
+              "metric": "directional_accuracy",
+              "model_score": 0.487603,
+              "test_clusters": 96,
+              "test_rows": 122,
+              "train_rows": 494
+            }
+          ],
+          "folds_judged": 4,
+          "holdout": null,
+          "horizon": "d5",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 400,
+          "qualified": false,
+          "runtime_seconds": 5.676,
+          "stability": {
+            "baseline_judged": 4,
+            "baseline_wins": 3,
+            "best": 0.592,
+            "folds": 4,
+            "mean": 0.509675,
+            "scored_folds": 4,
+            "sign_consistent": true,
+            "spread": 0.123469,
+            "stdev": 0.048277,
+            "worst": 0.468531
+          },
+          "survival_reasons": [
+            "Brier not below base rate in 3/4 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.123469,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_CALIBRATION"
+        }
+      ],
+      "clusters": 234,
+      "code_commit": "209da230d40139813a234d57d2773d82f56d6233",
+      "corpus_version_id": "canonical_corpus_v2",
+      "embargo_days": 6.0,
+      "feature_version": "v1|v1|v1|v1|v1|v1|v1",
+      "features": 26,
+      "fold_detail": [
+        {
+          "embargoed": 0,
+          "label": "wf1",
+          "purged": 57,
+          "test_clusters": 92,
+          "test_end": "2026-07-29T07:00:00+00:00",
+          "test_rows": 126,
+          "test_start": "2026-07-22T07:00:00+00:00",
+          "train_end": "2026-07-15T07:00:00+00:00",
+          "train_rows": 128,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 0,
+          "label": "wf2",
+          "purged": 102,
+          "test_clusters": 111,
+          "test_end": "2026-08-05T07:00:00+00:00",
+          "test_rows": 159,
+          "test_start": "2026-07-29T07:00:00+00:00",
+          "train_end": "2026-07-22T07:00:00+00:00",
+          "train_rows": 209,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 0,
+          "label": "wf3",
+          "purged": 139,
+          "test_clusters": 101,
+          "test_end": "2026-08-12T07:00:00+00:00",
+          "test_rows": 143,
+          "test_start": "2026-08-05T07:00:00+00:00",
+          "train_end": "2026-07-29T07:00:00+00:00",
+          "train_rows": 331,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 0,
+          "label": "wf4",
+          "purged": 119,
+          "test_clusters": 96,
+          "test_end": "2026-08-18T00:00:00+00:00",
+          "test_rows": 122,
+          "test_start": "2026-08-12T07:00:00+00:00",
+          "train_end": "2026-08-05T07:00:00+00:00",
+          "train_rows": 494,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        }
+      ],
+      "folds_built": 4,
+      "folds_valid": 4,
+      "holdout_clusters": 54,
+      "holdout_rows": 70,
+      "horizon": "d5",
+      "instruments": 234,
+      "label": "d5.abnormal_return",
+      "preregistration_hash": "9150b988993dcac3789b99140eaec782df60e816c8fa77fd25be0d4f18087625",
+      "purge_days": 7.0,
+      "qualified_candidates": [],
+      "quality": {
+        "high": 915,
+        "invalid": 141
+      },
+      "research_region_clusters": 227,
+      "research_region_rows": 735,
+      "rows": 805,
+      "sessions": 51,
+      "snapshot_hash": "4ccab384d37a9eb249ce2bd61b44692c77a0df3dc7121dc79c3ed6940e66b0bc",
+      "snapshot_id": "research_snapshot_v2",
+      "survivor_candidates": [],
+      "verdict": "NONE QUALIFIED"
+    },
+    {
+      "as_of_cutoff": "2026-08-30T14:35:00+00:00",
+      "candidates": [
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C0",
+          "cell_id": "d10:C0",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.066252,
+                "baseline_majority_class": -1.008535
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.127729,
+              "test_clusters": 110,
+              "test_rows": 158,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.054732,
+                "baseline_majority_class": -0.976915
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.067484,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.114654,
+                "baseline_majority_class": -0.1145
+              },
+              "beats_all_baselines": false,
+              "candidate": "C0",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.122006,
+              "test_clusters": 18,
+              "test_rows": 21,
+              "train_rows": 331
+            }
+          ],
+          "folds_judged": 3,
+          "holdout": null,
+          "horizon": "d10",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 229,
+          "qualified": false,
+          "runtime_seconds": 0.342,
+          "stability": {
+            "baseline_judged": 3,
+            "baseline_wins": 0,
+            "best": 0.127729,
+            "folds": 3,
+            "mean": 0.10574,
+            "scored_folds": 3,
+            "sign_consistent": true,
+            "spread": 0.060245,
+            "stdev": 0.027152,
+            "worst": 0.067484
+          },
+          "survival_reasons": [
+            "beats baselines in 0/3 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.060245,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 3,
+            "folds_worse_than_base_rate": 3,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C1",
+          "cell_id": "d10:C1",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 2,
+          "folds": [
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.411392,
+                "baseline_majority_class": 0.411392
+              },
+              "beats_all_baselines": true,
+              "brier": 0.393814,
+              "brier_base_rate": 0.291176,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.449367,
+              "test_clusters": 110,
+              "test_rows": 158,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.594406,
+                "baseline_majority_class": 0.594406
+              },
+              "beats_all_baselines": false,
+              "brier": 0.292168,
+              "brier_base_rate": 0.245095,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.524476,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.47619,
+                "baseline_majority_class": 0.47619
+              },
+              "beats_all_baselines": true,
+              "brier": 0.258454,
+              "brier_base_rate": 0.252862,
+              "candidate": "C1",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.571429,
+              "test_clusters": 18,
+              "test_rows": 21,
+              "train_rows": 331
+            }
+          ],
+          "folds_judged": 3,
+          "holdout": null,
+          "horizon": "d10",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 229,
+          "qualified": false,
+          "runtime_seconds": 3.184,
+          "stability": {
+            "baseline_judged": 3,
+            "baseline_wins": 2,
+            "best": 0.571429,
+            "folds": 3,
+            "mean": 0.515091,
+            "scored_folds": 3,
+            "sign_consistent": true,
+            "spread": 0.122062,
+            "stdev": 0.050272,
+            "worst": 0.449367
+          },
+          "survival_reasons": [
+            "Brier not below base rate in 3/3 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.122062,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_CALIBRATION"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "NOT_APPLICABLE"
+          },
+          "candidate": "C2",
+          "cell_id": "d10:C2",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_BASELINE"
+          ],
+          "feature_config": "all_numeric",
+          "fold_wins": 0,
+          "folds": [
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.066252,
+                "baseline_majority_class": -1.008535
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "mae",
+              "model_score": 0.100475,
+              "test_clusters": 110,
+              "test_rows": 158,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.054732,
+                "baseline_majority_class": -0.976915
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "mae",
+              "model_score": 0.066231,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": -0.114654,
+                "baseline_majority_class": -0.1145
+              },
+              "beats_all_baselines": false,
+              "candidate": "C2",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "mae",
+              "model_score": 0.116698,
+              "test_clusters": 18,
+              "test_rows": 21,
+              "train_rows": 331
+            }
+          ],
+          "folds_judged": 3,
+          "holdout": null,
+          "horizon": "d10",
+          "model_family": "ridge_regression",
+          "pooled_effective_sample": 229,
+          "qualified": false,
+          "runtime_seconds": 0.338,
+          "stability": {
+            "baseline_judged": 3,
+            "baseline_wins": 0,
+            "best": 0.116698,
+            "folds": 3,
+            "mean": 0.094468,
+            "scored_folds": 3,
+            "sign_consistent": true,
+            "spread": 0.050467,
+            "stdev": 0.021036,
+            "worst": 0.066231
+          },
+          "survival_reasons": [
+            "beats baselines in 0/3 folds; a strict majority is required"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "abnormal_return",
+          "uncertainty": {
+            "fold_spread": 0.050467,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_BASELINE"
+        },
+        {
+          "calibration": {
+            "exploratory_ece": null,
+            "folds": 3,
+            "folds_worse_than_base_rate": 3,
+            "preregistered_check": "brier vs base rate (research folds)",
+            "status": "FAILED"
+          },
+          "candidate": "C3",
+          "cell_id": "d10:C3",
+          "errors": [],
+          "failed_gates": [
+            "FAILED_CALIBRATION"
+          ],
+          "feature_config": "dense_only",
+          "fold_wins": 2,
+          "folds": [
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.411392,
+                "baseline_majority_class": 0.411392
+              },
+              "beats_all_baselines": true,
+              "brier": 0.393814,
+              "brier_base_rate": 0.291176,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf1",
+              "metric": "directional_accuracy",
+              "model_score": 0.449367,
+              "test_clusters": 110,
+              "test_rows": 158,
+              "train_rows": 128
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.594406,
+                "baseline_majority_class": 0.594406
+              },
+              "beats_all_baselines": false,
+              "brier": 0.292168,
+              "brier_base_rate": 0.245095,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf2",
+              "metric": "directional_accuracy",
+              "model_score": 0.524476,
+              "test_clusters": 101,
+              "test_rows": 143,
+              "train_rows": 209
+            },
+            {
+              "abstention_rate": 0.0,
+              "baselines": {
+                "baseline_historical_mean": 0.47619,
+                "baseline_majority_class": 0.47619
+              },
+              "beats_all_baselines": true,
+              "brier": 0.258454,
+              "brier_base_rate": 0.252862,
+              "candidate": "C3",
+              "features": 26,
+              "fold": "wf3",
+              "metric": "directional_accuracy",
+              "model_score": 0.571429,
+              "test_clusters": 18,
+              "test_rows": 21,
+              "train_rows": 331
+            }
+          ],
+          "folds_judged": 3,
+          "holdout": null,
+          "horizon": "d10",
+          "model_family": "logistic_regression",
+          "pooled_effective_sample": 229,
+          "qualified": false,
+          "runtime_seconds": 3.693,
+          "stability": {
+            "baseline_judged": 3,
+            "baseline_wins": 2,
+            "best": 0.571429,
+            "folds": 3,
+            "mean": 0.515091,
+            "scored_folds": 3,
+            "sign_consistent": true,
+            "spread": 0.122062,
+            "stdev": 0.050272,
+            "worst": 0.449367
+          },
+          "survival_reasons": [
+            "Brier not below base rate in 3/3 folds"
+          ],
+          "survival_status": "NOT QUALIFIED",
+          "task": "direction",
+          "uncertainty": {
+            "fold_spread": 0.122062,
+            "reason": "no prediction-interval machinery is in the frozen plan; fold dispersion is reported under stability and is not an interval",
+            "status": "UNAVAILABLE"
+          },
+          "verdict": "FAILED_CALIBRATION"
+        }
+      ],
+      "clusters": 211,
+      "code_commit": "209da230d40139813a234d57d2773d82f56d6233",
+      "corpus_version_id": "canonical_corpus_v2",
+      "embargo_days": 6.0,
+      "feature_version": "v1|v1|v1|v1|v1|v1|v1",
+      "features": 26,
+      "fold_detail": [
+        {
+          "embargoed": 0,
+          "label": "wf1",
+          "purged": 183,
+          "test_clusters": 110,
+          "test_end": "2026-08-05T07:00:00+00:00",
+          "test_rows": 158,
+          "test_start": "2026-07-29T07:00:00+00:00",
+          "train_end": "2026-07-15T07:00:00+00:00",
+          "train_rows": 128,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 0,
+          "label": "wf2",
+          "purged": 260,
+          "test_clusters": 101,
+          "test_end": "2026-08-12T07:00:00+00:00",
+          "test_rows": 143,
+          "test_start": "2026-08-05T07:00:00+00:00",
+          "train_end": "2026-07-22T07:00:00+00:00",
+          "train_rows": 209,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        },
+        {
+          "embargoed": 0,
+          "label": "wf3",
+          "purged": 281,
+          "test_clusters": 18,
+          "test_end": "2026-08-18T00:00:00+00:00",
+          "test_rows": 21,
+          "test_start": "2026-08-12T07:00:00+00:00",
+          "train_end": "2026-07-29T07:00:00+00:00",
+          "train_rows": 331,
+          "train_start": "2026-07-02T07:00:00+00:00",
+          "valid": true
+        }
+      ],
+      "folds_built": 3,
+      "folds_valid": 3,
+      "holdout_clusters": 0,
+      "holdout_rows": 0,
+      "horizon": "d10",
+      "instruments": 211,
+      "label": "d10.abnormal_return",
+      "preregistration_hash": "9150b988993dcac3789b99140eaec782df60e816c8fa77fd25be0d4f18087625",
+      "purge_days": 14.0,
+      "qualified_candidates": [],
+      "quality": {
+        "high": 915,
+        "invalid": 141
+      },
+      "research_region_clusters": 211,
+      "research_region_rows": 633,
+      "rows": 633,
+      "sessions": 45,
+      "snapshot_hash": "4ccab384d37a9eb249ce2bd61b44692c77a0df3dc7121dc79c3ed6940e66b0bc",
+      "snapshot_id": "research_snapshot_v2",
+      "survivor_candidates": [],
+      "verdict": "NONE QUALIFIED"
+    }
+  ],
+  "market_data_requests": 0,
+  "models_promoted": 0,
+  "phase": "25.9I-F.6B",
+  "qualified_cells": [],
+  "qualified_total": 0,
+  "runtime_seconds": 59.25,
+  "started_at": "2026-10-04T13:49:16.438917+00:00",
+  "status": "complete",
+  "thresholds_changed": 0
+}

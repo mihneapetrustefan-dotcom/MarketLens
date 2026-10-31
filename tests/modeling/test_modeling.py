@@ -28,6 +28,7 @@ from src.modeling.splits import (
 from src.modeling.engine import (
     ModelingEngine, compute_metrics, compute_calibration, directional_accuracy,
     mean_absolute_error, r_squared, primary_metric_name, MANDATORY_BASELINES,
+    hit_rate,
 )
 
 T0 = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -478,6 +479,53 @@ class TestMetrics(unittest.TestCase):
     def test_primary_metric_differs_by_task(self):
         self.assertEqual(primary_metric_name(PredictionTask.DIRECTION), "directional_accuracy")
         self.assertEqual(primary_metric_name(PredictionTask.MAGNITUDE), "mae")
+
+
+class TestAProbabilityIsNotASignedReturn(unittest.TestCase):
+    """
+    A logistic model emits P(up) in [0, 1]. Scored at the regression
+    threshold of zero, EVERY prediction reads as "up", and directional
+    accuracy silently collapses into the base rate of positive
+    outcomes -- a number that looks like a result and measures
+    nothing. Nothing caught this because no logistic model had ever
+    been trained.
+    """
+
+    #: Two of four outcomes are up, so an all-"up" reading scores 0.5
+    #: whatever the model actually said.
+    ACTUAL = [0.01, -0.01, 0.02, -0.02]
+    #: The model calls all four correctly: up, down, up, down.
+    PROBABILITIES = [0.80, 0.20, 0.70, 0.30]
+
+    def test_scoring_a_probability_at_zero_reports_the_base_rate(self):
+        wrong = directional_accuracy(self.ACTUAL, self.PROBABILITIES)
+        self.assertEqual(wrong, 0.5)
+
+    def test_scoring_it_at_one_half_reports_the_truth(self):
+        right = directional_accuracy(self.ACTUAL, self.PROBABILITIES,
+                                     prediction_threshold=0.5)
+        self.assertEqual(right, 1.0)
+
+    def test_the_threshold_comes_from_the_family(self):
+        logistic = algorithms.fit(ModelFamily.LOGISTIC_REGRESSION,
+                                  [[0.0], [1.0], [2.0], [3.0]],
+                                  [-0.01, -0.02, 0.01, 0.02])
+        ridge = algorithms.fit(ModelFamily.RIDGE_REGRESSION,
+                               [[0.0], [1.0]], [0.01, 0.02])
+        self.assertEqual(algorithms.decision_threshold(logistic), 0.5)
+        self.assertEqual(algorithms.decision_threshold(ridge), 0.0)
+
+    def test_a_signed_return_is_still_scored_at_zero(self):
+        """The regression path must be untouched by the fix."""
+        self.assertEqual(
+            directional_accuracy([0.01, -0.01, 0.02], [0.5, -0.5, 0.5]), 1.0)
+
+    def test_hit_rate_reads_the_prediction_side_at_its_own_threshold(self):
+        # Only the two probabilities above 0.5 are "up" calls, and both
+        # outcomes were genuinely up.
+        self.assertEqual(
+            hit_rate(self.ACTUAL, self.PROBABILITIES, prediction_threshold=0.5),
+            1.0)
 
 
 if __name__ == "__main__":

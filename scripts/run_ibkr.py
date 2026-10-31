@@ -79,6 +79,11 @@ DEFAULT_DB = os.path.join("data", "marketlens.db")
 RULE = "-" * 70
 
 
+def _exchange_calendar():
+    """US equity exchange rules (Phase 25.9E): every gateway builder uses them."""
+    from src.marketdata.calendar import USEquityCalendar
+    return USEquityCalendar()
+
 def line(title: str) -> None:
     print(f"\n--- {title} {RULE[:max(0, 66 - len(title))]}")
 
@@ -114,10 +119,23 @@ def build(conn: sqlite3.Connection, args) -> Dict[str, Any]:
         SELECT instrument_id FROM price_candle_cache WHERE interval='1d'
         GROUP BY instrument_id ORDER BY COUNT(*) DESC LIMIT 25
     """)]
+    # The instrument this invocation is ABOUT must be in the calendar,
+    # whatever its rank. The top 25 by bar count is a convenience for
+    # reporting, and on this database every one of them is crypto --
+    # so a US equity lands outside it, the calendar cannot determine
+    # the session, and the validator fails closed with "the market for
+    # this instrument is closed" on an instrument whose market is
+    # open. Failing closed is right; being unable to answer for the
+    # one instrument we were asked about is not.
+    target = getattr(args, "instrument", None) or (
+        f"i-{args.symbol.lower()}" if getattr(args, "symbol", None) else None)
+    if target and target not in universe:
+        universe.append(target)
     if universe:
         calendar.load(universe)
 
-    gateway = IBKRGateway(config, transport, instruments, calendar=calendar)
+    gateway = IBKRGateway(config, transport, instruments, calendar=calendar,
+                          exchange_calendar=_exchange_calendar())
     # Establish the session here rather than only in --status. Every
     # command below needs it, and a disconnected gateway would
     # otherwise fail validation for a reason that has nothing to do
@@ -340,7 +358,25 @@ def risk_verdict_for(conn, args, instrument_id: str):
                       f"exposure to change")
 
     covered = {change.instrument_id for change in decision.approved_changes}
-    if covered and instrument_id not in covered:
+    # An APPROVED decision that changed nothing authorises NOTHING.
+    #
+    # This is the normal verdict, not an edge case: with every signal
+    # below Phase 11's confidence floor the engine proposes no changes
+    # and records APPROVED with the summary "no changes proposed;
+    # current state is within all limits". That is correct -- nothing
+    # was proposed, so nothing breached a limit.
+    #
+    # Reading it as permission was not. `if covered and ...` skipped
+    # the coverage check whenever the set was empty and fell through to
+    # approval, so a decision about nothing authorised an order for any
+    # instrument it had never heard of. That is the hole
+    # `--assume-risk-approved` was deleted in Phase 25.5 to close,
+    # reachable again through a decision that is genuinely approved.
+    if not covered:
+        return None, (f"risk decision {decision_id} approved no position "
+                      f"change, so it authorises no instrument -- "
+                      f"{decision.summary or 'no changes proposed'}")
+    if instrument_id not in covered:
         return None, (f"risk decision {decision_id} approved "
                       f"{sorted(covered)} and says nothing about "
                       f"{instrument_id}")

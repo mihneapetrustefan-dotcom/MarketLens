@@ -1,0 +1,2779 @@
+{
+  "version": "v1",
+  "purpose": "Phase 25.9I-B parent universe: instruments the adaptive layer is permitted to evaluate",
+  "rule": "US-listed stocks (asset_class='stock', exchange='US_AND_INTL') with at least 150 daily candles at or before as_of and volume present on at least 90% of them, ranked within sector by median daily dollar volume over the trailing 60 candles, at most 10 per sector",
+  "excludes": "returns, signals, model output, labels and every outcome-derived quantity",
+  "as_of": "2026-08-27T23:59:59+00:00",
+  "newest_candle_at_as_of": "2026-08-27T04:00:00+00:00",
+  "built_at": "2026-09-28T20:15:48.441916+00:00",
+  "source": "price_candle_cache (interval='1d') and the canonical instrument master",
+  "members_sha256": "53ad22ddbc29c753714e9baa009b215b364330cbdac5873459db580a3c094978",
+  "member_count": 130,
+  "sector_count": 15,
+  "benchmarks": [
+    {
+      "instrument_id": "benchmark-spy",
+      "ticker": "SPY",
+      "asset_class": "etf",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "benchmark",
+      "note": "market context only; absent from the instrument master"
+    }
+  ],
+  "members": [
+    {
+      "instrument_id": "us_and_intl-aal",
+      "ticker": "AAL",
+      "sector_id": "airlines-aviation",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 1457887458.53,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-ual",
+      "ticker": "UAL",
+      "sector_id": "airlines-aviation",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 501506147.32,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-luv",
+      "ticker": "LUV",
+      "sector_id": "airlines-aviation",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 176,
+      "median_dollar_volume": 244328379.28,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-alk",
+      "ticker": "ALK",
+      "sector_id": "airlines-aviation",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 176,
+      "median_dollar_volume": 136278664.3,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-tsla",
+      "ticker": "TSLA",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 13480091847.07,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-f",
+      "ticker": "F",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 699679506.84,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-gm",
+      "ticker": "GM",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 550308369.72,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-rivn",
+      "ticker": "RIVN",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 427063328.57,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-aptv",
+      "ticker": "APTV",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 183,
+      "median_dollar_volume": 173891654.12,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-bwa",
+      "ticker": "BWA",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 158179960.35,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-stla",
+      "ticker": "STLA",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 179,
+      "median_dollar_volume": 113412402.45,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-tm",
+      "ticker": "TM",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 79712635.46,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-lcid",
+      "ticker": "LCID",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 74543353.29,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-mbgyy",
+      "ticker": "MBGYY",
+      "sector_id": "automotive",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 6552390.76,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-ko",
+      "ticker": "KO",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 1356930962.47,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-pg",
+      "ticker": "PG",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 1237050368.49,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-mcd",
+      "ticker": "MCD",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 1196127045.02,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-pep",
+      "ticker": "PEP",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 1167044889.97,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-nke",
+      "ticker": "NKE",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 910899800.55,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-sbux",
+      "ticker": "SBUX",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 699640046.69,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-cmg",
+      "ticker": "CMG",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 573846537.75,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-mdlz",
+      "ticker": "MDLZ",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 507269045.11,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-mnst",
+      "ticker": "MNST",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 482203400.98,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-cl",
+      "ticker": "CL",
+      "sector_id": "consumer-goods",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 416888286.24,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-xom",
+      "ticker": "XOM",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 2203766317.52,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-cop",
+      "ticker": "COP",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 776020870.32,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-vlo",
+      "ticker": "VLO",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 751490818.54,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-mpc",
+      "ticker": "MPC",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 657578572.05,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-slb",
+      "ticker": "SLB",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 589309347.92,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-oxy",
+      "ticker": "OXY",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 469624232.37,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-wmb",
+      "ticker": "WMB",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 457160323.19,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-bkr",
+      "ticker": "BKR",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 183,
+      "median_dollar_volume": 435459848.42,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-eog",
+      "ticker": "EOG",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 177,
+      "median_dollar_volume": 428292190.87,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-fang",
+      "ticker": "FANG",
+      "sector_id": "energy",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 176,
+      "median_dollar_volume": 394684221.68,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-jpm",
+      "ticker": "JPM",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 2623153989.94,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-v",
+      "ticker": "V",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 184,
+      "median_dollar_volume": 2552602075.16,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-brk.b",
+      "ticker": "BRK.B",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 2237643392.64,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-gs",
+      "ticker": "GS",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 2068926445.44,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-bac",
+      "ticker": "BAC",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 1796102901.46,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-ma",
+      "ticker": "MA",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 1772173705.51,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-c",
+      "ticker": "C",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 182,
+      "median_dollar_volume": 1482652887.03,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-wfc",
+      "ticker": "WFC",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 1148093838.7,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-ms",
+      "ticker": "MS",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 176,
+      "median_dollar_volume": 1058200508.75,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-axp",
+      "ticker": "AXP",
+      "sector_id": "financial-services",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 176,
+      "median_dollar_volume": 932777528.97,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-lly",
+      "ticker": "LLY",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 3190756185.73,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-unh",
+      "ticker": "UNH",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 2110749388.69,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-jnj",
+      "ticker": "JNJ",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 1910020339.37,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-mrk",
+      "ticker": "MRK",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 189,
+      "median_dollar_volume": 1234197248.08,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-abt",
+      "ticker": "ABT",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 1057562574.04,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-tmo",
+      "ticker": "TMO",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 185,
+      "median_dollar_volume": 1030493833.93,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-pfe",
+      "ticker": "PFE",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 1013149324.55,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-amgn",
+      "ticker": "AMGN",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 953797281.6,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-gild",
+      "ticker": "GILD",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 918133920.19,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-bsx",
+      "ticker": "BSX",
+      "sector_id": "healthcare",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 883929788.97,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-ge",
+      "ticker": "GE",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 1389492655.94,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-ba",
+      "ticker": "BA",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 184,
+      "median_dollar_volume": 1122441461.56,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-rtx",
+      "ticker": "RTX",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 184,
+      "median_dollar_volume": 921956468.45,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-hon",
+      "ticker": "HON",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 886552158.72,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-unp",
+      "ticker": "UNP",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 752189449.0,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-de",
+      "ticker": "DE",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 657224134.53,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-ph",
+      "ticker": "PH",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 183,
+      "median_dollar_volume": 580755499.13,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-cmi",
+      "ticker": "CMI",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 579094952.95,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-csx",
+      "ticker": "CSX",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 177,
+      "median_dollar_volume": 544414154.68,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-fdx",
+      "ticker": "FDX",
+      "sector_id": "industrials",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 182,
+      "median_dollar_volume": 514331892.66,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-lin",
+      "ticker": "LIN",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 180,
+      "median_dollar_volume": 1102815693.03,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-fcx",
+      "ticker": "FCX",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 928618597.57,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-ecl",
+      "ticker": "ECL",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 371057326.02,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-nue",
+      "ticker": "NUE",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 351710477.8,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-lyb",
+      "ticker": "LYB",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 177,
+      "median_dollar_volume": 289440782.6,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-alb",
+      "ticker": "ALB",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 286220313.67,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-dd",
+      "ticker": "DD",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 178415962.94,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-glncy",
+      "ticker": "GLNCY",
+      "sector_id": "materials-mining",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 8897189.98,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-nflx",
+      "ticker": "NFLX",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 2907427098.79,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-dis",
+      "ticker": "DIS",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 991818008.41,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-cmcsa",
+      "ticker": "CMCSA",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 695983396.78,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-wbd",
+      "ticker": "WBD",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 548538812.39,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-ttwo",
+      "ticker": "TTWO",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 184,
+      "median_dollar_volume": 495154092.36,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-ea",
+      "ticker": "EA",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 170,
+      "median_dollar_volume": 411514984.69,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-lyv",
+      "ticker": "LYV",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 178,
+      "median_dollar_volume": 311312241.15,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-nwsa",
+      "ticker": "NWSA",
+      "sector_id": "media-entertainment",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 99432223.04,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-well",
+      "ticker": "WELL",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 179,
+      "median_dollar_volume": 660709123.56,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-pld",
+      "ticker": "PLD",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 522684694.83,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-amt",
+      "ticker": "AMT",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 502253139.17,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-dlr",
+      "ticker": "DLR",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 183,
+      "median_dollar_volume": 468630839.52,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-spg",
+      "ticker": "SPG",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 345815492.98,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-o",
+      "ticker": "O",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 189,
+      "median_dollar_volume": 339002861.46,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-cci",
+      "ticker": "CCI",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 314407568.36,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-psa",
+      "ticker": "PSA",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 178,
+      "median_dollar_volume": 296385992.9,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-avb",
+      "ticker": "AVB",
+      "sector_id": "real-estate",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 173069690.4,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-amzn",
+      "ticker": "AMZN",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 9959228542.27,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-wmt",
+      "ticker": "WMT",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 2561647398.41,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-cost",
+      "ticker": "COST",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 1938732569.57,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-hd",
+      "ticker": "HD",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 1362604255.85,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-tjx",
+      "ticker": "TJX",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 178,
+      "median_dollar_volume": 858158220.2,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-rost",
+      "ticker": "ROST",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 176,
+      "median_dollar_volume": 610826526.22,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-tgt",
+      "ticker": "TGT",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 602057042.89,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-orly",
+      "ticker": "ORLY",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 589328614.29,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-kr",
+      "ticker": "KR",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 407629148.52,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-dltr",
+      "ticker": "DLTR",
+      "sector_id": "retail-e-commerce",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 178,
+      "median_dollar_volume": 302552351.8,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-mu",
+      "ticker": "MU",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 40772749832.79,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-amat",
+      "ticker": "AMAT",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 4531970378.26,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-lrcx",
+      "ticker": "LRCX",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 3560643731.56,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-asml",
+      "ticker": "ASML",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 3198208240.58,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-txn",
+      "ticker": "TXN",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 2190486887.23,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-adi",
+      "ticker": "ADI",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 177,
+      "median_dollar_volume": 1538918209.76,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-nxpi",
+      "ticker": "NXPI",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 178,
+      "median_dollar_volume": 1079534942.02,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-mchp",
+      "ticker": "MCHP",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 932673901.55,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-on",
+      "ticker": "ON",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 903109658.06,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-entg",
+      "ticker": "ENTG",
+      "sector_id": "semiconductors",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 382457589.95,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-nvda",
+      "ticker": "NVDA",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 183,
+      "median_dollar_volume": 26654267071.08,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-aapl",
+      "ticker": "AAPL",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 14992636513.08,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-amd",
+      "ticker": "AMD",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 14039058317.88,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-intc",
+      "ticker": "INTC",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 177,
+      "median_dollar_volume": 12319878188.6,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-meta",
+      "ticker": "META",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 9772042827.94,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-googl",
+      "ticker": "GOOGL",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 9752950472.41,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    },
+    {
+      "instrument_id": "us_and_intl-pltr",
+      "ticker": "PLTR",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 5181198683.07,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 7
+    },
+    {
+      "instrument_id": "us_and_intl-orcl",
+      "ticker": "ORCL",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 188,
+      "median_dollar_volume": 4660863269.75,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 8
+    },
+    {
+      "instrument_id": "us_and_intl-wdc",
+      "ticker": "WDC",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 4259323705.93,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 9
+    },
+    {
+      "instrument_id": "us_and_intl-stx",
+      "ticker": "STX",
+      "sector_id": "technology",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 189,
+      "median_dollar_volume": 4162495537.16,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 10
+    },
+    {
+      "instrument_id": "us_and_intl-t",
+      "ticker": "T",
+      "sector_id": "telecommunications",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 181,
+      "median_dollar_volume": 1269129715.7,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-vz",
+      "ticker": "VZ",
+      "sector_id": "telecommunications",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 186,
+      "median_dollar_volume": 1082668926.37,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-nok",
+      "ticker": "NOK",
+      "sector_id": "telecommunications",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 1004508128.58,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-tmus",
+      "ticker": "TMUS",
+      "sector_id": "telecommunications",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 180,
+      "median_dollar_volume": 895435662.94,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-eric",
+      "ticker": "ERIC",
+      "sector_id": "telecommunications",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 179,
+      "median_dollar_volume": 114259959.47,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-aep",
+      "ticker": "AEP",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 179,
+      "median_dollar_volume": 545024572.28,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 1
+    },
+    {
+      "instrument_id": "us_and_intl-so",
+      "ticker": "SO",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 177,
+      "median_dollar_volume": 503216381.19,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 2
+    },
+    {
+      "instrument_id": "us_and_intl-d",
+      "ticker": "D",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 184,
+      "median_dollar_volume": 296550604.25,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 3
+    },
+    {
+      "instrument_id": "us_and_intl-sre",
+      "ticker": "SRE",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 187,
+      "median_dollar_volume": 296248135.38,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 4
+    },
+    {
+      "instrument_id": "us_and_intl-wec",
+      "ticker": "WEC",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 182,
+      "median_dollar_volume": 227062446.25,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 5
+    },
+    {
+      "instrument_id": "us_and_intl-eix",
+      "ticker": "EIX",
+      "sector_id": "utilities",
+      "asset_class": "stock",
+      "sec_type": "STK",
+      "currency": "USD",
+      "role": "candidate",
+      "daily_candles_at_as_of": 190,
+      "median_dollar_volume": 187927896.47,
+      "liquidity_window_candles": 60,
+      "inclusion_reason": "coverage and liquidity at as_of",
+      "sector_rank": 6
+    }
+  ],
+  "excluded_count": 186,
+  "excluded": [
+    {
+      "instrument_id": "us_and_intl-adbe",
+      "ticker": "ADBE",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-adsk",
+      "ticker": "ADSK",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-afl",
+      "ticker": "AFL",
+      "reason": "rank 27 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ajg",
+      "ticker": "AJG",
+      "reason": "rank 21 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-akam",
+      "ticker": "AKAM",
+      "reason": "rank 29 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-all",
+      "ticker": "ALL",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-ally",
+      "ticker": "ALLY",
+      "reason": "rank 30 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-amp",
+      "ticker": "AMP",
+      "reason": "rank 25 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-anet",
+      "ticker": "ANET",
+      "reason": "rank 17 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-anss",
+      "ticker": "ANSS",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-aon",
+      "ticker": "AON",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-apd",
+      "ticker": "APD",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-avgo",
+      "ticker": "AVGO",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-azn",
+      "ticker": "AZN",
+      "reason": "rank 23 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-azo",
+      "ticker": "AZO",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-bax",
+      "ticker": "BAX",
+      "reason": "rank 32 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-bby",
+      "ticker": "BBY",
+      "reason": "rank 12 in retail-e-commerce, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-bdx",
+      "ticker": "BDX",
+      "reason": "rank 27 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-bhp",
+      "ticker": "BHP",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-biib",
+      "ticker": "BIIB",
+      "reason": "rank 30 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-bk",
+      "ticker": "BK",
+      "reason": "only 112 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-blk",
+      "ticker": "BLK",
+      "reason": "rank 13 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-bmwyy",
+      "ticker": "BMWYY",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-bmy",
+      "ticker": "BMY",
+      "reason": "rank 16 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-byddy",
+      "ticker": "BYDDY",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-cah",
+      "ticker": "CAH",
+      "reason": "rank 21 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-cat",
+      "ticker": "CAT",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-cb",
+      "ticker": "CB",
+      "reason": "rank 17 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-cdns",
+      "ticker": "CDNS",
+      "reason": "rank 24 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-chd",
+      "ticker": "CHD",
+      "reason": "rank 17 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-chkp",
+      "ticker": "CHKP",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-ci",
+      "ticker": "CI",
+      "reason": "rank 24 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-clx",
+      "ticker": "CLX",
+      "reason": "rank 16 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-cme",
+      "ticker": "CME",
+      "reason": "rank 14 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-cnc",
+      "ticker": "CNC",
+      "reason": "rank 28 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-cof",
+      "ticker": "COF",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-cor",
+      "ticker": "COR",
+      "reason": "rank 25 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-crm",
+      "ticker": "CRM",
+      "reason": "rank 14 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-crwd",
+      "ticker": "CRWD",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-csco",
+      "ticker": "CSCO",
+      "reason": "rank 12 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ctra",
+      "ticker": "CTRA",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-cvs",
+      "ticker": "CVS",
+      "reason": "rank 14 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-cvx",
+      "ticker": "CVX",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-dal",
+      "ticker": "DAL",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-dbx",
+      "ticker": "DBX",
+      "reason": "rank 35 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ddog",
+      "ticker": "DDOG",
+      "reason": "rank 20 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-dell",
+      "ticker": "DELL",
+      "reason": "rank 11 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-dfs",
+      "ticker": "DFS",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-dg",
+      "ticker": "DG",
+      "reason": "rank 11 in retail-e-commerce, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-dhr",
+      "ticker": "DHR",
+      "reason": "rank 12 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-docu",
+      "ticker": "DOCU",
+      "reason": "rank 33 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-dow",
+      "ticker": "DOW",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-dpz",
+      "ticker": "DPZ",
+      "reason": "rank 15 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-dri",
+      "ticker": "DRI",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-duk",
+      "ticker": "DUK",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-dva",
+      "ticker": "DVA",
+      "reason": "rank 31 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-dvn",
+      "ticker": "DVN",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-el",
+      "ticker": "EL",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-elv",
+      "ticker": "ELV",
+      "reason": "rank 22 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-emr",
+      "ticker": "EMR",
+      "reason": "rank 17 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-eqix",
+      "ticker": "EQIX",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-eqr",
+      "ticker": "EQR",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-etn",
+      "ticker": "ETN",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-etr",
+      "ticker": "ETR",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-exc",
+      "ticker": "EXC",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-ffiv",
+      "ticker": "FFIV",
+      "reason": "rank 31 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-fitb",
+      "ticker": "FITB",
+      "reason": "rank 22 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-foxa",
+      "ticker": "FOXA",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-ftnt",
+      "ticker": "FTNT",
+      "reason": "rank 23 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-gd",
+      "ticker": "GD",
+      "reason": "rank 16 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-gfs",
+      "ticker": "GFS",
+      "reason": "rank 11 in semiconductors, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-gis",
+      "ticker": "GIS",
+      "reason": "rank 13 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-glw",
+      "ticker": "GLW",
+      "reason": "rank 16 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-grmn",
+      "ticker": "GRMN",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-gsk",
+      "ticker": "GSK",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-hal",
+      "ticker": "HAL",
+      "reason": "rank 11 in energy, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-hca",
+      "ticker": "HCA",
+      "reason": "rank 18 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-hmc",
+      "ticker": "HMC",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-hog",
+      "ticker": "HOG",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-hpe",
+      "ticker": "HPE",
+      "reason": "rank 22 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-hpq",
+      "ticker": "HPQ",
+      "reason": "rank 30 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-hsy",
+      "ticker": "HSY",
+      "reason": "rank 14 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-hubs",
+      "ticker": "HUBS",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-hum",
+      "ticker": "HUM",
+      "reason": "rank 20 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ibm",
+      "ticker": "IBM",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-ice",
+      "ticker": "ICE",
+      "reason": "rank 15 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ilmn",
+      "ticker": "ILMN",
+      "reason": "rank 26 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-intu",
+      "ticker": "INTU",
+      "reason": "rank 18 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-iqv",
+      "ticker": "IQV",
+      "reason": "rank 29 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-itw",
+      "ticker": "ITW",
+      "reason": "rank 20 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ivz",
+      "ticker": "IVZ",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-jblu",
+      "ticker": "JBLU",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-jnpr",
+      "ticker": "JNPR",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-k",
+      "ticker": "K",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-khc",
+      "ticker": "KHC",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-klac",
+      "ticker": "KLAC",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-kmb",
+      "ticker": "KMB",
+      "reason": "rank 11 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-kmi",
+      "ticker": "KMI",
+      "reason": "rank 13 in energy, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-lhx",
+      "ticker": "LHX",
+      "reason": "rank 19 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-lmt",
+      "ticker": "LMT",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-logi",
+      "ticker": "LOGI",
+      "reason": "rank 36 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-low",
+      "ticker": "LOW",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-mck",
+      "ticker": "MCK",
+      "reason": "rank 11 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-mco",
+      "ticker": "MCO",
+      "reason": "rank 20 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-mdb",
+      "ticker": "MDB",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-mdt",
+      "ticker": "MDT",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-met",
+      "ticker": "MET",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-mksi",
+      "ticker": "MKSI",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-mmc",
+      "ticker": "MMC",
+      "reason": "only 25 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-mmm",
+      "ticker": "MMM",
+      "reason": "rank 11 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-mrna",
+      "ticker": "MRNA",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-mrvl",
+      "ticker": "MRVL",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-msft",
+      "ticker": "MSFT",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-msi",
+      "ticker": "MSI",
+      "reason": "rank 28 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ndaq",
+      "ticker": "NDAQ",
+      "reason": "rank 24 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-nee",
+      "ticker": "NEE",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-nem",
+      "ticker": "NEM",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-nio",
+      "ticker": "NIO",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-noc",
+      "ticker": "NOC",
+      "reason": "rank 15 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-now",
+      "ticker": "NOW",
+      "reason": "rank 13 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-nsc",
+      "ticker": "NSC",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-ntap",
+      "ticker": "NTAP",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-nvo",
+      "ticker": "NVO",
+      "reason": "rank 19 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-nvs",
+      "ticker": "NVS",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-oke",
+      "ticker": "OKE",
+      "reason": "rank 12 in energy, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-okta",
+      "ticker": "OKTA",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-panw",
+      "ticker": "PANW",
+      "reason": "rank 15 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-para",
+      "ticker": "PARA",
+      "reason": "only 15 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-pcar",
+      "ticker": "PCAR",
+      "reason": "rank 18 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-pcg",
+      "ticker": "PCG",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-peg",
+      "ticker": "PEG",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-pgr",
+      "ticker": "PGR",
+      "reason": "rank 18 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-pnc",
+      "ticker": "PNC",
+      "reason": "rank 19 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-poahy",
+      "ticker": "POAHY",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-pru",
+      "ticker": "PRU",
+      "reason": "rank 28 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-psx",
+      "ticker": "PSX",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-ptc",
+      "ticker": "PTC",
+      "reason": "rank 32 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-pypl",
+      "ticker": "PYPL",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-qcom",
+      "ticker": "QCOM",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-qrvo",
+      "ticker": "QRVO",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-race",
+      "ticker": "RACE",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-regn",
+      "ticker": "REGN",
+      "reason": "rank 17 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-rhhby",
+      "ticker": "RHHBY",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-rio",
+      "ticker": "RIO",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-rjf",
+      "ticker": "RJF",
+      "reason": "rank 29 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-roku",
+      "ticker": "ROKU",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-rsg",
+      "ticker": "RSG",
+      "reason": "rank 21 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-sap",
+      "ticker": "SAP",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-schw",
+      "ticker": "SCHW",
+      "reason": "rank 11 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-shel",
+      "ticker": "SHEL",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-shop",
+      "ticker": "SHOP",
+      "reason": "rank 21 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-shw",
+      "ticker": "SHW",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-snow",
+      "ticker": "SNOW",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-snps",
+      "ticker": "SNPS",
+      "reason": "rank 25 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-sny",
+      "ticker": "SNY",
+      "reason": "rank 33 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-spgi",
+      "ticker": "SPGI",
+      "reason": "rank 12 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-spot",
+      "ticker": "SPOT",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-stt",
+      "ticker": "STT",
+      "reason": "rank 23 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-stz",
+      "ticker": "STZ",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-swks",
+      "ticker": "SWKS",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-syf",
+      "ticker": "SYF",
+      "reason": "rank 26 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-syk",
+      "ticker": "SYK",
+      "reason": "rank 13 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-tap",
+      "ticker": "TAP",
+      "reason": "rank 18 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-tdg",
+      "ticker": "TDG",
+      "reason": "rank 13 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-team",
+      "ticker": "TEAM",
+      "reason": "rank 27 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ter",
+      "ticker": "TER",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-tfc",
+      "ticker": "TFC",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-trmb",
+      "ticker": "TRMB",
+      "reason": "rank 34 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-trow",
+      "ticker": "TROW",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-trv",
+      "ticker": "TRV",
+      "reason": "rank 16 in financial-services, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-twlo",
+      "ticker": "TWLO",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-uber",
+      "ticker": "UBER",
+      "reason": "rank 19 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-ups",
+      "ticker": "UPS",
+      "reason": "rank 12 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-usb",
+      "ticker": "USB",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-vale",
+      "ticker": "VALE",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-vrtx",
+      "ticker": "VRTX",
+      "reason": "rank 15 in healthcare, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-vwagy",
+      "ticker": "VWAGY",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-wday",
+      "ticker": "WDAY",
+      "reason": "rank 26 in technology, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-wm",
+      "ticker": "WM",
+      "reason": "rank 14 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-xel",
+      "ticker": "XEL",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-xpev",
+      "ticker": "XPEV",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-xyl",
+      "ticker": "XYL",
+      "reason": "rank 22 in industrials, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-yum",
+      "ticker": "YUM",
+      "reason": "rank 12 in consumer-goods, above the per-sector cap of 10"
+    },
+    {
+      "instrument_id": "us_and_intl-zm",
+      "ticker": "ZM",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-zs",
+      "ticker": "ZS",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    },
+    {
+      "instrument_id": "us_and_intl-zts",
+      "ticker": "ZTS",
+      "reason": "only 0 daily candles at as_of (need 150)"
+    }
+  ]
+}

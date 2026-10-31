@@ -150,6 +150,11 @@ def build_loop(conn: sqlite3.Connection, *, dry_run: bool = False,
     stack = build_stack(conn, actor="test", mock=True,
                         allow_paper_orders=allow_paper_orders, persist=True)
     stack.gateway.calendar = AlwaysOpenCalendar()
+    # The same stub for the Phase 25.9E exchange rules: `NOW` is Labor Day
+    # 2026, which the real calendar correctly calls a holiday. These tests
+    # are about order flow; the exchange rules have their own tests in
+    # tests/trading/test_execution_readiness_25_9e.py.
+    stack.gateway.exchange_calendar = None
 
     # The mock seeds AAPL, MSFT and IBM. Adding a second contract for a
     # symbol it already knows makes `search_contracts` return two, the

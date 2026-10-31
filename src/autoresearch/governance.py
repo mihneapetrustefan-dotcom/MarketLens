@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.data_access.autoresearch_schema import initialize_autoresearch_schema
@@ -81,7 +82,23 @@ OUTCOME_DERIVED_FIELDS = frozenset({
     "experience_class", "actual_return", "realized_return", "deviation",
     "mfe", "mae", "hit_rate", "was_correct", "error_type", "severity",
     "outcome_status", "window_end",
+    # Phase 25.9D: columns of `trading_experiences` that are filled in
+    # only after the outcome, and were classified neither way.
+    "actual_direction", "time_to_mfe_seconds", "attribution_confidence",
+    "attribution_severity", "evidence_count",
 })
+
+
+def _field(key: Any) -> str:
+    """
+    The column a condition key names (Phase 25.9D, F9).
+
+    Matching was exact, so `Primary_Error`, ` actual_return` and
+    `outcome.primary_error` were not recognised as the outcome fields
+    they plainly are. Case, surrounding space and a qualifying prefix
+    no longer hide a field from the check.
+    """
+    return str(key).strip().lower().rsplit(".", 1)[-1].strip()
 
 
 def leaking_fields(condition: Dict[str, Any]) -> List[str]:
@@ -95,14 +112,14 @@ def leaking_fields(condition: Dict[str, Any]) -> List[str]:
     deliberately.
     """
     return sorted(key for key in condition
-                  if key in OUTCOME_DERIVED_FIELDS)
+                  if _field(key) in OUTCOME_DERIVED_FIELDS)
 
 
 def unknown_fields(condition: Dict[str, Any]) -> List[str]:
     """Condition keys classified neither way — for a human to place."""
     return sorted(key for key in condition
-                  if key not in DECISION_TIME_FIELDS
-                  and key not in OUTCOME_DERIVED_FIELDS)
+                  if _field(key) not in DECISION_TIME_FIELDS
+                  and _field(key) not in OUTCOME_DERIVED_FIELDS)
 
 
 def assert_decision_time(condition: Dict[str, Any]) -> None:
@@ -165,10 +182,21 @@ def assert_window_allowed(conn: sqlite3.Connection, *,
     """
     if not starts_at or not ends_at:
         return
-    for window in protected_windows(conn):
+    period_start = _instant(starts_at, end=False)
+    period_end = _instant(ends_at, end=True)
+    for window in _declared_windows(conn):
         if window["policy"] != "protected":
             continue
-        if starts_at <= window["ends_at"] and ends_at >= window["starts_at"]:
+        window_start = _instant(window["starts_at"], end=False)
+        window_end = _instant(window["ends_at"], end=True)
+        if None in (period_start, period_end, window_start, window_end):
+            # Fail closed: a bound nobody can read cannot be shown to
+            # lie outside the window.
+            overlaps = True
+        else:
+            overlaps = (period_start <= window_end
+                        and period_end >= window_start)
+        if overlaps:
             raise ProtectedWindowRefused(
                 "the requested period %s..%s overlaps protected window %r "
                 "(%s..%s). %s"
@@ -176,6 +204,53 @@ def assert_window_allowed(conn: sqlite3.Connection, *,
                    window["ends_at"],
                    window["reason"] or "This region is reserved so that "
                    "something remains for a final, un-tuned-against test."))
+
+
+def _instant(value: Optional[str], *, end: bool) -> Optional[datetime]:
+    """
+    A window bound as a UTC instant (Phase 25.9D, F7).
+
+    The overlap test compared raw strings. A window declared by date,
+    `2026-08-27`, sorts BEFORE `2026-08-27T10:00:00+00:00`, so a cohort
+    starting that morning was allowed into a window that includes the
+    whole day; `Z` versus `+00:00` and non-UTC offsets misordered the
+    same way. A date-only END means the end of that day.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    parsed = parsed.astimezone(timezone.utc)
+    if end and len(text) == 10:
+        parsed = parsed + timedelta(days=1) - timedelta(microseconds=1)
+    return parsed
+
+
+def _declared_windows(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
+    """
+    Declared windows, read without creating anything.
+
+    The experiment engine calls the check on every run, on databases
+    that may hold no research tables at all; a guard must not change
+    the schema of the database it guards.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'autoresearch_protected_windows'").fetchone()
+    if not exists:
+        return []
+    keys = ("window_id", "label", "starts_at", "ends_at", "policy", "reason")
+    return [dict(zip(keys, row)) for row in conn.execute("""
+        SELECT window_id, label, starts_at, ends_at, policy, reason
+        FROM autoresearch_protected_windows ORDER BY starts_at
+    """)]
 
 
 # ======================================================================

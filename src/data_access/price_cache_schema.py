@@ -77,6 +77,27 @@ def initialize_price_cache_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # Phase 25.9C. Polygon's daily `c` is the adjusted close AS OF THE
+    # FETCH DATE, and stored rows are never overwritten (INSERT OR
+    # IGNORE). An incremental fetch after a split would therefore join
+    # two adjustment vintages inside one return window and fabricate a
+    # move. Each incremental fetch re-reads a few already-stored sessions
+    # and records whether they still agree, so the break is detected
+    # rather than silently priced.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS price_cache_vintage_checks (
+            instrument_id        TEXT NOT NULL,
+            interval             TEXT NOT NULL,
+            checked_at           TEXT NOT NULL,
+            overlap_start        TEXT NOT NULL,
+            overlap_end          TEXT NOT NULL,
+            compared_sessions    INTEGER NOT NULL,
+            max_relative_change  REAL,
+            consistent           INTEGER NOT NULL,
+            PRIMARY KEY (instrument_id, interval, checked_at)
+        )
+    """)
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_price_cache_lookup "
                  "ON price_candle_cache(instrument_id, interval, timestamp)")
 

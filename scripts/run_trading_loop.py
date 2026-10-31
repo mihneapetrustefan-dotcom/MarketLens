@@ -49,6 +49,7 @@ import argparse
 import json
 import os
 import sqlite3
+import time
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -186,7 +187,8 @@ def run_cycles(conn: sqlite3.Connection, args, now: datetime) -> int:
                         account_id=args.account,
                         allow_paper_orders=args.allow_paper_orders,
                         universe_limit=args.universe_limit,
-                        persist=not args.dry_run)
+                        persist=not args.dry_run,
+                        pre_submission_only=args.pre_submission_only)
 
     config = LoopConfig(
         session_id=args.session, name=args.name,
@@ -198,9 +200,16 @@ def run_cycles(conn: sqlite3.Connection, args, now: datetime) -> int:
         challenger_id=args.challenger,
         allow_paper_orders=args.allow_paper_orders,
         experimental=args.experimental, eligibility=policy,
-        dry_run=args.dry_run)
+        dry_run=args.dry_run, pre_submission_only=args.pre_submission_only)
 
     loop = TradingLoop(conn, stack, config)
+
+    if args.accept_broker_positions:
+        baseline = loop.accept_broker_positions(actor=args.actor,
+                                                reason=args.reason, now=now)
+        print(f"  broker positions accepted as baseline {baseline} "
+              f"by {args.actor}: {args.reason}")
+        return 0
 
     line("GATEWAY")
     print(f"  transport             {stack.transport.name}")
@@ -210,10 +219,34 @@ def run_cycles(conn: sqlite3.Connection, args, now: datetime) -> int:
     print(f"  may submit            {stack.may_submit}")
     if args.dry_run:
         print("  DRY RUN               orders are validated and NOT sent")
+    if args.pre_submission_only:
+        print("  PRE-SUBMISSION ONLY   Phase 25.9E: the gateway cannot submit")
 
     exit_code = 0
     for index in range(args.cycles):
-        moment = now + timedelta(seconds=index * args.cycle_seconds)
+        # REAL TIME, NOT SIMULATED TIME (Phase 25.8).
+        #
+        # This read:
+        #     moment = now + timedelta(seconds=index * args.cycle_seconds)
+        # which ran every cycle immediately while stamping them at
+        # now, +15m, +30m, +45m. Three of four cycles claimed to have
+        # happened at moments that had not arrived, on real signals
+        # writing real rows. Phase 25.5's anchor-drift guard did not
+        # catch it: it rejects anchors more than FOUR HOURS out, and a
+        # 45-minute forward drift passes.
+        #
+        # Each cycle now asks the clock. `--cycles N` with no waiting
+        # means N cycles at the same anchor, which the idempotency
+        # keys correctly collapse into one -- honest, and very
+        # different from inventing three futures. Use
+        # scripts/run_session.py for a runner that actually waits.
+        moment = datetime.now(timezone.utc)
+        if index and args.wait_between_cycles:
+            target = moment + timedelta(seconds=args.cycle_seconds)
+            while datetime.now(timezone.utc) < target:
+                time.sleep(min(5.0, (target - datetime.now(timezone.utc))
+                               .total_seconds()))
+            moment = datetime.now(timezone.utc)
         result = loop.run_cycle(moment, worker=args.worker or args.actor)
         line(f"CYCLE {index + 1}/{args.cycles} — {result.cycle_id}")
         print(f"  anchor                {result.anchor.isoformat()}")
@@ -354,7 +387,18 @@ def main() -> int:
                         default=True)
     parser.add_argument("--no-dry-run", dest="dry_run", action="store_false",
                         help="actually submit to IBKR PAPER")
+    parser.add_argument("--wait-between-cycles", action="store_true",
+                        help=("actually wait cycle_seconds between "
+                              "cycles instead of running them back to "
+                              "back at the same anchor"))
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--pre-submission-only", action="store_true",
+                        help="Phase 25.9E: run every gate, validate every "
+                             "request and stop at READY_TO_SUBMIT. The "
+                             "gateway is structurally unable to submit.")
+    parser.add_argument("--accept-broker-positions", action="store_true",
+                        help="operator: adopt the broker's current positions "
+                             "as the reconciliation baseline (needs --reason)")
 
     parser.add_argument("--set-mode", choices=("off", "paper", "live"),
                         help="record the durable trading mode ('live' is refused)")
@@ -395,6 +439,12 @@ def main() -> int:
 
         if args.integrity:
             return show_integrity(conn)
+
+        if args.accept_broker_positions:
+            if not args.reason:
+                print("--reason is required to accept broker positions.")
+                return 2
+            return run_cycles(conn, args, now)
 
         if args.cycles > 0:
             code = run_cycles(conn, args, now)

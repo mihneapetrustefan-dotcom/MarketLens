@@ -420,6 +420,48 @@ def initialize_trading_loop_schema(conn: sqlite3.Connection) -> None:
     ):
         conn.execute(statement)
 
+    # ------------------------------------------------------------------
+    # Phase 25.9E
+    # ------------------------------------------------------------------
+    # What our own book says we hold, as of the last reconciliation the
+    # broker agreed with. Expected positions are this plus our fills
+    # since; a broker position outside that is a discrepancy, not a new
+    # truth to adopt silently. Written by a clean reconciliation or by
+    # an operator accepting the broker's book, never by anything else.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reconciliation_baselines (
+            baseline_id     TEXT PRIMARY KEY,
+            broker_id       TEXT NOT NULL,
+            account_id      TEXT NOT NULL,
+            cycle_id        TEXT NOT NULL DEFAULT '',
+            positions_json  TEXT NOT NULL DEFAULT '{}',
+            fill_ids_json   TEXT NOT NULL DEFAULT '[]',
+            source          TEXT NOT NULL,
+            actor           TEXT NOT NULL,
+            reason          TEXT NOT NULL,
+            method_version  TEXT NOT NULL,
+            recorded_at     TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tl_baseline_account "
+                 "ON reconciliation_baselines (broker_id, account_id, recorded_at)")
+
+    # One operator per broker account. A runner holds this lease while it
+    # operates the account and renews it every tick; a second runner is
+    # refused until the lease expires. Durable, because a lease that
+    # lives in process memory cannot be seen by the other process.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS session_runner_leases (
+            scope           TEXT PRIMARY KEY,
+            owner           TEXT NOT NULL,
+            session_id      TEXT NOT NULL DEFAULT '',
+            acquired_at     TEXT NOT NULL,
+            heartbeat_at    TEXT NOT NULL,
+            expires_at      TEXT NOT NULL,
+            released_at     TEXT
+        )
+    """)
+
     _add_missing_columns(conn)
     conn.commit()
 
@@ -443,4 +485,6 @@ TRADING_LOOP_TABLES = (
     "paper_validations",
     "paper_validation_reviews",
     "trading_loop_audit",
+    "reconciliation_baselines",
+    "session_runner_leases",
 )

@@ -213,15 +213,107 @@ def anchor_for_event(conn: sqlite3.Connection, canonical_event_id: str) -> Optio
     return visibility.latest if visibility else None
 
 
+#: Sessions re-read on an incremental daily fetch, to detect an
+#: adjustment-vintage break (see price_cache_vintage_checks).
+VINTAGE_OVERLAP_DAYS = 10
+
+#: Relative change in an already-stored close that counts as a vintage
+#: break. Half a percent ignores rounding and minor provider revisions
+#: and still catches any split, which moves prices by tens of percent.
+VINTAGE_TOLERANCE = 0.005
+
+
 def is_range_cached(conn: sqlite3.Connection, instrument_id: str, interval: str,
                     start: datetime, end: datetime) -> bool:
-    """True if an existing recorded request range fully contains [start, end]."""
+    """
+    True if a recorded request fully covers [start, end] WITH DATA THAT
+    COULD EXIST WHEN IT WAS REQUESTED.
+
+    PHASE 25.9C FIX. A recorded range used to count as covered all the
+    way to its `range_end`, even when that end was in the future at
+    request time. Daily requests reach `anchor + 35 days`, so a range
+    fetched a week after an event was marked complete for four weeks
+    that had not happened yet -- and skipped forever afterwards. On the
+    production database EVERY protected-window instrument, and the SPY
+    benchmark, carried such a range: their d20 labels could never have
+    resolved.
+
+    Coverage now ends at min(range_end, requested_at).
+    """
     row = conn.execute("""
         SELECT 1 FROM price_cache_requests
-        WHERE instrument_id = ? AND interval = ? AND range_start <= ? AND range_end >= ?
+        WHERE instrument_id = ? AND interval = ? AND range_start <= ?
+          AND MIN(range_end, requested_at) >= ?
         LIMIT 1
     """, (instrument_id, interval, start.isoformat(), end.isoformat())).fetchone()
     return row is not None
+
+
+def covered_through(conn: sqlite3.Connection, instrument_id: str, interval: str,
+                    start: datetime) -> Optional[datetime]:
+    """
+    The furthest moment for which data covering `start` onward was
+    genuinely observable when requested, or None if nothing covers
+    `start`.
+    """
+    row = conn.execute("""
+        SELECT MAX(MIN(range_end, requested_at)) FROM price_cache_requests
+        WHERE instrument_id = ? AND interval = ? AND range_start <= ?
+    """, (instrument_id, interval, start.isoformat())).fetchone()
+    return datetime.fromisoformat(row[0]) if row and row[0] else None
+
+
+def plan_daily_fetch(conn: sqlite3.Connection, instrument_id: str,
+                     start: datetime, end: datetime, now: datetime
+                     ) -> Optional[Tuple[datetime, datetime, bool]]:
+    """
+    What daily range to request, if any.
+
+    Returns None when covered, otherwise (fetch_start, fetch_end,
+    incremental). Never asks for the future: the end is capped at `now`.
+    An incremental fetch starts VINTAGE_OVERLAP_DAYS before existing
+    coverage, so stored sessions can be re-compared.
+    """
+    needed_end = min(end, now)
+    if needed_end <= start:
+        return None
+    through = covered_through(conn, instrument_id, "1d", start)
+    if through is not None and through >= needed_end:
+        return None
+    if through is None:
+        return start, needed_end, False
+    return max(start, through - timedelta(days=VINTAGE_OVERLAP_DAYS)), needed_end, True
+
+
+def check_vintage(conn: sqlite3.Connection, instrument_id: str, candles,
+                  overlap_end: datetime, now: datetime) -> bool:
+    """
+    Compare freshly fetched closes with already-stored ones for the
+    overlapping sessions, and record the verdict. True when consistent
+    or when nothing overlaps.
+    """
+    stored = {ts: close for ts, close in conn.execute("""
+        SELECT timestamp, close FROM price_candle_cache
+        WHERE instrument_id = ? AND interval = '1d' AND timestamp <= ?
+    """, (instrument_id, overlap_end.isoformat()))}
+    changes = []
+    for candle in candles:
+        key = candle.timestamp.isoformat()
+        if key in stored and stored[key] and candle.close is not None:
+            changes.append(abs(candle.close - stored[key]) / abs(stored[key]))
+    worst = max(changes) if changes else None
+    consistent = worst is None or worst <= VINTAGE_TOLERANCE
+    if changes:
+        overlap = sorted(c.timestamp.isoformat() for c in candles
+                         if c.timestamp.isoformat() in stored)
+        conn.execute("""
+            INSERT OR REPLACE INTO price_cache_vintage_checks
+              (instrument_id, interval, checked_at, overlap_start, overlap_end,
+               compared_sessions, max_relative_change, consistent)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (instrument_id, "1d", now.isoformat(), overlap[0], overlap[-1],
+              len(changes), worst, int(consistent)))
+    return consistent
 
 
 def record_request(conn: sqlite3.Connection, instrument_id: str, interval: str,
@@ -340,12 +432,22 @@ def main() -> int:
         # --- Daily: one request per instrument covers every event on it ---
         d_start = min(anchors) - timedelta(days=BASELINE_CALENDAR_DAYS)
         d_end = max(anchors) + timedelta(days=FORWARD_CALENDAR_DAYS)
-        if not is_range_cached(conn, instrument_id, "1d", d_start, d_end):
+        run_now = datetime.now(timezone.utc)
+        plan = plan_daily_fetch(conn, instrument_id, d_start, d_end, run_now)
+        if plan is not None:
+            fetch_start, fetch_end, incremental = plan
             daily_calls += 1
             if not args.dry_run:
-                candles = connector.get_daily_candles(symbol, d_start.date(), d_end.date())
+                candles = connector.get_daily_candles(symbol, fetch_start.date(), fetch_end.date())
+                if incremental and not check_vintage(conn, instrument_id, candles,
+                                                     fetch_start + timedelta(days=VINTAGE_OVERLAP_DAYS),
+                                                     run_now):
+                    print(f"  VINTAGE BREAK {instrument_id}: stored closes changed on refetch; "
+                          f"recorded in price_cache_vintage_checks")
                 n = store_candles(conn, instrument_id, "1d", candles)
-                record_request(conn, instrument_id, "1d", d_start, d_end, n)
+                # The recorded end is never in the future any more, so a
+                # range cannot be marked complete before it happened.
+                record_request(conn, instrument_id, "1d", d_start, fetch_end, n)
                 daily_rows += n
                 conn.commit()
         else:

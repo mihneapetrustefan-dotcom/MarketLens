@@ -189,25 +189,54 @@ def evaluate(conn: sqlite3.Connection, challenger: Challenger, *,
         "fingerprint": challenger.fingerprint,
         "dataset_cutoff": challenger.dataset_cutoff,
         "code_version": challenger.code_version,
+        "cohort_digest": "",
         "rows_examined": 0, "cache_hit": 0, "cached_from_run": None,
         "error": "", "cancelled_reason": "",
         "queued_at": utcnow(), "started_at": utcnow(),
         "completed_at": None, "duration_seconds": None,
     }
 
+    # --- the rows first (Phase 25.9D) -----------------------------
+    # Read before reuse is considered. The cache used to answer first,
+    # so a record revised behind its cutoff, or a protected window
+    # declared after the first run, still got the stored result.
+    try:
+        rows = load_cohort(conn, challenger, limits=limits)
+    except Exception as exc:
+        run.update({"status": RunStatus.FAILED.value, "error": str(exc)[:400],
+                    "completed_at": utcnow()})
+        save_run(conn, run, None)
+        return run, None
+
+    run["rows_examined"] = len(rows)
+    run["cohort_digest"] = experiment_engine.cohort_digest(rows)
+    if rows:
+        cohort_start, cohort_end = experiment_engine.cohort_span(rows)
+        try:
+            governance.assert_window_allowed(conn, starts_at=cohort_start,
+                                             ends_at=cohort_end)
+        except governance.ProtectedWindowRefused as exc:
+            run.update({"status": RunStatus.FAILED.value,
+                        "error": str(exc)[:400], "completed_at": utcnow()})
+            save_run(conn, run, None)
+            return run, None
+
     # --- reuse only on identical inputs (§56) ---------------------
-    if allow_cache:
+    if allow_cache and rows:
         cached = conn.execute("""
             SELECT r.run_id FROM challenger_runs r
             JOIN challenger_results x ON x.run_id = r.run_id
             WHERE r.fingerprint = ? AND r.seed = ? AND r.status = 'completed'
               AND r.cache_hit = 0 AND r.environment = ?
+              AND r.cohort_digest = ?
             ORDER BY r.completed_at DESC LIMIT 1
-        """, (challenger.fingerprint, seed, environment.value)).fetchone()
+        """, (challenger.fingerprint, seed, environment.value,
+              run["cohort_digest"])).fetchone()
         if cached:
             # Reuse is never silent. The fingerprint contains the
-            # dataset cutoff, so a grown record cannot hit this path --
-            # the Phase 23.5 defect, closed by construction.
+            # dataset cutoff and the key contains the cohort's contents,
+            # so neither a grown record (Phase 23.5) nor a revised one
+            # (Phase 25.9D) can hit this path.
             previous = load_result(conn, cached[0])
             if previous is not None:
                 run.update({"status": RunStatus.COMPLETED.value,
@@ -222,15 +251,6 @@ def evaluate(conn: sqlite3.Connection, challenger: Challenger, *,
                 save_run(conn, run, previous)
                 return run, previous
 
-    try:
-        rows = load_cohort(conn, challenger, limits=limits)
-    except Exception as exc:
-        run.update({"status": RunStatus.FAILED.value, "error": str(exc)[:400],
-                    "completed_at": utcnow()})
-        save_run(conn, run, None)
-        return run, None
-
-    run["rows_examined"] = len(rows)
     if not rows:
         run.update({"status": RunStatus.FAILED.value,
                     "error": "the cohort is empty; there is nothing to compare",
@@ -331,10 +351,19 @@ def evaluate(conn: sqlite3.Connection, challenger: Challenger, *,
     # --- selection-bias context (§15, §22) ------------------------
     from src.challengers import registry
     family_count = registry.family_challenger_count(conn, challenger.family_id)
-    run_count = conn.execute("""
-        SELECT COUNT(*) FROM challenger_runs
-        WHERE challenger_id = ? AND status = 'completed'
-    """, (challenger.challenger_id,)).fetchone()[0] + 1
+    # Distinct looks, not stored runs (Phase 25.9D, F3): a cache hit or
+    # a retry on identical rows is not another attempt. A run from
+    # before the digest existed counts once per row.
+    looks = {tuple(row) for row in conn.execute("""
+        SELECT fingerprint, seed,
+               CASE WHEN cohort_digest = '' THEN 'run:' || run_id
+                    ELSE cohort_digest END
+        FROM challenger_runs
+        WHERE challenger_id = ? AND status = 'completed' AND cache_hit = 0
+    """, (challenger.challenger_id,))}
+    run_count = len(looks) + (
+        0 if (challenger.fingerprint, seed, run["cohort_digest"]) in looks
+        else 1)
     reuse = governance.window_use_count(conn, window_start, window_end)
 
     instruments = int(cand_metrics.get("instrument_count") or 0)
@@ -539,13 +568,14 @@ def save_run(conn: sqlite3.Connection, run: Dict[str, Any],
         INSERT OR REPLACE INTO challenger_runs (
             run_id, challenger_id, challenger_version, method_version,
             environment, status, seed, fingerprint, dataset_cutoff,
-            code_version, rows_examined, cache_hit, cached_from_run, error,
-            cancelled_reason, queued_at, started_at, completed_at,
-            duration_seconds
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            cohort_digest, code_version, rows_examined, cache_hit,
+            cached_from_run, error, cancelled_reason, queued_at, started_at,
+            completed_at, duration_seconds
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (run["run_id"], run["challenger_id"], run["challenger_version"],
           run["method_version"], run["environment"], run["status"],
           run["seed"], run["fingerprint"], run["dataset_cutoff"],
+          run.get("cohort_digest", ""),
           run["code_version"], run["rows_examined"], run["cache_hit"],
           run["cached_from_run"], run["error"], run["cancelled_reason"],
           run["queued_at"], run["started_at"], run["completed_at"],

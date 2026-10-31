@@ -276,6 +276,13 @@ def main() -> int:
                         help=f"Label to model. Default {DEFAULT_LABEL}.")
     parser.add_argument("--train-fraction", type=float, default=TRAIN_FRACTION)
     parser.add_argument("--embargo-days", type=float, default=EMBARGO_DAYS)
+    parser.add_argument("--family", choices=("ridge", "logistic"), default="ridge",
+                        help=("Which specification to train. `ridge` predicts the "
+                              "signed abnormal return; `logistic` predicts P(up) "
+                              "from the SAME label, binarised at zero by the "
+                              "fitter. They are different specifications, so a "
+                              "signal carrying both has genuine corroboration "
+                              "rather than one model refitted."))
     parser.add_argument("--apply", action="store_true",
                         help="Actually write. Without this the script is a dry run.")
     args = parser.parse_args()
@@ -330,18 +337,38 @@ def main() -> int:
         embargoed_count=embargoed,
     )
 
-    specification = ModelSpecification(
-        model_id="ridge_abnormal_return",
-        name="Ridge regression on abnormal return",
-        task=PredictionTask.ABNORMAL_RETURN,
-        family=ModelFamily.RIDGE_REGRESSION,
-        version="v1",
-        label_name=args.label,
-        feature_set_id="all_numeric_v1",
-        feature_set_version="v1",
-        dataset_version="v1",
-        hyperparameters={"alpha": 1.0},
-    )
+    if args.family == "logistic":
+        # Same label, same features, same split. What differs is the
+        # QUESTION: "how far will it move" versus "will it move up".
+        # The fitter binarises at zero itself and stores the threshold,
+        # so no new label is computed and nothing is derived from
+        # information the abnormal return did not already carry.
+        specification = ModelSpecification(
+            model_id="logistic_direction",
+            name="Logistic regression on direction of abnormal return",
+            task=PredictionTask.DIRECTION,
+            family=ModelFamily.LOGISTIC_REGRESSION,
+            version="v1",
+            label_name=args.label,
+            feature_set_id="all_numeric_v1",
+            feature_set_version="v1",
+            dataset_version="v1",
+            hyperparameters={"l2": 0.01, "learning_rate": 0.1,
+                             "iterations": 300, "threshold": 0.0},
+        )
+    else:
+        specification = ModelSpecification(
+            model_id="ridge_abnormal_return",
+            name="Ridge regression on abnormal return",
+            task=PredictionTask.ABNORMAL_RETURN,
+            family=ModelFamily.RIDGE_REGRESSION,
+            version="v1",
+            label_name=args.label,
+            feature_set_id="all_numeric_v1",
+            feature_set_version="v1",
+            dataset_version="v1",
+            hyperparameters={"alpha": 1.0},
+        )
 
     engine = ModelingEngine()
     model, evaluation = engine.train_and_evaluate(

@@ -126,13 +126,49 @@ class TestWhyThreeFactorsAreCurrentlyConstant(unittest.TestCase):
                          AgreementState.INSUFFICIENT_EVIDENCE)
 
     def test_two_agreeing_models_would_raise_it(self):
-        """What has to change before confidence starts to vary."""
-        two = [ModelContribution("p1", "tm-1", "q", predicted_value=0.02),
-               ModelContribution("p2", "tm-2", "q", predicted_value=0.03)]
+        """
+        What has to change before confidence starts to vary: two
+        genuinely DIFFERENT specifications, not one refitted twice.
+        """
+        two = [ModelContribution("p1", "tm-1", "ridge:v1", predicted_value=0.02),
+               ModelContribution("p2", "tm-2", "logistic:v1", predicted_value=0.03)]
         self.assertEqual(classify_agreement(two), AgreementState.AGREEMENT)
         self.assertGreater(
             compute_confidence(None, "high", AgreementState.AGREEMENT),
             compute_confidence(None, "high", AgreementState.INSUFFICIENT_EVIDENCE))
+
+    def test_retrains_of_one_specification_are_not_corroboration(self):
+        """
+        The production case. Walk-forward training writes a fresh
+        `trained_model_id` on every pipeline run, so one observation
+        accumulates several predictions that are the SAME
+        specification refitted. Counting those as agreement would lift
+        confidence 0.30 -> 0.50 and clear Phase 11's 0.40 floor on the
+        strength of nothing but repetition.
+        """
+        retrains = [
+            ModelContribution("p1", "tm-1", "ridge_abnormal_return:v1",
+                              predicted_value=-0.0116),
+            ModelContribution("p2", "tm-2", "ridge_abnormal_return:v1",
+                              predicted_value=-0.0128),
+            ModelContribution("p3", "tm-3", "ridge_abnormal_return:v1",
+                              predicted_value=-0.0172),
+        ]
+        self.assertEqual(classify_agreement(retrains),
+                         AgreementState.INSUFFICIENT_EVIDENCE)
+        self.assertLess(
+            compute_confidence(None, "high", classify_agreement(retrains)),
+            0.40)
+
+    def test_a_specification_without_an_identifier_cannot_corroborate(self):
+        """
+        An unidentifiable specification cannot be shown to differ from
+        any other, and unknown provenance must not buy confidence.
+        """
+        anonymous = [ModelContribution("p1", "tm-1", "", predicted_value=0.02),
+                     ModelContribution("p2", "tm-2", "", predicted_value=0.03)]
+        self.assertEqual(classify_agreement(anonymous),
+                         AgreementState.INSUFFICIENT_EVIDENCE)
 
     def test_high_quality_is_the_only_factor_that_cannot_raise_it(self):
         """quality is already at its maximum, so it can only ever fall."""

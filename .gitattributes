@@ -1,0 +1,12 @@
+# Registered artifacts whose exact bytes are pinned by a test.
+#
+# tests/adaptive/test_dynamic_universe.py hashes this file in binary and
+# compares the digest against a value recorded when the universe was
+# registered. Without a rule here, git stores LF and checks out CRLF on
+# Windows, so the same committed content hashes differently per platform:
+# the test passed locally and failed on ubuntu-latest for a reason that
+# had nothing to do with the artifact changing.
+#
+# Scoped to this one file on purpose. A repository-wide `text=auto` would
+# renormalise unrelated files and bury that change in the diff.
+config/capture_universe_v1.json text eol=lf

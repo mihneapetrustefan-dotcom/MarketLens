@@ -59,12 +59,18 @@ def _add_missing_columns(conn) -> None:
     with a default, so old rows stay valid and simply carry no prose.
     """
     have = {row[1] for row in conn.execute("PRAGMA table_info(experiments)")}
-    if not have:
-        return
-    for column in ("baseline_description", "candidate_description"):
-        if column not in have:
-            conn.execute("ALTER TABLE experiments ADD COLUMN "
-                         f"{column} TEXT NOT NULL DEFAULT ''")
+    if have:
+        for column in ("baseline_description", "candidate_description"):
+            if column not in have:
+                conn.execute("ALTER TABLE experiments ADD COLUMN "
+                             f"{column} TEXT NOT NULL DEFAULT ''")
+
+    # Phase 25.9D. A run written before the cohort digest existed keeps
+    # '' and can never be a cache source: nobody can say what it saw.
+    runs = {row[1] for row in conn.execute("PRAGMA table_info(experiment_runs)")}
+    if runs and "cohort_digest" not in runs:
+        conn.execute("ALTER TABLE experiment_runs ADD COLUMN "
+                     "cohort_digest TEXT NOT NULL DEFAULT ''")
 
 
 def initialize_experiment_schema(conn: sqlite3.Connection) -> None:
@@ -167,6 +173,10 @@ def initialize_experiment_schema(conn: sqlite3.Connection) -> None:
             -- with the experiment's current one means the definition
             -- was edited after the fact.
             fingerprint         TEXT NOT NULL DEFAULT '',
+            -- A hash of the rows the run actually read (Phase 25.9D).
+            -- The cache keys on it, so a record changed behind its
+            -- newest timestamp can never be served a stale result.
+            cohort_digest       TEXT NOT NULL DEFAULT '',
             started_at          TEXT,
             completed_at        TEXT,
             duration_seconds    REAL,

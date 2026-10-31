@@ -644,11 +644,6 @@ def run_cycle(conn: sqlite3.Connection, *,
         hypothesis_layer.attach_experiment(
             conn, hypothesis.hypothesis_id, experiment.experiment_id)
         window_start, window_end = evaluation_window(conn, experiment)
-        governance.record_window_use(
-            conn, starts_at=window_start, ends_at=window_end,
-            hypothesis_id=hypothesis.hypothesis_id,
-            experiment_id=experiment.experiment_id,
-            family_id=hypothesis.family_id, cycle_id=cycle_id)
 
         result = outcome.get("result")
         if not result:
@@ -674,6 +669,18 @@ def run_cycle(conn: sqlite3.Connection, *,
                 "experiment_id": experiment.experiment_id,
                 "status": outcome.get("status", "unknown")})
             continue
+
+        # Recorded only for a fresh measurement (Phase 25.9D). A run
+        # refused before evaluating -- a protected window, a bad
+        # parameter -- looked at nothing, and a cache hit (a retry after
+        # a crash, say) re-read a look already counted. Charging either
+        # to the snooping ledger counts tests that never happened.
+        if not (outcome.get("run") or {}).get("cache_hit"):
+            governance.record_window_use(
+                conn, starts_at=window_start, ends_at=window_end,
+                hypothesis_id=hypothesis.hypothesis_id,
+                experiment_id=experiment.experiment_id,
+                family_id=hypothesis.family_id, cycle_id=cycle_id)
 
         result = dict(result)
         result["window_start"] = window_start
