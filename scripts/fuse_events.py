@@ -67,6 +67,7 @@ if SRC not in sys.path:
 from src.data_access.event_repository import EventRepository, initialize_event_schema
 from src.data_access.fusion_schema import initialize_fusion_schema
 from src.domain.fusion_models import EventReport, SourceCategory
+from src.events.retention import delete_canonical_events, plan_canonical_retention
 from src.fusion.engine import FusionEngine
 
 DEFAULT_DB = os.path.join(REPO_ROOT, "data", "marketlens.db")
@@ -157,13 +158,20 @@ def load_reports(conn: sqlite3.Connection, limit: Optional[int]) -> List[EventRe
     return reports
 
 
-def persist(conn: sqlite3.Connection, engine: FusionEngine) -> int:
+def persist(conn: sqlite3.Connection, engine: FusionEngine,
+            loaded_report_ids: Optional[set] = None) -> int:
     """
     Write the fusion output. Returns the number of stale canonical rows
     pruned.
 
     Every engine-minted uuid is remapped to a deterministic id first,
     so the whole write is idempotent.
+
+    `loaded_report_ids` is the set of reports this run actually fused.
+    It matters under `--limit`: a canonical row whose reports still
+    exist in `events` but were not loaded was never re-examined, so
+    its absence from this run's output is not evidence about it. Pass
+    None only when every report was loaded.
     """
     id_map = {
         event.canonical_event_id: canonical_id_for(event.report_ids)
@@ -171,15 +179,23 @@ def persist(conn: sqlite3.Connection, engine: FusionEngine) -> int:
     }
     current_ids = set(id_map.values())
 
-    # Prune canonical rows from earlier runs that this run no longer
-    # produces. Reports in `events` are never touched.
-    existing = {r[0] for r in conn.execute("SELECT canonical_event_id FROM canonical_events")}
-    stale = existing - current_ids
-    for stale_id in stale:
-        for table in ("canonical_events", "canonical_event_participants",
-                      "canonical_event_reports", "fusion_contradictions",
-                      "fusion_timeline", "fusion_review_cases"):
-            conn.execute(f"DELETE FROM {table} WHERE canonical_event_id = ?", (stale_id,))
+    # Prune canonical rows this run superseded. Reports in `events` are
+    # never touched.
+    #
+    # Pruning here is legitimate in a way the `events` sweep was not:
+    # a canonical row is a DERIVED VIEW keyed on the set of reports it
+    # fuses, so when a report joins or leaves a group the id changes by
+    # design and the old row is a stale view of inputs that were fully
+    # re-fused. That is positive evidence. What is NOT evidence is a
+    # row whose reports this run did not load at all — see
+    # src/events/retention.py.
+    plan = plan_canonical_retention(
+        conn, produced_ids=current_ids, loaded_report_ids=loaded_report_ids)
+    stale = plan.to_delete
+    delete_canonical_events(conn, stale)
+    if plan.to_keep:
+        print(f"  pastrate {len(plan.to_keep):,} randuri canonice neexaminate "
+              f"de aceasta rulare")
 
     for event in engine.canonical_events.values():
         cid = id_map[event.canonical_event_id]
@@ -330,7 +346,10 @@ def main() -> int:
         conn.close()
         return 0
 
-    pruned = persist(conn, engine)
+    # The reports actually fused. Under `--limit` this is a subset, and
+    # persist() must not retire canonical rows built from reports it
+    # never looked at.
+    pruned = persist(conn, engine, loaded_report_ids={r.report_id for r in reports})
     conn.close()
     size_after = os.path.getsize(args.db)
     print(f"SCRIS: {len(engine.canonical_events):,} evenimente canonice"
