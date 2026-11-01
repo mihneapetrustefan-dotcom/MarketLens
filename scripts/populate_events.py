@@ -42,6 +42,23 @@ SAFETY
 - Re-running is safe: report ids are derived deterministically from
   (article_id, event_type), so a second run rewrites the same rows
   rather than minting new ones.
+
+RETENTION: ABSENCE FROM A REBUILD IS NOT EVIDENCE OF INVALIDITY
+-------------------------------------------------------------------
+A report this run does not re-produce is NOT deleted for that reason
+alone. `archive_old_articles.py` moves old articles out of the live
+`articles` table this script reads from, so "I did not produce it" and
+"it is not valid" became the same thing — and deleting on it destroyed
+the evidence 1,295 research observations were built from.
+
+src/events/retention.py now decides, and deletes only on positive
+evidence: no resolvable source article, an id the current scheme
+cannot mint (the uuid4-migration remnants the sweep was written for),
+or an explicitly superseded/retracted row. A report whose article is
+merely ARCHIVED is kept, and one whose article is live and was read
+but produced no such report is kept too — reported as UNRESOLVED,
+because an extractor regression and a retraction are not the same
+thing and this script cannot tell them apart.
 """
 
 from __future__ import annotations
@@ -62,9 +79,11 @@ SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
+from src.data_access.article_archive import ArticleArchive
 from src.data_access.news_schema import initialize_news_schema
 from src.data_access.event_repository import initialize_event_schema, EventRepository
 from src.events.extractor import EventExtractor
+from src.events.retention import delete_event_reports, plan_event_report_retention
 from src.source_credibility import get_source_tier
 from src.events.fingerprint import compute_event_fingerprint
 from src.domain.event_models import ArticleEventLink, ArticleEventRelation, EventEvidence
@@ -248,20 +267,50 @@ def main() -> int:
         return 0
 
     current_ids = {e.event_id for e in reports}
-    existing_ids = {r[0] for r in conn.execute("SELECT event_id FROM events")}
-    stale = existing_ids - current_ids
 
-    # Rows from a previous run that this run no longer produces. This
-    # matters for the migration off uuid4 report ids: those rows can
-    # never be matched by id again, so without pruning they would sit
-    # in `events` forever as orphans. `articles` and `article_entities`
-    # are untouched — only the derived report rows are rebuilt.
-    for stale_id in stale:
-        for table in ("events", "event_participants", "event_evidence",
-                      "event_instruments", "event_sectors"):
-            conn.execute(f"DELETE FROM {table} WHERE event_id = ?", (stale_id,))
-        conn.execute("DELETE FROM article_event_links WHERE event_id = ?", (stale_id,))
+    # WHAT MAY BE DELETED, AND WHAT MAY NOT.
+    #
+    # This used to be `existing_ids - current_ids`, deleted wholesale.
+    # That set difference conflated a retracted report with one whose
+    # source article had simply been archived out of the live table by
+    # `archive_old_articles.py --keep-days 60` -- and the second kind
+    # is the evidence 1,295 research observations were built from.
+    # Measured cost of the conflation: `events` 846 -> 153 rows,
+    # `canonical_events` 581 -> 129, and seven article-derived features
+    # down from ~100% coverage to 8.6-10.3%. See
+    # docs/MODEL_CLUSTER_INSUFFICIENCY_AUDIT_2026_11_01.md.
+    #
+    # Absence from a rebuild is not evidence of invalidity. The policy
+    # in src/events/retention.py deletes only on positive evidence and
+    # keeps everything else, including rows it cannot decide about --
+    # those are reported as UNRESOLVED rather than silently dropped.
+    archive = ArticleArchive.for_database(args.db)
+    plan = plan_event_report_retention(
+        conn,
+        produced_ids=current_ids,
+        # Exactly the articles this run READ, so a run narrowed by
+        # --limit/--since never judges what it did not look at.
+        scanned_article_ids={a["article_id"] for a in articles},
+        archive_contains=archive.contains,
+        report_id_for=report_id_for,
+    )
+    stale = plan.to_delete
+
+    print()
+    print("Retentie randuri derivate (events):")
+    for line in plan.summary_lines() or ["      0  nimic de clasificat"]:
+        print(line)
+    if archive.files():
+        print(f"  arhiva: {archive.stats.summary()}")
+    else:
+        print("  arhiva: niciun fisier gasit — nicio sursa arhivata nu poate fi confirmata")
+    for decision in plan.unresolved[:10]:
+        print(f"  NEREZOLVAT {decision.row_id}: {decision.detail}")
+    if len(plan.unresolved) > 10:
+        print(f"  ... si {len(plan.unresolved) - 10:,} alte randuri nerezolvate")
+
     if stale:
+        delete_event_reports(conn, stale)
         conn.commit()
 
     for event in reports:
@@ -275,7 +324,8 @@ def main() -> int:
     conn.close()
     size_after = os.path.getsize(args.db)
     print(f"SCRIS: {len(reports):,} rapoarte de eveniment"
-          + (f", {len(stale):,} randuri invechite curatate" if stale else ""))
+          + (f", {len(stale):,} randuri sterse cu dovada" if stale else "")
+          + (f", {len(plan.to_keep):,} pastrate" if plan.to_keep else ""))
     print(f"Marime dupa: {size_after / 1024 / 1024:.2f} MB "
           f"(+{(size_after - size_before) / 1024 / 1024:.2f} MB)")
     return 0
